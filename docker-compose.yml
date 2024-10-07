@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=super
+      - POSTGRES_PASSWORD=superpassword
+    ports:
+      - 5433:5432
+
+  # app:
+  #   build: .
+  #   command: cargo run
+  #   environment:
+  #     DATABASE_URL: postgres://postgres:postgres@db/postgres
+  #   depends_on:
+  #     - db

@@ -1,0 +1,3 @@
+[model]
+generate_insertable = true
+generate_queryable = true

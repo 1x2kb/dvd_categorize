@@ -1,0 +1,9 @@
+[package]
+name = "categorizer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+database = { path = "../database" }
+iced = { version = "0.12.1", features = ["tokio", "image"] }
+dotenvy = "0.15"
