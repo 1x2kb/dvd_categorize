@@ -8,11 +8,30 @@ use crate::schema::*;
 use diesel::prelude::*;
 use movie_genre::genre;
 
-#[derive(Queryable, Selectable, Debug, Insertable, Clone, Identifiable)]
+#[derive(Queryable, Selectable, Debug, Clone, Identifiable)]
 #[diesel(table_name = actor)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Actor {
     pub id: i32,
+    pub name: String,
+}
+
+impl From<String> for Actor {
+    fn from(value: String) -> Self {
+        Self { id: 0, name: value }
+    }
+}
+
+impl From<(i32, String)> for Actor {
+    fn from((id, name): (i32, String)) -> Self {
+        Self { id, name }
+    }
+}
+
+#[derive(Debug, Clone, Insertable)]
+#[diesel(table_name = actor)]
+#[diesel(check_for_backend(diesel::pg::PG))]
+pub struct NewActor {
     pub name: String,
 }
 
@@ -24,11 +43,33 @@ pub struct Director {
     pub name: String,
 }
 
+#[derive(Insertable)]
+#[diesel(table_name = director)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct NewDirector {
+    pub name: String,
+}
+
+impl From<String> for Director {
+    fn from(name: String) -> Self {
+        Self { id: 0, name }
+    }
+}
+
 #[derive(Queryable, Debug, Insertable, Identifiable)]
 #[diesel(table_name = movie)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Movie {
     pub id: i32,
+    pub name: String,
+    pub director_id: Option<i32>,
+    pub description: Option<String>,
+}
+
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = movie)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct NewMovie {
     pub name: String,
     pub director_id: Option<i32>,
     pub description: Option<String>,
@@ -45,14 +86,30 @@ pub struct MovieActor {
     pub actor_id: i32,
 }
 
-#[derive(Queryable, Debug, Insertable, Associations, Identifiable)]
+#[derive(Insertable)]
+#[diesel(table_name = movie_actor)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct NewMovieActor {
+    pub movie_id: i32,
+    pub actor_id: i32,
+}
+
+#[derive(Queryable, Debug, Associations, Identifiable)]
 #[diesel(table_name = movie_genre)]
 #[diesel(belongs_to(Movie))]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct MovieGenre {
     pub id: i32,
-    pub genre: String,
     pub movie_id: i32,
+    pub genre: String,
+}
+
+#[derive(Debug, Insertable, Clone)]
+#[diesel(table_name = movie_genre)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct NewMovieGenre {
+    pub movie_id: i32,
+    pub genre: String,
 }
 
 #[derive(Debug, Clone)]
