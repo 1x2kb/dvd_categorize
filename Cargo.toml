@@ -2,3 +2,6 @@
 members = ["categorizer", "database"]
 
 resolver = "2"
+
+[workspace.dependencies]
+log = "0.4"
