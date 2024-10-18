@@ -22,8 +22,18 @@ impl From<String> for Actor {
     }
 }
 
-impl From<(i32, String)> for Actor {
-    fn from((id, name): (i32, String)) -> Self {
+impl
+    From<(
+        i32,
+        String,
+    )> for Actor
+{
+    fn from(
+        (id, name): (
+            i32,
+            String,
+        ),
+    ) -> Self {
         Self { id, name }
     }
 }
@@ -123,9 +133,21 @@ pub struct FullMovie {
     pub genres: Vec<String>,
 }
 
-impl From<(Movie, Option<Director>, Vec<Actor>, Vec<String>)> for FullMovie {
+impl
+    From<(
+        Movie,
+        Option<Director>,
+        Vec<Actor>,
+        Vec<String>,
+    )> for FullMovie
+{
     fn from(
-        (movie, director, actors, genres): (Movie, Option<Director>, Vec<Actor>, Vec<String>),
+        (movie, director, actors, genres): (
+            Movie,
+            Option<Director>,
+            Vec<Actor>,
+            Vec<String>,
+        ),
     ) -> Self {
         Self {
             id: movie.id,

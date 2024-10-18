@@ -7,8 +7,7 @@ use std::error::Error;
 pub use diesel::prelude::*;
 pub use diesel::BelongingToDsl;
 pub use models::*;
-use schema::director;
-use schema::movie_genre;
+use schema::{director, movie_genre};
 
 fn get_database_connection() -> Result<PgConnection, ConnectionError> {
     let database_url =
@@ -22,24 +21,31 @@ pub fn get_movies() -> Result<Vec<FullMovie>, diesel::result::Error> {
 
     let movies = schema::movie::table
         .left_join(schema::director::table)
-        .get_results::<(Movie, Option<Director>)>(&mut connection)?;
+        .get_results::<(
+            Movie,
+            Option<Director>,
+        )>(&mut connection)?;
 
     let full_movies = movies
         .into_iter()
-        .map(|(movie, director)| {
-            let actors = MovieActor::belonging_to(&movie)
-                .inner_join(schema::actor::table)
-                .select(schema::actor::all_columns)
-                .load::<Actor>(&mut connection)
-                .unwrap_or_else(|_| Vec::new());
+        .map(
+            |(movie, director)| {
+                let actors = MovieActor::belonging_to(&movie)
+                    .inner_join(schema::actor::table)
+                    .select(schema::actor::all_columns)
+                    .load::<Actor>(&mut connection)
+                    .unwrap_or_else(|_| Vec::new());
 
-            let genres = MovieGenre::belonging_to(&movie)
-                .select(movie_genre::genre)
-                .load::<String>(&mut connection)
-                .unwrap_or_else(|_| Vec::new());
+                let genres = MovieGenre::belonging_to(&movie)
+                    .select(movie_genre::genre)
+                    .load::<String>(&mut connection)
+                    .unwrap_or_else(|_| Vec::new());
 
-            FullMovie::from((movie, director, actors, genres))
-        })
+                FullMovie::from((
+                    movie, director, actors, genres,
+                ))
+            },
+        )
         .collect();
 
     Ok(full_movies)
@@ -51,20 +57,26 @@ pub fn get_movie(id: i32) -> Result<FullMovie, Box<dyn Error>> {
     let (movie, director) = schema::movie::table
         .find(id)
         .left_join(schema::director::table)
-        .get_result::<(Movie, Option<Director>)>(&mut connection)?;
+        .get_result::<(
+            Movie,
+            Option<Director>,
+        )>(&mut connection)?;
 
-    let actors = MovieActor::belonging_to(&movie)
-        .inner_join(schema::actor::table)
-        .select(schema::actor::all_columns)
-        .load::<Actor>(&mut connection)
-        .unwrap_or_else(|_| Vec::new());
+    let actors = actors_for_movie(
+        &movie,
+        &mut connection,
+    );
 
-    let genres = MovieGenre::belonging_to(&movie)
-        .select(movie_genre::genre)
-        .load::<String>(&mut connection)
-        .unwrap_or_else(|_| Vec::new());
+    let genres = genres_for_movie(
+        &movie,
+        &mut connection,
+    );
 
-    Ok(FullMovie::from((movie, director, actors, genres)))
+    Ok(
+        FullMovie::from((
+            movie, director, actors, genres,
+        )),
+    )
 }
 
 pub fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Box<dyn Error>> {
@@ -122,7 +134,10 @@ pub fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Box<dyn Err
         .values(&new_actor_movies)
         .execute(&mut conn)?;
 
-    if !full_movie.genres.is_empty() {
+    if !full_movie
+        .genres
+        .is_empty()
+    {
         let movie_genres: Vec<NewMovieGenre> = full_movie
             .genres
             .into_iter()
@@ -138,4 +153,18 @@ pub fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Box<dyn Err
     get_movie(movie_id)
 }
 
+pub fn actors_for_movie(movie: &Movie, connection: &mut PgConnection) -> Vec<Actor> {
+    MovieActor::belonging_to(&movie)
+        .inner_join(schema::actor::table)
+        .select(schema::actor::all_columns)
+        .load::<Actor>(connection)
+        .unwrap_or_else(|_| Vec::new())
+}
+
+pub fn genres_for_movie(movie: &Movie, connection: &mut PgConnection) -> Vec<String> {
+    MovieGenre::belonging_to(&movie)
+        .select(movie_genre::genre)
+        .load::<String>(connection)
+        .unwrap_or_else(|_| Vec::new())
+}
 // pub fn insert_movie()
