@@ -1,0 +1,11 @@
+[package]
+name = "csv_reader"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+csv = "*"
+database = { path = "../database" }
+serde = { version = "1.0.214", features = ["derive"] }
+tokio.workspace = true
+dotenvy.workspace = true

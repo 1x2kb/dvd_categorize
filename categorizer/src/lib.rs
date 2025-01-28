@@ -1,11 +1,60 @@
-use database::{Actor, Director, FullMovie};
+use std::{
+    env,
+    error::Error,
+    fmt::{Display, Formatter},
+};
+
+use database::{get_movies, Actor, DatabaseError, Director, FullMovie, IntoSql, Movie};
 use iced::{
+    futures::TryFutureExt,
     widget::{
-        button, column, container, pane_grid::state::Action, row, text, text_input, Column,
-        Container,
+        button, column, container, pane_grid::state::Action, row, scrollable, text, text_input,
+        Column, Container,
     },
     Application, Command, Theme,
 };
+use log::{debug, error, info};
+use reqwest::Client;
+use tracing::instrument;
+
+pub trait ConnectOnce {
+    fn connection_string(&self) -> String;
+}
+
+#[derive(Debug, Clone)]
+pub enum UiError {
+    Reqwest(String),
+    Serde(String),
+}
+
+impl Display for UiError {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match self {
+            UiError::Reqwest(error) => write!(
+                f,
+                "{error}"
+            ),
+            UiError::Serde(error) => write!(
+                f,
+                "{error}"
+            ),
+        }
+    }
+}
+
+impl Error for UiError {}
+
+impl From<reqwest::Error> for UiError {
+    fn from(value: reqwest::Error) -> Self {
+        UiError::Reqwest(value.to_string())
+    }
+}
+
+impl From<serde_json::Error> for UiError {
+    fn from(value: serde_json::Error) -> Self {
+        UiError::Serde(value.to_string())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -13,8 +62,72 @@ pub enum Message {
         String,
         MovieInputChange,
     ),
-    SaveMovie(FullMovie),
+    LoadDvds,
+    LoadedDvds(Result<Vec<FullMovie>, UiError>),
+    SaveDvd(FullMovie),
+    SavedDvd(Result<FullMovie, UiError>),
     Navigation(Page),
+}
+
+impl Display for Message {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Message::InputChanged(value, movie_input_change) => write!(
+                f,
+                "Message::InputChanged event {movie_input_change} to {value}"
+            ),
+            Message::LoadDvds => write!(
+                f,
+                "Message::LoadDvds"
+            ),
+            Message::LoadedDvds(_) => write!(
+                f,
+                "Message::LoadedDvds"
+            ),
+            Message::SaveDvd(_) => write!(
+                f,
+                "Message::SaveDvd"
+            ),
+            Message::SavedDvd(_) => write!(
+                f,
+                "Message::SavedDvd"
+            ),
+            Message::Navigation(_) => write!(
+                f,
+                "Message::Navigation"
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ApiProperties {
+    host: String,
+    port: String,
+}
+
+impl ConnectOnce for ApiProperties {
+    fn connection_string(&self) -> String {
+        format!(
+            "http://{}:{}",
+            self.host
+                .to_string(),
+            self.port
+                .to_string()
+        )
+    }
+}
+
+impl<'a> ConnectOnce for &'a ApiProperties {
+    fn connection_string(&self) -> String {
+        format!(
+            "http://{}:{}",
+            self.host
+                .to_string(),
+            self.port
+                .to_string()
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +140,8 @@ pub struct AppState {
     movies: Vec<FullMovie>,
     current_view: Page,
     desired_theme: Theme,
+    api_properties: ApiProperties,
+    loading: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -94,6 +209,33 @@ pub enum MovieInputChange {
     Actors,
 }
 
+impl Display for MovieInputChange {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MovieInputChange::Name => write!(
+                f,
+                "Changing name input"
+            ),
+            MovieInputChange::Description => write!(
+                f,
+                "Changing Description input"
+            ),
+            MovieInputChange::Director => write!(
+                f,
+                "Changing Director input"
+            ),
+            MovieInputChange::Genres => write!(
+                f,
+                "Changing Genres input"
+            ),
+            MovieInputChange::Actors => write!(
+                f,
+                "Changing actors input"
+            ),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Page {
     List,
@@ -112,17 +254,20 @@ impl Application for App {
         Self,
         iced::Command<Self::Message>,
     ) {
-        let movies = database::get_movies().expect("Failed to retrieve movies");
-
         (
             Self {
                 state: AppState {
-                    movies,
+                    movies: Default::default(),
                     current_view: Page::List,
                     desired_theme: Theme::Dark,
+                    api_properties: get_host(),
+                    loading: None,
                 },
             },
-            Command::none(),
+            Command::perform(
+                async {},
+                |_| Message::LoadDvds,
+            ),
         )
     }
 
@@ -142,6 +287,7 @@ impl Application for App {
     }
 
     fn update(&mut self, message: Self::Message) -> iced::Command<Self::Message> {
+        info!("Current message {message}");
         match message {
             Message::InputChanged(value, movie_input_change) => {
                 input_changed(
@@ -152,18 +298,31 @@ impl Application for App {
 
                 Command::none()
             }
-            Message::SaveMovie(movie) => {
-                let result = database::insert_full_movie(movie);
+            Message::SaveDvd(movie) => {
+                info!(
+                    "Saving dvd {:?}",
+                    &movie
+                );
 
-                if let Ok(movie) = result {
-                    self.state
-                        .movies
-                        .push(movie);
-                    self.state
-                        .current_view = Page::List;
-                }
-
-                Command::none()
+                Command::perform(
+                    insert_dvd(
+                        movie,
+                        self.state
+                            .api_properties
+                            .connection_string(),
+                    ),
+                    |result| Message::SavedDvd(result),
+                )
+            }
+            Message::SavedDvd(full_movie) => {
+                info!(
+                    "Created {:?}",
+                    full_movie
+                );
+                Command::perform(
+                    async {},
+                    |_| Message::Navigation(Page::List),
+                )
             }
             Message::Navigation(page) => {
                 self.state
@@ -171,11 +330,43 @@ impl Application for App {
 
                 Command::none()
             }
+            Message::LoadDvds => {
+                self.state
+                    .loading = Some(true);
+                info!("Loading dvds. Set loading true");
+
+                Command::perform(
+                    get_dvds(
+                        self.state
+                            .api_properties
+                            .connection_string(),
+                    ),
+                    |result| Message::LoadedDvds(result),
+                )
+            }
+            Message::LoadedDvds(vec) => {
+                self.state
+                    .movies = vec.unwrap_or_else(
+                    |e| {
+                        error!("Encountered error when entering LoadedDvds");
+                        error!("{e}");
+                        Vec::new()
+                    },
+                );
+
+                self.state
+                    .loading = Some(false);
+
+                Command::perform(
+                    async {},
+                    |_| Message::Navigation(Page::List),
+                )
+            }
         }
     }
 
     fn view(&self) -> iced::Element<'_, Self::Message, Self::Theme, iced::Renderer> {
-        let view = match &self
+        let page_view = match &self
             .state
             .current_view
         {
@@ -184,7 +375,7 @@ impl Application for App {
                     .state
                     .movies,
             ),
-            Page::NewMovie(new_movie_input) => create_movie(new_movie_input),
+            Page::NewMovie(new_movie_input) => create_movie_ui(new_movie_input),
         };
 
         column![
@@ -192,8 +383,10 @@ impl Application for App {
                 button("List").on_press(Message::Navigation(Page::List)),
                 button("New")
                     .on_press(Message::Navigation(Page::NewMovie(NewMovieInput::default()))),
-            ],
-            view
+            ]
+            .padding(20)
+            .spacing(10),
+            page_view
         ]
         .into()
     }
@@ -218,7 +411,7 @@ fn create_list_ui(movies: &[FullMovie]) -> container::Container<'_, Message> {
                 ),
         );
 
-    let movie_container = container(main_column);
+    let movie_container = container(scrollable(main_column));
 
     movie_container
 }
@@ -258,10 +451,12 @@ fn create_movie_column(
     ]
 }
 
-fn create_movie<'a>(new_movie_input: &NewMovieInput) -> container::Container<'_, Message> {
+fn create_movie_ui<'a>(new_movie_input: &NewMovieInput) -> container::Container<'_, Message> {
+    let width = 150;
+
     let view = column![
         row![
-            text("Movie Name"),
+            Container::new(text("Movie Name")).width(width),
             text_input(
                 "Movie Name",
                 &new_movie_input.name
@@ -274,7 +469,7 @@ fn create_movie<'a>(new_movie_input: &NewMovieInput) -> container::Container<'_,
             )
         ],
         row![
-            text("Movie Descripton"),
+            Container::new(text("Movie Descripton")).width(width),
             text_input(
                 "Movie Description",
                 &new_movie_input.description
@@ -287,7 +482,7 @@ fn create_movie<'a>(new_movie_input: &NewMovieInput) -> container::Container<'_,
             )
         ],
         row![
-            text("Director"),
+            Container::new(text("Director")).width(width),
             text_input(
                 "Jackie Chan",
                 &new_movie_input.director
@@ -300,7 +495,7 @@ fn create_movie<'a>(new_movie_input: &NewMovieInput) -> container::Container<'_,
             )
         ],
         row![
-            text("Movie Actors"),
+            Container::new(text("Movie Actors")).width(width),
             text_input(
                 "Tom Cruise | Jackie Chan",
                 &new_movie_input.actors
@@ -313,7 +508,7 @@ fn create_movie<'a>(new_movie_input: &NewMovieInput) -> container::Container<'_,
             )
         ],
         row![
-            text("Movie Genres"),
+            Container::new(text("Movie Genres")).width(width),
             text_input(
                 "Action | Comedy",
                 &new_movie_input.genres
@@ -325,7 +520,7 @@ fn create_movie<'a>(new_movie_input: &NewMovieInput) -> container::Container<'_,
                 )
             )
         ],
-        row![button("Submit").on_press(Message::SaveMovie(new_movie_input.into()))]
+        row![button("Submit").on_press(Message::SaveDvd(new_movie_input.into()))]
     ];
 
     Container::new(view)
@@ -344,4 +539,56 @@ fn input_changed(value: String, change: MovieInputChange, app: &mut App) {
             MovieInputChange::Director => new_movie_input.director = value,
         }
     }
+}
+
+#[instrument]
+async fn get_dvds(url: String) -> Result<Vec<FullMovie>, UiError> {
+    reqwest::get(format!("{url}/dvd"))
+        .await?
+        .json::<Vec<FullMovie>>()
+        .await
+        .map_err(
+            |e| {
+                error!("Failed to send request or parse response {e}");
+                e
+            },
+        )
+        .map_err(UiError::from)
+}
+
+#[instrument]
+async fn insert_dvd(dvd: FullMovie, url: String) -> Result<FullMovie, UiError> {
+    reqwest::Client::new()
+        .post(format!("{url}/dvd"))
+        .json(&dvd)
+        .send()
+        .map_err(
+            |e| {
+                error!(
+                    "Error while sending load dvd request, {}",
+                    e
+                );
+
+                e
+            },
+        )
+        .await?
+        .json::<FullMovie>()
+        .await
+        .map_err(
+            |e| {
+                error!(
+                    "Error while parsing the dvd resposne {}",
+                    e
+                );
+                UiError::from(e)
+            },
+        )
+}
+
+fn get_host() -> ApiProperties {
+    let host = env::var("server_host").unwrap_or("0.0.0.0".to_string());
+    let port = env::var("server_port").unwrap_or("3000".to_string());
+
+    ApiProperties { host, port }
 }
