@@ -6,12 +6,17 @@ use dotenvy::dotenv;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all(serialize = "camelCase"))]
 struct CsvRecord {
+    #[serde(alias = "Title", alias = "TITLE")]
     title: String,
+    #[serde(alias = "Description", alias = "DESCRIPTION")]
     description: Option<String>,
+    #[serde(alias = "Actors", alias = "ACTORS")]
     actors: Option<String>,
+    #[serde(alias = "Director", alias = "DIRECTOR")]
     director: Option<String>,
+    #[serde(alias = "Genres", alias = "GENRES")]
     genres: Option<String>,
 }
 
@@ -140,6 +145,10 @@ mod tests {
         };
 
         let full_movies = parse_csv(csv.as_bytes());
+        println!(
+            "{:#?}",
+            full_movies
+        );
         assert!(full_movies.is_ok());
 
         let full_movie = full_movies.unwrap()[0].clone();
