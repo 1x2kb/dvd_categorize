@@ -3,6 +3,16 @@ name = "database"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+testing = ["rand"]
+
 [dependencies]
-diesel = { version = "2.2.4", features = ["postgres"] }
+diesel = { version = "^2.2.4" }
+diesel-async = { version = "0.5.2", features = ["postgres"] }
 dotenvy = "0.15"
+rand = { version = "0.8.5", optional = true }
+tokio.workspace = true
+serde.workspace = true
+log.workspace = true
+pretty_env_logger.workspace = true
+tracing.workspace = true

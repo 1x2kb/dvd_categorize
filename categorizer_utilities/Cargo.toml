@@ -1,0 +1,11 @@
+[package]
+name = "categorizer_utilities"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+database = { path = "../database" }
+rand = "0.8.5"
+
+[dev-dependencies]
+database = { path = "../database", features = ["testing"] }
