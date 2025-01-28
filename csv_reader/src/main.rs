@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     dotenv()
         .ok()
         .expect("Failed to run env reader");
-    let reader = File::open("./test.csv")?;
+    let reader = File::open("./movies.csv")?;
     let movies = parse_csv(reader)?;
 
     for movie in movies {
@@ -139,7 +139,7 @@ mod tests {
             ],
         };
 
-        let full_movies = parse_csv(csv);
+        let full_movies = parse_csv(csv.as_bytes());
         assert!(full_movies.is_ok());
 
         let full_movie = full_movies.unwrap()[0].clone();
