@@ -116,22 +116,16 @@ impl ConnectOnce for ApiProperties {
     fn connection_string(&self) -> String {
         format!(
             "http://{}:{}",
-            self.host
-                .to_string(),
-            self.port
-                .to_string()
+            self.host, self.port
         )
     }
 }
 
-impl<'a> ConnectOnce for &'a ApiProperties {
+impl ConnectOnce for &ApiProperties {
     fn connection_string(&self) -> String {
         format!(
             "http://{}:{}",
-            self.host
-                .to_string(),
-            self.port
-                .to_string()
+            self.host, self.port
         )
     }
 }
@@ -164,9 +158,9 @@ pub struct ChatInput {
     user_input: String,
 }
 
-impl<'a> Into<FullMovie> for &'a NewMovieInput {
-    fn into(self) -> FullMovie {
-        let genres = self
+impl From<&NewMovieInput> for FullMovie {
+    fn from(val: &NewMovieInput) -> Self {
+        let genres = val
             .genres
             .split("|")
             .map(|genre| genre.trim())
@@ -174,7 +168,7 @@ impl<'a> Into<FullMovie> for &'a NewMovieInput {
             .map(|genre| genre.to_string())
             .collect();
 
-        let actors = self
+        let actors = val
             .actors
             .split("|")
             .map(|actor| actor.trim())
@@ -182,13 +176,13 @@ impl<'a> Into<FullMovie> for &'a NewMovieInput {
             .map(|actor| Actor::from(actor.to_string()))
             .collect();
 
-        let director = match self
+        let director = match val
             .director
             .is_empty()
         {
             true => Some(
                 Director::from(
-                    self.director
+                    val.director
                         .to_string(),
                 ),
             ),
@@ -197,11 +191,11 @@ impl<'a> Into<FullMovie> for &'a NewMovieInput {
 
         FullMovie {
             id: 0,
-            name: self
+            name: val
                 .name
                 .to_string(),
             description: Some(
-                self.description
+                val.description
                     .to_string(),
             ),
             director,
@@ -329,7 +323,7 @@ impl Application for App {
                             .api_properties
                             .connection_string(),
                     ),
-                    |result| Message::SavedDvd(result),
+                    Message::SavedDvd,
                 )
             }
             Message::SavedDvd(full_movie) => {
@@ -359,7 +353,7 @@ impl Application for App {
                             .api_properties
                             .connection_string(),
                     ),
-                    |result| Message::LoadedDvds(result),
+                    Message::LoadedDvds,
                 )
             }
             Message::LoadedDvds(vec) => {
@@ -478,7 +472,7 @@ fn create_movie_column(
     ]
 }
 
-fn create_movie_ui<'a>(new_movie_input: &NewMovieInput) -> container::Container<'_, Message> {
+fn create_movie_ui(new_movie_input: &NewMovieInput) -> container::Container<'_, Message> {
     let width = 150;
 
     let view = column![
@@ -553,7 +547,7 @@ fn create_movie_ui<'a>(new_movie_input: &NewMovieInput) -> container::Container<
     Container::new(view)
 }
 
-fn create_chat_ui<'a>(chat_input: &ChatInput) -> container::Container<'_, Message> {
+fn create_chat_ui(chat_input: &ChatInput) -> container::Container<'_, Message> {
     let column = column![
         text_input(
             "Bot Response",
@@ -563,7 +557,7 @@ fn create_chat_ui<'a>(chat_input: &ChatInput) -> container::Container<'_, Messag
             "Ask a question",
             &chat_input.user_input
         )
-        .on_input(|value| Message::ChatInputChanged(value)),
+        .on_input(Message::ChatInputChanged),
         button("Submit").on_press(
             Message::SendChatMessage(
                 chat_input
