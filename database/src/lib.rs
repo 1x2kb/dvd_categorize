@@ -2,7 +2,7 @@ use std::env;
 use std::error::Error;
 use std::fmt::Display;
 
-pub use diesel::prelude::*;
+use diesel::prelude::*;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use log::debug;
 pub use models::{schema::*, *};

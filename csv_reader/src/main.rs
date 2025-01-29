@@ -66,7 +66,6 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
                     |actor_names| {
                         actor_names
                             .split("|")
-                            .into_iter()
                             .map(
                                 |actor_name| {
                                     Actor::from(
@@ -79,7 +78,7 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
                             .collect()
                     },
                 )
-                .unwrap_or(Vec::new()),
+                .unwrap_or_default(),
             director: csv_record
                 .director
                 .map(
@@ -97,7 +96,6 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
                     |genres| {
                         genres
                             .split("|")
-                            .into_iter()
                             .map(
                                 |genre| {
                                     genre
@@ -108,7 +106,7 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
                             .collect()
                     },
                 )
-                .unwrap_or_else(Vec::new),
+                .unwrap_or_default(),
         };
 
         movies.push(movie);
