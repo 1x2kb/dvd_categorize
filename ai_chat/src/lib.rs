@@ -36,5 +36,5 @@ pub async fn bot_message(question: String) -> Result<String, Box<dyn std::error:
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 }

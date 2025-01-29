@@ -1,7 +1,7 @@
 use database::FullMovie;
 use rand::{thread_rng, Rng};
 
-pub fn get_random<'a>(movies: &'a [FullMovie]) -> &'a FullMovie {
+pub fn get_random(movies: &[FullMovie]) -> &FullMovie {
     let gen = thread_rng().gen_range(0..movies.len());
 
     &movies[gen]
