@@ -3,5 +3,10 @@ name = "models"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+postgres = ["diesel"]
+testing = []
+
 [dependencies]
 serde.workspace = true
+diesel = { version = "^2.2.4", optional = true }

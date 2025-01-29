@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-pub struct Response {
+pub struct OllamaStreamMessage {
     pub model: String,
     pub created_at: String,
     pub message: Message,
