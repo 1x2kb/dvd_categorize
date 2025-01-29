@@ -116,8 +116,7 @@ impl ConnectOnce for ApiProperties {
     fn connection_string(&self) -> String {
         format!(
             "http://{}:{}",
-            self.host,
-            self.port
+            self.host, self.port
         )
     }
 }
@@ -126,8 +125,7 @@ impl ConnectOnce for &ApiProperties {
     fn connection_string(&self) -> String {
         format!(
             "http://{}:{}",
-            self.host,
-            self.port
+            self.host, self.port
         )
     }
 }
