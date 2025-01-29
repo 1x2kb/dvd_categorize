@@ -16,4 +16,4 @@ serde.workspace = true
 log.workspace = true
 pretty_env_logger.workspace = true
 tracing.workspace = true
-models = { path = "../models", features = ["database"] }
+models = { path = "../models", features = ["postgres"] }

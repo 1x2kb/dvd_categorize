@@ -1,5 +1,5 @@
 mod chat;
-#[cfg(feature = "database")]
+#[cfg(feature = "postgres")]
 pub mod schema;
 
 #[cfg(feature = "testing")]
@@ -7,11 +7,11 @@ use crate::Random;
 #[cfg(feature = "testing")]
 use rand::{thread_rng, Rng};
 
-#[cfg(feature = "database")]
+#[cfg(feature = "postgres")]
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[cfg_attr(feature="database", derive(Queryable, Selectable,Identifiable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature="postgres", derive(Queryable, Selectable,Identifiable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Actor {
     pub id: i32,
@@ -40,20 +40,20 @@ impl
     }
 }
 
-#[cfg_attr(feature="database", derive(Insertable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone)]
 pub struct NewActor {
     pub name: String,
 }
 
-#[cfg_attr(feature="database", derive(Queryable, Insertable, Identifiable), diesel(table_name = schema::director, check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature="postgres", derive(Queryable, Insertable, Identifiable), diesel(table_name = schema::director, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Director {
     pub id: i32,
     pub name: String,
 }
 
-#[cfg_attr(feature="database", derive(Insertable), diesel(table_name = schema::director, check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::director, check_for_backend(diesel::pg::Pg)))]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewDirector {
     pub name: String,
@@ -64,7 +64,7 @@ impl From<String> for Director {
         Self { id: 0, name }
     }
 }
-#[cfg_attr(feature="database", derive(Insertable, Identifiable, Queryable), diesel(table_name = schema::movie, check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature="postgres", derive(Insertable, Identifiable, Queryable), diesel(table_name = schema::movie, check_for_backend(diesel::pg::Pg)))]
 pub struct Movie {
     pub id: i32,
     pub name: String,
@@ -72,7 +72,7 @@ pub struct Movie {
     pub description: Option<String>,
 }
 
-#[cfg_attr(feature="database", derive(Insertable), diesel(table_name = schema::movie, check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::movie, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone)]
 pub struct NewMovie {
     pub name: String,
@@ -80,9 +80,9 @@ pub struct NewMovie {
     pub description: Option<String>,
 }
 
-#[cfg_attr(feature="database", derive(Insertable, Identifiable, Queryable), diesel(table_name = schema::movie_actor, check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "database", derive(Associations))]
-#[cfg_attr(feature = "database", diesel(belongs_to(Movie), belongs_to(Actor)))]
+#[cfg_attr(feature="postgres", derive(Insertable, Identifiable, Queryable), diesel(table_name = schema::movie_actor, check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "postgres", derive(Associations))]
+#[cfg_attr(feature = "postgres", diesel(belongs_to(Movie), belongs_to(Actor)))]
 #[derive(Debug)]
 pub struct MovieActor {
     pub id: i32,
@@ -90,16 +90,16 @@ pub struct MovieActor {
     pub actor_id: i32,
 }
 
-#[cfg_attr(feature="database", derive(Insertable), diesel(table_name = schema::movie_actor, check_for_backend(diesel::pg::Pg)))]
-#[cfg(feature = "database")]
+#[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::movie_actor, check_for_backend(diesel::pg::Pg)))]
+#[cfg(feature = "postgres")]
 pub struct NewMovieActor {
     pub movie_id: i32,
     pub actor_id: i32,
 }
 
-#[cfg_attr(feature="database", derive(Queryable, Identifiable), diesel(table_name = schema::movie_genre, check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "database", derive(Associations))]
-#[cfg_attr(feature = "database", belongs_to(Movie))]
+#[cfg_attr(feature="postgres", derive(Queryable, Identifiable), diesel(table_name = schema::movie_genre, check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "postgres", derive(Associations))]
+#[cfg_attr(feature = "postgres", belongs_to(Movie))]
 #[derive(Debug)]
 pub struct MovieGenre {
     pub id: i32,
@@ -107,7 +107,7 @@ pub struct MovieGenre {
     pub genre: String,
 }
 
-#[cfg_attr(feature="database", derive(Insertable), diesel(table_name = schema::movie_genre, check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::movie_genre, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone)]
 pub struct NewMovieGenre {
     pub movie_id: i32,
