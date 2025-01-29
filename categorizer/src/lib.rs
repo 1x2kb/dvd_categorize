@@ -4,18 +4,14 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use database::{get_movies, Actor, DatabaseError, Director, FullMovie, IntoSql, Movie};
 use iced::{
     futures::TryFutureExt,
-    widget::{
-        button, column, container, pane_grid::state::Action, row, scrollable, text, text_input,
-        Column, Container,
-    },
+    widget::{button, column, container, row, scrollable, text, text_input, Column, Container},
     Application, Command, Theme,
 };
-use log::{debug, error, info};
-use reqwest::Client;
-use tracing::instrument;
+use log::{error, info};
+use models::{Actor, Director, FullMovie};
+use tracing::{instrument, Level};
 
 pub trait ConnectOnce {
     fn connection_string(&self) -> String;
@@ -58,23 +54,29 @@ impl From<serde_json::Error> for UiError {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    InputChanged(
+    MovieInputChanged(
         String,
         MovieInputChange,
     ),
+    ChatInputChanged(String),
     LoadDvds,
     LoadedDvds(Result<Vec<FullMovie>, UiError>),
     SaveDvd(FullMovie),
     SavedDvd(Result<FullMovie, UiError>),
     Navigation(Page),
+    SendChatMessage(String),
 }
 
 impl Display for Message {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Message::InputChanged(value, movie_input_change) => write!(
+            Message::MovieInputChanged(value, movie_input_change) => write!(
                 f,
                 "Message::InputChanged event {movie_input_change} to {value}"
+            ),
+            Message::ChatInputChanged(value) => write!(
+                f,
+                "Message::ChatInputChanged event input to {value}"
             ),
             Message::LoadDvds => write!(
                 f,
@@ -95,6 +97,10 @@ impl Display for Message {
             Message::Navigation(_) => write!(
                 f,
                 "Message::Navigation"
+            ),
+            Message::SendChatMessage(_) => write!(
+                f,
+                "Message::SendChatMessage"
             ),
         }
     }
@@ -151,6 +157,11 @@ pub struct NewMovieInput {
     director: String,
     genres: String,
     actors: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ChatInput {
+    user_input: String,
 }
 
 impl<'a> Into<FullMovie> for &'a NewMovieInput {
@@ -240,6 +251,7 @@ impl Display for MovieInputChange {
 pub enum Page {
     List,
     NewMovie(NewMovieInput),
+    Chat(ChatInput),
 }
 
 impl Application for App {
@@ -289,13 +301,19 @@ impl Application for App {
     fn update(&mut self, message: Self::Message) -> iced::Command<Self::Message> {
         info!("Current message {message}");
         match message {
-            Message::InputChanged(value, movie_input_change) => {
+            Message::MovieInputChanged(value, movie_input_change) => {
                 input_changed(
                     value,
                     movie_input_change,
                     self,
                 );
 
+                Command::none()
+            }
+            Message::ChatInputChanged(input) => {
+                chat_input_changed(
+                    input, self,
+                );
                 Command::none()
             }
             Message::SaveDvd(movie) => {
@@ -362,6 +380,14 @@ impl Application for App {
                     |_| Message::Navigation(Page::List),
                 )
             }
+            Message::SendChatMessage(input) => {
+                info!("Sending message to bot {input}");
+
+                Command::perform(
+                    send_bot_message(input),
+                    |_| Message::Navigation(Page::List), // TODO: Handle response
+                )
+            }
         }
     }
 
@@ -376,13 +402,14 @@ impl Application for App {
                     .movies,
             ),
             Page::NewMovie(new_movie_input) => create_movie_ui(new_movie_input),
+            Page::Chat(chat_input) => create_chat_ui(chat_input),
         };
 
         column![
             row![
                 button("List").on_press(Message::Navigation(Page::List)),
-                button("New")
-                    .on_press(Message::Navigation(Page::NewMovie(NewMovieInput::default()))),
+                button("New").on_press(Message::Navigation(Page::NewMovie(Default::default()))),
+                button("Chat").on_press(Message::Navigation(Page::Chat(Default::default())))
             ]
             .padding(20)
             .spacing(10),
@@ -462,7 +489,7 @@ fn create_movie_ui<'a>(new_movie_input: &NewMovieInput) -> container::Container<
                 &new_movie_input.name
             )
             .on_input(
-                |value| Message::InputChanged(
+                |value| Message::MovieInputChanged(
                     value,
                     MovieInputChange::Name
                 )
@@ -475,7 +502,7 @@ fn create_movie_ui<'a>(new_movie_input: &NewMovieInput) -> container::Container<
                 &new_movie_input.description
             )
             .on_input(
-                |value| Message::InputChanged(
+                |value| Message::MovieInputChanged(
                     value,
                     MovieInputChange::Description
                 )
@@ -488,7 +515,7 @@ fn create_movie_ui<'a>(new_movie_input: &NewMovieInput) -> container::Container<
                 &new_movie_input.director
             )
             .on_input(
-                |value| Message::InputChanged(
+                |value| Message::MovieInputChanged(
                     value,
                     MovieInputChange::Director
                 )
@@ -501,7 +528,7 @@ fn create_movie_ui<'a>(new_movie_input: &NewMovieInput) -> container::Container<
                 &new_movie_input.actors
             )
             .on_input(
-                |value| Message::InputChanged(
+                |value| Message::MovieInputChanged(
                     value,
                     MovieInputChange::Actors
                 )
@@ -514,7 +541,7 @@ fn create_movie_ui<'a>(new_movie_input: &NewMovieInput) -> container::Container<
                 &new_movie_input.genres
             )
             .on_input(
-                |value| Message::InputChanged(
+                |value| Message::MovieInputChanged(
                     value,
                     MovieInputChange::Genres
                 )
@@ -524,6 +551,29 @@ fn create_movie_ui<'a>(new_movie_input: &NewMovieInput) -> container::Container<
     ];
 
     Container::new(view)
+}
+
+fn create_chat_ui<'a>(chat_input: &ChatInput) -> container::Container<'_, Message> {
+    let column = column![
+        text_input(
+            "Bot Response",
+            &chat_input.user_input
+        ),
+        text_input(
+            "Ask a question",
+            &chat_input.user_input
+        )
+        .on_input(|value| Message::ChatInputChanged(value)),
+        button("Submit").on_press(
+            Message::SendChatMessage(
+                chat_input
+                    .user_input
+                    .clone()
+            )
+        )
+    ];
+
+    Container::new(column)
 }
 
 fn input_changed(value: String, change: MovieInputChange, app: &mut App) {
@@ -541,7 +591,16 @@ fn input_changed(value: String, change: MovieInputChange, app: &mut App) {
     }
 }
 
-#[instrument]
+fn chat_input_changed(value: String, app: &mut App) {
+    if let Page::Chat(ref mut chat_input) = app
+        .state
+        .current_view
+    {
+        chat_input.user_input = value;
+    }
+}
+
+#[instrument(level = Level::DEBUG)]
 async fn get_dvds(url: String) -> Result<Vec<FullMovie>, UiError> {
     reqwest::get(format!("{url}/dvd"))
         .await?
@@ -556,7 +615,7 @@ async fn get_dvds(url: String) -> Result<Vec<FullMovie>, UiError> {
         .map_err(UiError::from)
 }
 
-#[instrument]
+#[instrument(level = Level::DEBUG)]
 async fn insert_dvd(dvd: FullMovie, url: String) -> Result<FullMovie, UiError> {
     reqwest::Client::new()
         .post(format!("{url}/dvd"))
@@ -584,6 +643,15 @@ async fn insert_dvd(dvd: FullMovie, url: String) -> Result<FullMovie, UiError> {
                 UiError::from(e)
             },
         )
+}
+
+#[instrument(level = Level::DEBUG)]
+async fn send_bot_message(message: String) {
+    let result = ai_chat::bot_message(message).await;
+    info!(
+        "{:#?}",
+        result
+    );
 }
 
 fn get_host() -> ApiProperties {

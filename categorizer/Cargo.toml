@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-database = { path = "../database" }
 iced = { version = "0.12.1", features = ["tokio", "image"] }
 categorizer_utilities = { path = "../categorizer_utilities" }
 dotenvy.workspace = true
@@ -14,3 +13,5 @@ serde_json = "1.0.137"
 log.workspace = true
 pretty_env_logger.workspace = true
 tracing.workspace = true
+ai_chat = { path = "../ai_chat" }
+models = { path = "../models" }
