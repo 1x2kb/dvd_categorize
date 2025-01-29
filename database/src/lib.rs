@@ -1,6 +1,3 @@
-pub mod models;
-mod schema;
-
 use std::env;
 use std::error::Error;
 use std::fmt::Display;
@@ -8,8 +5,7 @@ use std::fmt::Display;
 pub use diesel::prelude::*;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use log::debug;
-pub use models::*;
-use schema::movie_genre;
+pub use models::{schema::*, *};
 
 #[cfg(feature = "testing")]
 pub trait Random {
@@ -228,4 +224,3 @@ pub async fn genres_for_movie(movie: &Movie, connection: &mut AsyncPgConnection)
         .await
         .unwrap_or_else(|_| Vec::new())
 }
-// pub fn insert_movie()

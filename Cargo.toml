@@ -1,5 +1,13 @@
 [workspace]
-members = ["categorizer", "categorizer_utilities", "csv_reader", "database", "dvd_catalog_api", "models"]
+members = [
+    "ai_chat",
+    "categorizer",
+    "categorizer_utilities",
+    "csv_reader",
+    "database",
+    "dvd_catalog_api",
+    "models"
+]
 
 resolver = "2"
 
