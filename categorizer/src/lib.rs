@@ -472,7 +472,7 @@ fn create_movie_column(
     ]
 }
 
-fn create_movie_ui<'a>(new_movie_input: &NewMovieInput) -> container::Container<'_, Message> {
+fn create_movie_ui(new_movie_input: &NewMovieInput) -> container::Container<'_, Message> {
     let width = 150;
 
     let view = column![
@@ -547,7 +547,7 @@ fn create_movie_ui<'a>(new_movie_input: &NewMovieInput) -> container::Container<
     Container::new(view)
 }
 
-fn create_chat_ui<'a>(chat_input: &ChatInput) -> container::Container<'_, Message> {
+fn create_chat_ui(chat_input: &ChatInput) -> container::Container<'_, Message> {
     let column = column![
         text_input(
             "Bot Response",

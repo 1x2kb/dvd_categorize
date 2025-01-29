@@ -99,7 +99,7 @@ pub struct NewMovieActor {
 
 #[cfg_attr(feature="postgres", derive(Queryable, Identifiable), diesel(table_name = schema::movie_genre, check_for_backend(diesel::pg::Pg)))]
 #[cfg_attr(feature = "postgres", derive(Associations))]
-#[cfg_attr(feature = "postgres", belongs_to(Movie))]
+#[cfg_attr(feature = "postgres", diesel(belongs_to(Movie)))]
 #[derive(Debug)]
 pub struct MovieGenre {
     pub id: i32,
