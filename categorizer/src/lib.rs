@@ -10,8 +10,10 @@ use iced::{
     Application, Command, Theme,
 };
 use log::{error, info};
-use models::{Actor, Director, FullMovie};
+use models::{Actor, AiState, Director, FullMovie};
 use tracing::{instrument, Level};
+
+pub use ai_chat::*;
 
 pub trait ConnectOnce {
     fn connection_string(&self) -> String;
@@ -65,6 +67,7 @@ pub enum Message {
     SavedDvd(Result<FullMovie, UiError>),
     Navigation(Page),
     SendChatMessage(String),
+    ReceiveChatMessage(Result<String, UiError>),
 }
 
 impl Display for Message {
@@ -94,13 +97,17 @@ impl Display for Message {
                 f,
                 "Message::SavedDvd"
             ),
-            Message::Navigation(_) => write!(
+            Message::Navigation(page) => write!(
                 f,
-                "Message::Navigation"
+                "Message::Navigation, {page}"
             ),
             Message::SendChatMessage(_) => write!(
                 f,
                 "Message::SendChatMessage"
+            ),
+            Message::ReceiveChatMessage(_) => write!(
+                f,
+                "Message::ReceiveChatMessage"
             ),
         }
     }
@@ -142,6 +149,7 @@ pub struct AppState {
     desired_theme: Theme,
     api_properties: ApiProperties,
     loading: Option<bool>,
+    ai_state: AiState,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -248,6 +256,25 @@ pub enum Page {
     Chat(ChatInput),
 }
 
+impl Display for Page {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Page::List => write!(
+                f,
+                "Page::List"
+            ),
+            Page::NewMovie(_) => write!(
+                f,
+                "Page::NewMovie"
+            ),
+            Page::Chat(_) => write!(
+                f,
+                "Page::Chat"
+            ),
+        }
+    }
+}
+
 impl Application for App {
     type Executor = iced::executor::Default;
     type Message = Message;
@@ -268,6 +295,7 @@ impl Application for App {
                     desired_theme: Theme::Dark,
                     api_properties: get_host(),
                     loading: None,
+                    ai_state: AiState::new(),
                 },
             },
             Command::perform(
@@ -366,21 +394,37 @@ impl Application for App {
                     },
                 );
 
+                info!("Loaded dvds");
                 self.state
                     .loading = Some(false);
-
+                info!("Set loading to false");
                 Command::perform(
                     async {},
                     |_| Message::Navigation(Page::List),
                 )
             }
-            Message::SendChatMessage(input) => {
-                info!("Sending message to bot {input}");
+            Message::SendChatMessage(ai_message) => {
+                info!("Sending message to bot {ai_message}");
 
                 Command::perform(
-                    send_bot_message(input),
-                    |_| Message::Navigation(Page::List), // TODO: Handle response
+                    send_bot_message(
+                        ai_message,
+                        self.state
+                            .api_properties
+                            .connection_string(),
+                    ),
+                    |result| Message::ReceiveChatMessage(result), // TODO: Handle response
                 )
+            }
+            Message::ReceiveChatMessage(result) => {
+                match result.as_ref() {
+                    Ok(response) => info!("Response from AI {response}"),
+                    Err(e) => error!("{e}"),
+                };
+
+                let value = 77;
+
+                Command::none()
             }
         }
     }
@@ -640,12 +684,16 @@ async fn insert_dvd(dvd: FullMovie, url: String) -> Result<FullMovie, UiError> {
 }
 
 #[instrument(level = Level::DEBUG)]
-async fn send_bot_message(message: String) {
-    let result = ai_chat::bot_message(message).await;
-    info!(
-        "{:#?}",
-        result
-    );
+async fn send_bot_message(message: String, url: String) -> Result<String, UiError> {
+    let url = format!("{url}/chat");
+    reqwest::Client::new()
+        .post(url)
+        .body(message)
+        .send()
+        .await?
+        .json::<String>()
+        .await
+        .map_err(UiError::from)
 }
 
 fn get_host() -> ApiProperties {
