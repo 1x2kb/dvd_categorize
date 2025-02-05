@@ -1,6 +1,11 @@
 use std::error::Error;
 
-use uuid::Uuid;
+use ollama_rs::generation::chat::MessageRole;
+use question::AiMessage;
+use serde::{Deserialize, Serialize};
+pub use uuid::Uuid;
+
+pub mod question;
 
 pub trait ChatWithHistory {
     fn chat(&self, message: String) -> Result<String, Box<dyn Error>>;
@@ -27,15 +32,19 @@ pub trait SendChat {
 }
 
 pub trait GetUuid {
-    fn get_uuid() -> Uuid;
+    fn get_uuid(&self) -> &str;
 }
 
 pub trait QuestionHistory {
-    fn get_question_history(&self) -> &[String];
+    fn get_question_history(&self) -> impl Iterator<Item = &str>;
 }
 
 pub trait AnswerHistory {
-    fn get_answer_history(&self) -> &[String];
+    fn get_answer_history(&self) -> impl Iterator<Item = &str>;
+}
+
+pub trait FullHistory {
+    fn get_history(&self) -> impl Iterator<Item = &AiMessage>;
 }
 
 pub trait GetLastQuestion {
@@ -46,11 +55,18 @@ pub trait GetLastAnswer {
     fn get_last_answer<'a>(&'a self) -> Option<&'a str>;
 }
 
-#[derive(Debug, Clone)]
+pub trait SetUuid {
+    fn set_uuid(&mut self, uuid: String);
+}
+
+pub trait GenerateUuid {
+    fn generate_uuid(&mut self) -> &str;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiState {
-    chat_uuid: Uuid,
-    question_history: Vec<String>,
-    response_history: Vec<String>,
+    chat_uuid: String,
+    chat_history: Vec<AiMessage>,
     latest_question: Option<String>,
     latest_answer: Option<String>,
 }
@@ -58,9 +74,8 @@ pub struct AiState {
 impl AiState {
     pub fn new() -> Self {
         AiState {
-            chat_uuid: Uuid::new_v4(),
-            question_history: Vec::new(),
-            response_history: Vec::new(),
+            chat_uuid: Uuid::new_v4().to_string(),
+            chat_history: Vec::new(),
             latest_question: None,
             latest_answer: None,
         }
@@ -81,27 +96,64 @@ impl SaveAnswer for AiState {
 
 impl SaveQuestionHistory for AiState {
     fn save_history(&mut self, question: String) {
-        self.question_history
-            .push(question);
+        self.chat_history
+            .push(
+                AiMessage {
+                    role: MessageRole::User,
+                    message: question,
+                },
+            );
     }
 }
 
 impl SaveAnswerHistory for AiState {
     fn save_history(&mut self, response: String) {
-        self.response_history
-            .push(response);
+        self.chat_history
+            .push(
+                AiMessage {
+                    role: MessageRole::Assistant,
+                    message: response,
+                },
+            );
     }
 }
 
 impl QuestionHistory for AiState {
-    fn get_question_history(&self) -> &[String] {
-        &self.question_history
+    fn get_question_history(&self) -> impl Iterator<Item = &str> {
+        self.chat_history
+            .iter()
+            .filter_map(
+                |ai_message| {
+                    (ai_message.role == MessageRole::User).then_some(
+                        ai_message
+                            .message
+                            .as_str(),
+                    )
+                },
+            )
     }
 }
 
 impl AnswerHistory for AiState {
-    fn get_answer_history(&self) -> &[String] {
-        &self.response_history
+    fn get_answer_history(&self) -> impl Iterator<Item = &str> {
+        self.chat_history
+            .iter()
+            .filter_map(
+                |ai_message| {
+                    (ai_message.role == MessageRole::Assistant).then_some(
+                        ai_message
+                            .message
+                            .as_str(),
+                    )
+                },
+            )
+    }
+}
+
+impl FullHistory for AiState {
+    fn get_history(&self) -> impl Iterator<Item = &AiMessage> {
+        self.chat_history
+            .iter()
     }
 }
 
@@ -116,6 +168,25 @@ impl GetLastAnswer for AiState {
     fn get_last_answer<'a>(&'a self) -> Option<&'a str> {
         self.latest_answer
             .as_deref()
+    }
+}
+
+impl GetUuid for AiState {
+    fn get_uuid(&self) -> &str {
+        &self.chat_uuid
+    }
+}
+
+impl SetUuid for AiState {
+    fn set_uuid(&mut self, uuid: String) {
+        self.chat_uuid = uuid;
+    }
+}
+
+impl GenerateUuid for AiState {
+    fn generate_uuid(&mut self) -> &str {
+        self.chat_uuid = Uuid::new_v4().to_string();
+        &self.chat_uuid
     }
 }
 
@@ -141,7 +212,9 @@ mod saves_state {
         );
 
         assert_eq!(
-            ai_state.get_question_history(),
+            ai_state
+                .get_question_history()
+                .collect::<Vec<&str>>(),
             vec![question]
         );
     }
@@ -165,7 +238,9 @@ mod saves_state {
         );
 
         assert_eq!(
-            ai_state.get_answer_history(),
+            ai_state
+                .get_answer_history()
+                .collect::<Vec<&str>>(),
             vec![answer.to_string()]
         );
     }

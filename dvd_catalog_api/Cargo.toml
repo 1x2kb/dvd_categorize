@@ -17,3 +17,4 @@ tracing.workspace = true
 tokio.workspace = true
 database = { path = "../database" }
 dotenvy.workspace = true
+ai_chat = { path = "../ai_chat" }

@@ -6,14 +6,17 @@ use std::{
 
 use iced::{
     futures::TryFutureExt,
-    widget::{button, column, container, row, scrollable, text, text_input, Column, Container},
-    Application, Command, Theme,
+    widget::{
+        button, column, container, row, scrollable, text, text_input, Column, Container, Row,
+    },
+    Application, Command, Element, Theme,
 };
 use log::{error, info};
-use models::{Actor, AiState, Director, FullMovie};
+use models::{
+    question::AiAction, Actor, AiState, AnswerHistory, Director, FullMovie, SaveAnswer,
+    SaveAnswerHistory, SaveQuestionHistory, Uuid,
+};
 use tracing::{instrument, Level};
-
-pub use ai_chat::*;
 
 pub trait ConnectOnce {
     fn connection_string(&self) -> String;
@@ -66,8 +69,8 @@ pub enum Message {
     SaveDvd(FullMovie),
     SavedDvd(Result<FullMovie, UiError>),
     Navigation(Page),
-    SendChatMessage(String),
-    ReceiveChatMessage(Result<String, UiError>),
+    SendChatMessage(AiAction),
+    ReceiveChatMessage(Result<AiAction, UiError>),
 }
 
 impl Display for Message {
@@ -105,9 +108,9 @@ impl Display for Message {
                 f,
                 "Message::SendChatMessage"
             ),
-            Message::ReceiveChatMessage(_) => write!(
+            Message::ReceiveChatMessage(message) => write!(
                 f,
-                "Message::ReceiveChatMessage"
+                "Message::ReceiveChatMessage",
             ),
         }
     }
@@ -393,18 +396,31 @@ impl Application for App {
                         Vec::new()
                     },
                 );
-
                 info!("Loaded dvds");
+
                 self.state
                     .loading = Some(false);
                 info!("Set loading to false");
+
                 Command::perform(
                     async {},
                     |_| Message::Navigation(Page::List),
                 )
             }
             Message::SendChatMessage(ai_message) => {
-                info!("Sending message to bot {ai_message}");
+                info!(
+                    "Sending message to bot {}",
+                    ai_message.action
+                );
+
+                SaveQuestionHistory::save_history(
+                    &mut self
+                        .state
+                        .ai_state,
+                    ai_message
+                        .action
+                        .clone(),
+                );
 
                 Command::perform(
                     send_bot_message(
@@ -418,11 +434,29 @@ impl Application for App {
             }
             Message::ReceiveChatMessage(result) => {
                 match result.as_ref() {
-                    Ok(response) => info!("Response from AI {response}"),
+                    Ok(response) => info!(
+                        "Response from AI {}",
+                        &response.action
+                    ),
                     Err(e) => error!("{e}"),
                 };
 
-                let value = 77;
+                let response = result
+                    .map(|ai_action| ai_action.action)
+                    .unwrap_or_else(
+                        |_| String::from("Error occured while writing the AI, check API logs"),
+                    );
+
+                self.state
+                    .ai_state
+                    .save_answer(Some(response.to_string()));
+
+                SaveAnswerHistory::save_history(
+                    &mut self
+                        .state
+                        .ai_state,
+                    response,
+                );
 
                 Command::none()
             }
@@ -440,7 +474,12 @@ impl Application for App {
                     .movies,
             ),
             Page::NewMovie(new_movie_input) => create_movie_ui(new_movie_input),
-            Page::Chat(chat_input) => create_chat_ui(chat_input),
+            Page::Chat(chat_input) => create_chat_ui(
+                chat_input,
+                &self
+                    .state
+                    .ai_state,
+            ),
         };
 
         column![
@@ -471,7 +510,7 @@ fn create_list_ui(movies: &[FullMovie]) -> container::Container<'_, Message> {
             movie_columns
                 .into_iter()
                 .fold(
-                    Column::new().spacing(40),
+                    Column::new().spacing(45),
                     |column, movie_column| column.push(movie_column),
                 ),
         );
@@ -591,25 +630,37 @@ fn create_movie_ui(new_movie_input: &NewMovieInput) -> container::Container<'_, 
     Container::new(view)
 }
 
-fn create_chat_ui(chat_input: &ChatInput) -> container::Container<'_, Message> {
-    let column = column![
-        text_input(
-            "Bot Response",
-            &chat_input.user_input
-        ),
-        text_input(
-            "Ask a question",
-            &chat_input.user_input
-        )
-        .on_input(Message::ChatInputChanged),
-        button("Submit").on_press(
-            Message::SendChatMessage(
-                chat_input
-                    .user_input
-                    .clone()
+fn create_chat_ui<'a>(
+    chat_input: &'a ChatInput,
+    ai_state: &'a AiState,
+) -> container::Container<'a, Message> {
+    let responses: Vec<Element<'_, Message>> = ai_state
+        .get_answer_history()
+        .into_iter()
+        .map(|t| row!(text(t)).into())
+        .collect();
+
+    let column = scrollable(
+        column![
+            column(responses),
+            text_input(
+                "Ask a question",
+                &chat_input.user_input
             )
-        )
-    ];
+            .on_input(Message::ChatInputChanged),
+            button("Submit").on_press(
+                Message::SendChatMessage(
+                    AiAction {
+                        uuid: Uuid::new_v4().to_string(),
+                        action: chat_input
+                            .user_input
+                            .clone(),
+                        model: Some("mistral".to_string())
+                    }
+                )
+            )
+        ],
+    );
 
     Container::new(column)
 }
@@ -684,14 +735,14 @@ async fn insert_dvd(dvd: FullMovie, url: String) -> Result<FullMovie, UiError> {
 }
 
 #[instrument(level = Level::DEBUG)]
-async fn send_bot_message(message: String, url: String) -> Result<String, UiError> {
-    let url = format!("{url}/chat");
+async fn send_bot_message(ai_action: AiAction, url: String) -> Result<AiAction, UiError> {
+    let url = format!("{url}/ai/chat");
     reqwest::Client::new()
         .post(url)
-        .body(message)
+        .json(&ai_action)
         .send()
         .await?
-        .json::<String>()
+        .json::<AiAction>()
         .await
         .map_err(UiError::from)
 }

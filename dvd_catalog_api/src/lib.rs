@@ -1,6 +1,7 @@
-use axum::{extract::Path, Json};
+use axum::{extract::Path, response, Json};
 use axum_macros::debug_handler;
-use database::FullMovie;
+use database::{question::AiAction, FullMovie};
+use log::error;
 use tracing::instrument;
 
 #[instrument]
@@ -35,5 +36,48 @@ pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
         database::insert_full_movie(dvd)
             .await
             .ok(),
+    )
+}
+
+#[instrument]
+#[debug_handler]
+pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
+    let dvds = database::get_movies()
+        .await
+        .unwrap_or_else(|_| Vec::new());
+
+    let (uuid, question, model) = (
+        action.uuid,
+        action.action,
+        action.model,
+    );
+
+    let result = ai_chat::bot_message(
+        AiAction {
+            uuid: uuid.to_string(),
+            action: question,
+            model: model.clone(),
+        },
+        &dvds,
+    )
+    .await;
+
+    let response = match result {
+        Ok(response) => response,
+        Err(e) => {
+            error!(
+                "{:#?}",
+                e
+            );
+            "There was an error that made communication with the AI impossible.".to_string()
+        }
+    };
+
+    Json(
+        AiAction {
+            uuid,
+            action: response,
+            model,
+        },
     )
 }
