@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{extract::Path, response, Json};
 use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie};
@@ -52,13 +54,13 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
         action.model,
     );
 
-    let result = ai_chat::bot_message(
+    let result = ai_chat::ai_message(
         AiAction {
             uuid: uuid.to_string(),
             action: question,
             model: model.clone(),
         },
-        &dvds,
+        Arc::new(dvds),
     )
     .await;
 
