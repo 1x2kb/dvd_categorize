@@ -3,6 +3,7 @@ use std::{error::Error, fs::File, io::Read};
 use csv::Reader;
 use database::{Actor, Director, FullMovie};
 use dotenvy::dotenv;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,10 +31,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     for movie in movies {
         let result = database::insert_full_movie(movie).await?;
-        println!(
-            "{:#?}",
-            result
-        );
     }
 
     Ok(())
@@ -108,7 +105,6 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
                 )
                 .unwrap_or_default(),
         };
-
         movies.push(movie);
     }
 

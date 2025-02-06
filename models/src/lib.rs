@@ -1,4 +1,8 @@
+mod ai_state;
 mod chat;
+
+pub use ai_state::*;
+
 #[cfg(feature = "postgres")]
 pub mod schema;
 
