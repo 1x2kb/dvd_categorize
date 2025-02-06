@@ -10,3 +10,5 @@ testing = []
 [dependencies]
 serde.workspace = true
 diesel = { version = "^2.2.4", optional = true }
+uuid = { version = "1.12.1", features = ["v4"] }
+ollama-rs.workspace = true

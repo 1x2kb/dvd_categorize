@@ -10,3 +10,6 @@ serde = { version = "1.0.214", features = ["derive"] }
 tokio.workspace = true
 dotenvy.workspace = true
 models = { path = "../models" }
+log.workspace = true
+pretty_env_logger.workspace = true
+tracing.workspace = true
