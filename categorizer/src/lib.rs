@@ -1,20 +1,21 @@
 use std::{
     env,
     error::Error,
-    fmt::{Display, Formatter},
+    fmt::{Alignment, Display, Formatter},
 };
 
 use iced::{
+    alignment::Horizontal,
     futures::TryFutureExt,
     widget::{
         button, column, container, row, scrollable, text, text_input, Column, Container, Row,
     },
-    Application, Command, Element, Theme,
+    Application, Command, Element, Length, Theme,
 };
 use log::{error, info};
 use models::{
-    question::AiAction, Actor, AiState, AnswerHistory, Director, FullMovie, SaveAnswer,
-    SaveAnswerHistory, SaveQuestionHistory, Uuid,
+    question::AiAction, Actor, AiState, AnswerHistory, Director, FullHistory, FullMovie,
+    SaveAnswer, SaveAnswerHistory, SaveQuestionHistory, Uuid,
 };
 use tracing::{instrument, Level};
 
@@ -634,15 +635,40 @@ fn create_chat_ui<'a>(
     chat_input: &'a ChatInput,
     ai_state: &'a AiState,
 ) -> container::Container<'a, Message> {
-    let responses: Vec<Element<'_, Message>> = ai_state
-        .get_answer_history()
+    let elements: Vec<Element<'_, Message>> = ai_state
+        .get_history()
         .into_iter()
-        .map(|t| row!(text(t)).into())
+        .flat_map(
+            |t| {
+                let is_assistant = match &t.role {
+                    models::MessageRole::Assistant => true,
+                    _ => false,
+                };
+
+                let alignment = match is_assistant {
+                    true => Horizontal::Right,
+                    false => Horizontal::Left,
+                };
+
+                let role_text = match is_assistant {
+                    true => container(text("Assistant").size(20))
+                        .align_x(Horizontal::Right)
+                        .width(Length::Fill),
+                    false => container(text("You").size(20)).width(Length::Fill),
+                };
+
+                let message_text = container(text(&t.message).horizontal_alignment(alignment))
+                    .width(Length::Fill)
+                    .align_x(alignment);
+
+                vec![role_text.into(), message_text.into()]
+            },
+        )
         .collect();
 
     let column = scrollable(
         column![
-            column(responses),
+            Column::with_children(elements).spacing(10),
             text_input(
                 "Ask a question",
                 &chat_input.user_input

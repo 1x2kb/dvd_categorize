@@ -3,7 +3,10 @@ use std::{future::Future, sync::Arc};
 use log::{error, info};
 use models::{question::AiAction, FullMovie};
 use ollama_rs::{
-    generation::chat::{request::ChatMessageRequest, ChatMessage},
+    generation::{
+        chat::{request::ChatMessageRequest, ChatMessage},
+        options::GenerationOptions,
+    },
     Ollama,
 };
 
@@ -46,7 +49,6 @@ pub async fn ai_message(ai_action: AiAction, dvds: Arc<Vec<FullMovie>>) -> Resul
                 verify_message(
                     &ai_action.action,
                     &response,
-                    model.to_string(),
                 )
                 .await
             }
@@ -85,7 +87,8 @@ pub async fn bot_message(ai_action: Arc<AiAction>, dvds: &[FullMovie]) -> Result
             .map(|model| model.to_string())
             .unwrap_or_else(|| "mistral".to_string()),
         messages,
-    );
+    )
+    .options(GenerationOptions::default().num_ctx(32000));
 
     // Generate a response
     let response = ollama
@@ -107,11 +110,12 @@ pub async fn bot_message(ai_action: Arc<AiAction>, dvds: &[FullMovie]) -> Result
     )
 }
 
-async fn verify_message(question: &str, answer: &str, model: String) -> bool {
+async fn verify_message(question: &str, answer: &str) -> bool {
     let ollama = Ollama::default();
+    let model = "llama3.2".to_string();
 
     let prompt =
-        format!("You are an expert on communcatation and reasoning. Your job is to decide if the user's question was answered by the AI. Do not be overly literal, the answer given does not have to be perfect. Your job is to decide if it fits. When giving a response please respond with yes or no, and then why or why not.");
+        format!("You are an expert on communcatation and reasoning. Your job is to decide if the user's question was answered by the AI. Do not be overly literal, the answer given does not have to be perfect. When giving a response please respond with yes or no, and then why or why not.\nExample User Question: Suggest a comedy for me to watch. AI Answer: I think you would enjoy Tommy Boy, as this is a comedy from your library. Your Answer: Yes, this answers the users question because they asked for a comedy film from their library");
 
     let question_message = format!(
         "User question: {}\n\nAI Answer: {}",

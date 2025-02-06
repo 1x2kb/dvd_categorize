@@ -807,9 +807,12 @@ dependencies = [
  "csv",
  "database",
  "dotenvy",
+ "log",
  "models",
+ "pretty_env_logger",
  "serde",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

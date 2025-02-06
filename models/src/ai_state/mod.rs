@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use ollama_rs::generation::chat::MessageRole;
+pub use ollama_rs::generation::chat::MessageRole;
 use question::AiMessage;
 use serde::{Deserialize, Serialize};
 pub use uuid::Uuid;
