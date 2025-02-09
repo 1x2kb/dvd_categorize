@@ -1,7 +1,9 @@
+mod prompts;
+
 use std::{future::Future, sync::Arc};
 
 use log::{error, info};
-use models::{question::AiAction, FullMovie};
+use models::{dvd_filters::DvdFilters, question::AiAction, FullMovie};
 use ollama_rs::{
     generation::{
         chat::{request::ChatMessageRequest, ChatMessage},
@@ -9,6 +11,7 @@ use ollama_rs::{
     },
     Ollama,
 };
+use tracing::instrument;
 
 pub trait GenerateMessage {
     fn generate_message(prompt: String) -> impl Future<Output = String>;
@@ -23,11 +26,13 @@ pub struct OllamaClient {
     pub port: String,
 }
 
+#[instrument]
 pub async fn ai_message(ai_action: AiAction, dvds: Arc<Vec<FullMovie>>) -> Result<String, String> {
     let mut count = 0u8;
 
     let ai_action = Arc::new(ai_action);
     let mut verification = false;
+
     let model = ai_action
         .model
         .as_ref()
@@ -63,7 +68,52 @@ pub async fn ai_message(ai_action: AiAction, dvds: Arc<Vec<FullMovie>>) -> Resul
     Ok(response)
 }
 
-pub async fn bot_message(ai_action: Arc<AiAction>, dvds: &[FullMovie]) -> Result<String, String> {
+#[instrument]
+pub async fn find_related_keys(
+    question: impl AsRef<str> + std::fmt::Debug,
+) -> Result<DvdFilters, String> {
+    let ollama = Ollama::default();
+
+    let question_message = format!(
+        "User question: {}",
+        question.as_ref()
+    );
+
+    let messages = vec![
+        ChatMessage::system(prompts::DATA_POINTS_PROMPT.to_string()),
+        ChatMessage::user(question_message),
+    ];
+
+    let chat_request = ChatMessageRequest::new(
+        "llama3.2".to_string(),
+        messages,
+    );
+
+    let response = ollama
+        .send_chat_messages(chat_request)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    info!(
+        "Response from datapoints AI {}",
+        response
+            .message
+            .content
+            .as_str()
+    );
+
+    serde_json::from_str(
+        extract_enclosed_content(
+            response
+                .message
+                .content
+                .as_str(),
+        ),
+    )
+    .map_err(|e| e.to_string())
+}
+
+async fn bot_message(ai_action: Arc<AiAction>, dvds: &[FullMovie]) -> Result<String, String> {
     // Initialize Ollama (default connects to localhost:11434)
     let ollama = Ollama::default();
 
@@ -110,7 +160,11 @@ pub async fn bot_message(ai_action: Arc<AiAction>, dvds: &[FullMovie]) -> Result
     )
 }
 
-async fn verify_message(question: &str, answer: &str) -> bool {
+// #[instrument]
+async fn verify_message<A>(question: A, answer: A) -> bool
+where
+    A: AsRef<str> + std::fmt::Debug,
+{
     let ollama = Ollama::default();
     let model = "llama3.2".to_string();
 
@@ -119,7 +173,8 @@ async fn verify_message(question: &str, answer: &str) -> bool {
 
     let question_message = format!(
         "User question: {}\n\nAI Answer: {}",
-        question, answer
+        question.as_ref(),
+        answer.as_ref()
     );
 
     let verification_response = ollama
@@ -163,7 +218,16 @@ async fn verify_message(question: &str, answer: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub async fn save_message() {}
+fn extract_enclosed_content(s: &str) -> &str {
+    if let Some(start) = s.find('{') {
+        if let Some(end) = s.rfind('}') {
+            if end >= start {
+                return &s[start..=end];
+            }
+        }
+    }
+    s
+}
 
 #[cfg(test)]
 mod tests {}

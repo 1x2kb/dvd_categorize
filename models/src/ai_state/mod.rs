@@ -1,3 +1,5 @@
+pub mod dvd_filters;
+
 use std::error::Error;
 
 pub use ollama_rs::generation::chat::MessageRole;

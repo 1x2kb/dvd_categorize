@@ -1,10 +1,13 @@
+use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::fmt::Display;
 
+use diesel::dsl::{any, exists}; // Function-style exists for subqueries
 use diesel::prelude::*;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use log::debug;
+use models::dvd_filters::DvdFilters;
 pub use models::{schema::*, *};
 
 #[cfg(feature = "testing")]
@@ -125,6 +128,89 @@ pub async fn get_movie(id: i32) -> Result<FullMovie, DatabaseError> {
     )
 }
 
+pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, DatabaseError> {
+    let mut connection = get_database_connection()
+        .await
+        .map_err(DatabaseError::from)?;
+
+    // Early return for empty input
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Batch get movies and directors
+    let movies_with_directors = schema::movie::table
+        .filter(schema::movie::id.eq_any(&ids))
+        .left_join(schema::director::table)
+        .load::<(
+            Movie,
+            Option<Director>,
+        )>(&mut connection)
+        .await?;
+
+    // Extract movie IDs for batch actor/genre queries
+    let movie_ids: Vec<i32> = movies_with_directors
+        .iter()
+        .map(|(movie, _)| movie.id)
+        .collect();
+
+    // Batch get all actors for all movies
+    let all_actors = schema::movie_actor::table
+        .filter(schema::movie_actor::movie_id.eq_any(&movie_ids))
+        .inner_join(schema::actor::table)
+        .load::<(
+            MovieActor,
+            Actor,
+        )>(&mut connection)
+        .await?;
+
+    // Batch get all genres for all movies
+    let all_genres = schema::movie_genre::table
+        .filter(schema::movie_genre::movie_id.eq_any(&movie_ids))
+        .load::<MovieGenre>(&mut connection)
+        .await?;
+
+    // Create lookup maps
+    let mut actors_map: HashMap<i32, Vec<Actor>> = HashMap::new();
+    for (ma, actor) in all_actors {
+        actors_map
+            .entry(ma.movie_id)
+            .or_default()
+            .push(actor);
+    }
+
+    let mut genres_map: HashMap<i32, Vec<String>> = HashMap::new();
+    for mg in all_genres {
+        genres_map
+            .entry(mg.movie_id)
+            .or_default()
+            .push(mg.genre);
+    }
+
+    // Assemble final results
+    let results = movies_with_directors
+        .into_iter()
+        .map(
+            |(movie, director)| FullMovie {
+                id: movie.id,
+                name: movie.name,
+                director,
+                description: movie.description,
+                actors: actors_map
+                    .get(&movie.id)
+                    .cloned()
+                    .unwrap_or_default(),
+                genres: genres_map
+                    .get(&movie.id)
+                    .cloned()
+                    .unwrap_or_default(),
+            },
+        )
+        .collect();
+
+    Ok(results)
+}
+
 pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, DatabaseError> {
     let mut conn = get_database_connection()
         .await
@@ -223,4 +309,68 @@ pub async fn genres_for_movie(movie: &Movie, connection: &mut AsyncPgConnection)
         .load::<String>(connection)
         .await
         .unwrap_or_else(|_| Vec::new())
+}
+
+pub async fn run_dvd_filters(filters: DvdFilters) -> Result<Vec<i32>, DatabaseError> {
+    // Base query with joins needed for nullable director
+    let mut query = movie::table
+        .left_join(director::table)
+        .into_boxed();
+
+    // Apply filters conditionally
+    if let Some(names) = filters.movie_names {
+        query = query.filter(movie::name.eq_any(names));
+    }
+
+    if let Some(directors) = filters.directors {
+        query = query.filter(director::name.eq_any(directors));
+    }
+
+    // Actor filter using EXISTS subquery
+    if let Some(actors) = filters.actors {
+        query = query.filter(
+            exists(
+                movie_actor::table
+                    .inner_join(actor::table)
+                    .filter(movie_actor::movie_id.eq(movie::id))
+                    .filter(actor::name.eq_any(actors)),
+            ),
+        );
+    }
+
+    // Genre filter using EXISTS subquery
+    if let Some(genres) = filters.genres {
+        query = query.filter(
+            exists(
+                movie_genre::table
+                    .filter(movie_genre::movie_id.eq(movie::id))
+                    .filter(movie_genre::genre.eq_any(genres)),
+            ),
+        );
+    }
+
+    if let Some(terms) = filters.plot_terms {
+        let search_patterns = terms
+            .iter()
+            .map(
+                |t| {
+                    format!(
+                        "%{}%",
+                        t
+                    )
+                },
+            )
+            .collect::<Vec<_>>();
+
+        query = query.filter(movie::description.ilike(any(search_patterns)));
+    }
+
+    let mut conn = get_database_connection().await?;
+
+    query
+        .select(movie::id)
+        .distinct()
+        .get_results(&mut conn)
+        .await
+        .map_err(DatabaseError::from)
 }
