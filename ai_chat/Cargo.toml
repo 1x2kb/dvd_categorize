@@ -8,6 +8,6 @@ ollama-rs.workspace = true
 models = { path = "../models" }
 serde.workspace = true
 serde_json.workspace = true
-redis = "0.28.2"
 log.workspace = true
 pretty_env_logger.workspace = true
+tracing.workspace = true
