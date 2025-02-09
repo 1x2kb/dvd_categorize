@@ -69,9 +69,9 @@ dependencies = [
  "models",
  "ollama-rs",
  "pretty_env_logger",
- "redis",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -1050,6 +1050,7 @@ dependencies = [
  "dotenvy",
  "log",
  "pretty_env_logger",
+ "redis",
  "tokio",
  "tracing",
 ]
