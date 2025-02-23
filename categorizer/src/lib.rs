@@ -7,15 +7,13 @@ use std::{
 use iced::{
     alignment::Horizontal,
     futures::TryFutureExt,
-    widget::{
-        button, column, container, row, scrollable, text, text_input, Column, Container,
-    },
+    widget::{button, column, container, row, scrollable, text, text_input, Column, Container},
     Application, Command, Element, Length, Theme,
 };
 use log::{error, info};
 use models::{
-    question::AiAction, Actor, AiState, Director, FullHistory, FullMovie,
-    SaveAnswer, SaveAnswerHistory, SaveQuestionHistory, Uuid,
+    question::AiAction, Actor, AiState, Director, FullHistory, FullMovie, SaveAnswer,
+    SaveAnswerHistory, SaveQuestionHistory, Uuid,
 };
 use tracing::{instrument, Level};
 
