@@ -1,4 +1,4 @@
-mod ai_state;
+pub mod ai_state;
 mod chat;
 
 pub use ai_state::*;

@@ -25,7 +25,7 @@ pub trait Chat {
 #[derive(Debug)]
 pub struct OllamaClient {
     pub ollama_client: Ollama,
-    ai_action: AiAction,
+    pub ai_action: AiAction,
 }
 
 #[instrument(level = Level::DEBUG)]
