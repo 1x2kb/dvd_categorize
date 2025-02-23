@@ -2,7 +2,7 @@ mod prompts;
 
 use std::{future::Future, sync::Arc};
 
-use log::{error, info};
+use log::info;
 use models::{dvd_filters::DvdFilters, question::AiAction, FullMovie};
 use ollama_rs::{
     generation::{
@@ -11,7 +11,8 @@ use ollama_rs::{
     },
     Ollama,
 };
-use tracing::instrument;
+use prompts::USER_LIBRARY_PROMPT;
+use tracing::{instrument, Level};
 
 pub trait GenerateMessage {
     fn generate_message(prompt: String) -> impl Future<Output = String>;
@@ -21,54 +22,30 @@ pub trait Chat {
     fn chat(prompt: String) -> impl Future<Output = String>;
 }
 
+#[derive(Debug)]
 pub struct OllamaClient {
-    pub host: String,
-    pub port: String,
+    pub ollama_client: Ollama,
+    ai_action: AiAction,
 }
 
-#[instrument]
-pub async fn ai_message(ai_action: AiAction, dvds: Arc<Vec<FullMovie>>) -> Result<String, String> {
-    let mut count = 0u8;
+#[instrument(level = Level::DEBUG)]
+pub async fn ai_message(
+    dvds: Arc<Vec<FullMovie>>,
+    ollama: Arc<OllamaClient>,
+) -> Result<String, String> {
+    let ai_response = bot_message(
+        &dvds,
+        Arc::clone(&ollama),
+    )
+    .await
+    .unwrap_or_else(
+        |_| String::from("There was a problem with creating an ai response to the question"),
+    );
 
-    let ai_action = Arc::new(ai_action);
-    let mut verification = false;
-
-    let model = ai_action
-        .model
-        .as_ref()
-        .map(|model| model.to_string())
-        .unwrap_or_else(|| "mistral".to_string());
-
-    let mut response = String::new();
-
-    while !verification && count < 3 {
-        let ai_response = bot_message(
-            Arc::clone(&ai_action),
-            &dvds,
-        )
-        .await;
-
-        verification = match ai_response {
-            Ok(answer) => {
-                response = answer;
-                verify_message(
-                    &ai_action.action,
-                    &response,
-                )
-                .await
-            }
-            Err(e) => {
-                error!("{e}");
-                count += 1;
-                false
-            }
-        };
-    }
-
-    Ok(response)
+    Ok(ai_response)
 }
 
-#[instrument]
+#[instrument(level = Level::DEBUG)]
 pub async fn find_related_keys(
     question: impl AsRef<str> + std::fmt::Debug,
 ) -> Result<DvdFilters, String> {
@@ -113,25 +90,26 @@ pub async fn find_related_keys(
     .map_err(|e| e.to_string())
 }
 
-async fn bot_message(ai_action: Arc<AiAction>, dvds: &[FullMovie]) -> Result<String, String> {
-    // Initialize Ollama (default connects to localhost:11434)
-    let ollama = Ollama::default();
-
-    let prompt = format!(
-        "You are a movie expert, you may answer questions only when using information from the users library. The following list of movies and shows represent the users personal library. Use this list to answer questions on recommendations or how many movies do I own. \n\n{}\n\n It is against the law to lie, and saying the user owns dvds that they do not is a lie. I do not want you to go to prison.", serde_json::to_string(&dvds).unwrap_or_else(|_| "".to_string())
+async fn bot_message(dvds: &[FullMovie], ollama: Arc<OllamaClient>) -> Result<String, String> {
+    let prompt = USER_LIBRARY_PROMPT.replace(
+        "{USER_MOVIE_LIBRARY}",
+        &serde_json::to_string(&dvds).unwrap_or_else(|_| "".to_string()),
     );
 
     let messages = vec![
         ChatMessage::system(prompt),
         ChatMessage::user(
-            ai_action
+            ollama
+                .ai_action
                 .action
                 .to_string(),
         ),
     ];
 
+    // Create the request object, controls the AIs options and passes the message.
     let chat_request = ChatMessageRequest::new(
-        ai_action
+        ollama
+            .ai_action
             .model
             .as_ref()
             .map(|model| model.to_string())
@@ -142,6 +120,7 @@ async fn bot_message(ai_action: Arc<AiAction>, dvds: &[FullMovie]) -> Result<Str
 
     // Generate a response
     let response = ollama
+        .ollama_client
         .send_chat_messages(chat_request)
         .await
         .map_err(|e| e.to_string())?;
@@ -160,10 +139,10 @@ async fn bot_message(ai_action: Arc<AiAction>, dvds: &[FullMovie]) -> Result<Str
     )
 }
 
-// #[instrument]
+#[instrument(level = Level::DEBUG)]
 async fn verify_message<A>(question: A, answer: A) -> bool
 where
-    A: AsRef<str> + std::fmt::Debug,
+    A: AsRef<str> + std::fmt::Debug + Send + Sync,
 {
     let ollama = Ollama::default();
     let model = "llama3.2".to_string();

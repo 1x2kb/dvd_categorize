@@ -19,3 +19,4 @@ database = { path = "../database" }
 dotenvy.workspace = true
 ai_chat = { path = "../ai_chat" }
 redis = "0.28.2"
+ollama-rs.workspace = true
