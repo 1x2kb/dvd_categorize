@@ -50,11 +50,11 @@ pub trait FullHistory {
 }
 
 pub trait GetLastQuestion {
-    fn get_last_question<'a>(&'a self) -> Option<&'a str>;
+    fn get_last_question(&self) -> Option<&str>;
 }
 
 pub trait GetLastAnswer {
-    fn get_last_answer<'a>(&'a self) -> Option<&'a str>;
+    fn get_last_answer(&self) -> Option<&str>;
 }
 
 pub trait SetUuid {
@@ -71,6 +71,12 @@ pub struct AiState {
     chat_history: Vec<AiMessage>,
     latest_question: Option<String>,
     latest_answer: Option<String>,
+}
+
+impl Default for AiState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AiState {
@@ -160,14 +166,14 @@ impl FullHistory for AiState {
 }
 
 impl GetLastQuestion for AiState {
-    fn get_last_question<'a>(&'a self) -> Option<&'a str> {
+    fn get_last_question(&self) -> Option<&str> {
         self.latest_question
             .as_deref()
     }
 }
 
 impl GetLastAnswer for AiState {
-    fn get_last_answer<'a>(&'a self) -> Option<&'a str> {
+    fn get_last_answer(&self) -> Option<&str> {
         self.latest_answer
             .as_deref()
     }

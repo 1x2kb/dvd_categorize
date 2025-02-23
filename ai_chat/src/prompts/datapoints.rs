@@ -1,4 +1,4 @@
-pub const DATA_POINTS_PROMPT: &'static str = r#"
+pub const DATA_POINTS_PROMPT: &str = r#"
 Analyze the user's movie-related question and extract filter criteria matching this database schema:
 
 **Target Filters to Identify:**

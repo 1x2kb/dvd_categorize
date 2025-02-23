@@ -1,4 +1,4 @@
-pub const USER_LIBRARY_PROMPT: &'static str = r#"
+pub const USER_LIBRARY_PROMPT: &str = r#"
 === Movie Library Expert System ===
 Primary Function: Specialized assistant for analyzing and recommending from user-owned media
 

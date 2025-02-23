@@ -1,20 +1,20 @@
 use std::{
     env,
     error::Error,
-    fmt::{Alignment, Display, Formatter},
+    fmt::{Display, Formatter},
 };
 
 use iced::{
     alignment::Horizontal,
     futures::TryFutureExt,
     widget::{
-        button, column, container, row, scrollable, text, text_input, Column, Container, Row,
+        button, column, container, row, scrollable, text, text_input, Column, Container,
     },
     Application, Command, Element, Length, Theme,
 };
 use log::{error, info};
 use models::{
-    question::AiAction, Actor, AiState, AnswerHistory, Director, FullHistory, FullMovie,
+    question::AiAction, Actor, AiState, Director, FullHistory, FullMovie,
     SaveAnswer, SaveAnswerHistory, SaveQuestionHistory, Uuid,
 };
 use tracing::{instrument, Level};
@@ -430,7 +430,7 @@ impl Application for App {
                             .api_properties
                             .connection_string(),
                     ),
-                    |result| Message::ReceiveChatMessage(result), // TODO: Handle response
+                    Message::ReceiveChatMessage, // TODO: Handle response
                 )
             }
             Message::ReceiveChatMessage(result) => {
@@ -637,7 +637,6 @@ fn create_chat_ui<'a>(
 ) -> container::Container<'a, Message> {
     let elements: Vec<Element<'_, Message>> = ai_state
         .get_history()
-        .into_iter()
         .flat_map(
             |t| {
                 let is_assistant = match &t.role {

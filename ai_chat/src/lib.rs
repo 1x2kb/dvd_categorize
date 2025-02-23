@@ -148,7 +148,7 @@ where
     let model = "llama3.2".to_string();
 
     let prompt =
-        format!("You are an expert on communcatation and reasoning. Your job is to decide if the user's question was answered by the AI. Do not be overly literal, the answer given does not have to be perfect. When giving a response please respond with yes or no, and then why or why not.\nExample User Question: Suggest a comedy for me to watch. AI Answer: I think you would enjoy Tommy Boy, as this is a comedy from your library. Your Answer: Yes, this answers the users question because they asked for a comedy film from their library");
+        "You are an expert on communcatation and reasoning. Your job is to decide if the user's question was answered by the AI. Do not be overly literal, the answer given does not have to be perfect. When giving a response please respond with yes or no, and then why or why not.\nExample User Question: Suggest a comedy for me to watch. AI Answer: I think you would enjoy Tommy Boy, as this is a comedy from your library. Your Answer: Yes, this answers the users question because they asked for a comedy film from their library".to_string();
 
     let question_message = format!(
         "User question: {}\n\nAI Answer: {}",
