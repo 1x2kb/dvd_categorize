@@ -8,6 +8,7 @@ use diesel::prelude::*;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use log::debug;
 use models::dvd_filters::DvdFilters;
+use models::schema::movie::embedding;
 pub use models::{schema::*, *};
 
 #[cfg(feature = "testing")]
@@ -237,10 +238,56 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
         None => None,
     };
 
+    let actors: String = full_movie
+        .actors
+        .iter()
+        .map(
+            |actor| {
+                actor
+                    .name
+                    .as_str()
+            },
+        )
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let genres: String = full_movie
+        .genres
+        .iter()
+        .map(|genre| genre.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let embedding = format!(
+        "{}-{} and has genres {} with actors {} and directed by {}",
+        &full_movie.name,
+        &full_movie
+            .description
+            .as_ref()
+            .unwrap_or(&"".to_string()),
+        genres,
+        actors,
+        full_movie
+            .director
+            .as_ref()
+            .map(
+                |director| director
+                    .name
+                    .as_str()
+            )
+            .unwrap_or("")
+    );
+
+    let model = SentenceEmbeddingsBuilder::remote(SentenceEmbeddingsModelType::AllMiniLmL6V2)
+        .create_model()?;
+
+    let embedding: Vec<f32> = model.encode(embedding)?;
+
     let new_movie = NewMovie {
         name: full_movie.name,
         director_id,
         description: full_movie.description,
+        embedding,
     };
 
     let movie_id = diesel::insert_into(schema::movie::table)
