@@ -7,6 +7,7 @@ use models::{dvd_filters::DvdFilters, question::AiAction, FullMovie};
 use ollama_rs::{
     generation::{
         chat::{request::ChatMessageRequest, ChatMessage},
+        embeddings::request::GenerateEmbeddingsRequest,
         options::GenerationOptions,
     },
     Ollama,
@@ -89,6 +90,8 @@ pub async fn find_related_keys(
     )
     .map_err(|e| e.to_string())
 }
+
+pub async fn bot_message_with_vector() {}
 
 async fn bot_message(dvds: &[FullMovie], ollama: Arc<OllamaClient>) -> Result<String, String> {
     let prompt = USER_LIBRARY_PROMPT.replace(
@@ -195,6 +198,26 @@ where
             },
         )
         .unwrap_or(false)
+}
+
+#[instrument(level = Level::INFO)]
+pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::OllamaError> {
+    let ollama = Ollama::default();
+
+    let request = GenerateEmbeddingsRequest::new(
+        "nomic-embed-text".to_string(),
+        text.into(),
+    );
+
+    let response = ollama
+        .generate_embeddings(request)
+        .await?
+        .embeddings
+        .into_iter()
+        .flatten()
+        .collect();
+
+    Ok(response)
 }
 
 fn extract_enclosed_content(s: &str) -> &str {
