@@ -54,7 +54,7 @@ diesel::table! {
     movie_genre (id) {
         id -> Int4,
         movie_id -> Int4,
-        #[max_length = 15]
+        #[max_length = 30]
         genre -> Varchar,
     }
 }
