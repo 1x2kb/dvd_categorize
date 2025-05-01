@@ -6,7 +6,7 @@ members = [
     "csv_reader",
     "database",
     "dvd_catalog_api",
-    "models"
+    "models",
 ]
 
 resolver = "2"

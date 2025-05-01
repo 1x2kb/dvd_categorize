@@ -678,7 +678,7 @@ fn create_chat_ui<'a>(
                         action: chat_input
                             .user_input
                             .clone(),
-                        model: Some("mistral".to_string())
+                        model: Some("llama3.2".to_string())
                     }
                 )
             )

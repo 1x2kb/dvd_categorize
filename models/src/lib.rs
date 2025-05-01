@@ -2,6 +2,7 @@ pub mod ai_state;
 mod chat;
 
 pub use ai_state::*;
+use pgvector::Vector;
 
 #[cfg(feature = "postgres")]
 pub mod schema;
@@ -74,6 +75,7 @@ pub struct Movie {
     pub name: String,
     pub director_id: Option<i32>,
     pub description: Option<String>,
+    pub embedding: Option<Vector>,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::movie, check_for_backend(diesel::pg::Pg)))]
@@ -82,6 +84,7 @@ pub struct NewMovie {
     pub name: String,
     pub director_id: Option<i32>,
     pub description: Option<String>,
+    pub embedding: Option<Vector>,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable, Identifiable, Queryable), diesel(table_name = schema::movie_actor, check_for_backend(diesel::pg::Pg)))]
