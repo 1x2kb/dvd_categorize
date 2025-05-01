@@ -4,7 +4,7 @@ use ai_chat::OllamaClient;
 use axum::{extract::Path, Json};
 use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie};
-use log::error;
+use log::{debug, error, info};
 use ollama_rs::Ollama;
 use tracing::instrument;
 
@@ -56,18 +56,35 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
         action.model,
     );
 
-    let movie_ids = match ai_chat::find_related_keys(question.as_str()).await {
-        Ok(dvd_filters) => database::run_dvd_filters(dvd_filters)
-            .await
-            .ok()
-            .filter(|movies| !movies.is_empty()),
-        Err(e) => {
-            error!(
-                "{:#?}",
-                e
-            );
-            None
-        }
+    // Don't delete. should be extracted into another option for the user to select. Vector search, key matching
+    // let movie_ids = match ai_chat::find_related_keys(question.as_str()).await {
+    //     Ok(dvd_filters) => database::run_dvd_filters(dvd_filters)
+    //         .await
+    //         .ok()
+    //         .filter(|movies| !movies.is_empty()),
+    //     Err(e) => {
+    //         error!(
+    //             "{:#?}",
+    //             e
+    //         );
+    //         None
+    //     }
+    // };
+
+    info!(
+        "Getting embeddings for user query {}",
+        &question
+    );
+    let movie_ids = match ai_chat::get_embedding(&question)
+        .await
+        .ok()
+    {
+        Some(embedding) => database::search_movies(
+            embedding, 15,
+        )
+        .await
+        .ok(),
+        None => None,
     };
 
     let full_movies = if let Some(movie_ids) = movie_ids {
@@ -77,6 +94,11 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
     } else {
         dvds
     }; // For now fall back to all dvds
+
+    info!(
+        "Found {} matching movies",
+        full_movies.len()
+    );
 
     let result = ai_chat::ai_message(
         Arc::new(full_movies),

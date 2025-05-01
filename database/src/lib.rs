@@ -6,9 +6,10 @@ use std::fmt::Display;
 use diesel::dsl::{any, exists}; // Function-style exists for subqueries
 use diesel::prelude::*;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use log::debug;
+use log::{debug, error};
 use models::dvd_filters::DvdFilters;
 pub use models::{schema::*, *};
+use pgvector::{Vector, VectorExpressionMethods};
 
 #[cfg(feature = "testing")]
 pub trait Random {
@@ -66,7 +67,6 @@ pub async fn get_movies() -> Result<Vec<FullMovie>, DatabaseError> {
         .map_err(DatabaseError::from)?;
 
     let mut full_movies = Vec::new();
-
     for (movie, director) in movies {
         let actors = MovieActor::belonging_to(&movie)
             .inner_join(schema::actor::table)
@@ -216,6 +216,46 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
         .await
         .map_err(DatabaseError::from)?;
 
+    let actors: String = full_movie
+        .actors
+        .iter()
+        .map(
+            |actor| {
+                actor
+                    .name
+                    .as_str()
+            },
+        )
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let genres: String = full_movie
+        .genres
+        .iter()
+        .map(|genre| genre.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let embedding = format!(
+        "{}-{} and has genres {} with actors {} and directed by {}",
+        &full_movie.name,
+        &full_movie
+            .description
+            .as_ref()
+            .unwrap_or(&"".to_string()),
+        genres,
+        actors,
+        full_movie
+            .director
+            .as_ref()
+            .map(
+                |director| director
+                    .name
+                    .as_str()
+            )
+            .unwrap_or("")
+    );
+
     // Director is optional, insert or select id for director name.
     let director_id: Option<i32> = match full_movie.director {
         Some(director) => {
@@ -237,10 +277,16 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
         None => None,
     };
 
+    let embedding = ai_chat::get_embedding(&embedding)
+        .await
+        .map(|em| Vector::from(em))
+        .ok();
+
     let new_movie = NewMovie {
         name: full_movie.name,
         director_id,
         description: full_movie.description,
+        embedding,
     };
 
     let movie_id = diesel::insert_into(schema::movie::table)
@@ -371,6 +417,19 @@ pub async fn run_dvd_filters(filters: DvdFilters) -> Result<Vec<i32>, DatabaseEr
         .select(movie::id)
         .distinct()
         .get_results(&mut conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
+pub async fn search_movies(embedding: Vec<f32>, limit: i64) -> Result<Vec<i32>, DatabaseError> {
+    let mut conn = get_database_connection().await?;
+
+    movie::table
+        .select(movie::id)
+        .filter(movie::embedding.is_not_null())
+        .order(movie::embedding.cosine_distance(Vector::from(embedding)))
+        .limit(limit)
+        .load::<i32>(&mut conn)
         .await
         .map_err(DatabaseError::from)
 }

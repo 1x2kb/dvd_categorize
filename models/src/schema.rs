@@ -1,6 +1,9 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use pgvector::sql_types::*;
+
     actor (id) {
         id -> Int4,
         #[max_length = 255]
@@ -9,6 +12,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use pgvector::sql_types::*;
+
     director (id) {
         id -> Int4,
         #[max_length = 100]
@@ -17,16 +23,23 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use pgvector::sql_types::*;
+
     movie (id) {
         id -> Int4,
         #[max_length = 100]
         name -> Varchar,
         director_id -> Nullable<Int4>,
         description -> Nullable<Text>,
+        embedding -> Nullable<Vector>,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use pgvector::sql_types::*;
+
     movie_actor (id) {
         id -> Int4,
         movie_id -> Int4,
@@ -35,10 +48,13 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use pgvector::sql_types::*;
+
     movie_genre (id) {
         id -> Int4,
         movie_id -> Int4,
-        #[max_length = 15]
+        #[max_length = 30]
         genre -> Varchar,
     }
 }

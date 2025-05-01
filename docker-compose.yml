@@ -2,21 +2,49 @@ version: "3.8"
 
 services:
   postgres:
-    image: postgres:15
+    image: pgvector/pgvector:pg17 # Official image with extension
     environment:
-      - POSTGRES_USER=app_user
-      - POSTGRES_PASSWORD=strongpassword
-      - POSTGRES_DB=app_db
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: strongpassword
+      POSTGRES_DB: app_db
     ports:
       - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app_user -d app_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
+      - pgdata:/var/lib/postgresql/data
+      - ./postgresql/:/docker-entrypoint-initdb.d/ # Directory mount
+
+  ollama:
+    image: ollama/ollama:rocm
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama # Persistent storage for models
+    devices:
+      - /dev/kfd # AMD compute device
+      - /dev/dri/renderD128 # First AMD GPU
+    group_add:
+      - video # Required for GPU access
+    security_opt:
+      - seccomp:unconfined # Needed for memory mapping
+    cap_add:
+      - SYS_PTRACE # Required for ROCm
+
+  # postgres:
+  #   image: postgres:15
+  #   environment:
+  #     - POSTGRES_USER=app_user
+  #     - POSTGRES_PASSWORD=strongpassword
+  #     - POSTGRES_DB=app_db
+  #   ports:
+  #     - "5433:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U app_user -d app_db"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   restart: unless-stopped
 
   redis:
     image: redis:alpine
@@ -29,6 +57,9 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  pgdata:
+  ollama_data:
+    external: true
 
   # app:
   #   build: .
