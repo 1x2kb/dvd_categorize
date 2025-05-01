@@ -6,10 +6,10 @@ use std::fmt::Display;
 use diesel::dsl::{any, exists}; // Function-style exists for subqueries
 use diesel::prelude::*;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use log::debug;
+use log::{debug, error};
 use models::dvd_filters::DvdFilters;
-use models::schema::movie::embedding;
 pub use models::{schema::*, *};
+use pgvector::{Vector, VectorExpressionMethods};
 
 #[cfg(feature = "testing")]
 pub trait Random {
@@ -67,7 +67,6 @@ pub async fn get_movies() -> Result<Vec<FullMovie>, DatabaseError> {
         .map_err(DatabaseError::from)?;
 
     let mut full_movies = Vec::new();
-
     for (movie, director) in movies {
         let actors = MovieActor::belonging_to(&movie)
             .inner_join(schema::actor::table)
@@ -217,27 +216,6 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
         .await
         .map_err(DatabaseError::from)?;
 
-    // Director is optional, insert or select id for director name.
-    let director_id: Option<i32> = match full_movie.director {
-        Some(director) => {
-            let new_director = NewDirector {
-                name: director.name,
-            };
-
-            let director_id: i32 = diesel::insert_into(schema::director::table)
-                .values(&new_director)
-                .on_conflict(schema::director::name)
-                .do_update()
-                .set(schema::director::id.eq(schema::director::id))
-                .returning(schema::director::id)
-                .get_result(&mut conn)
-                .await?;
-
-            Some(director_id)
-        }
-        None => None,
-    };
-
     let actors: String = full_movie
         .actors
         .iter()
@@ -278,10 +256,31 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
             .unwrap_or("")
     );
 
-    let model = SentenceEmbeddingsBuilder::remote(SentenceEmbeddingsModelType::AllMiniLmL6V2)
-        .create_model()?;
+    // Director is optional, insert or select id for director name.
+    let director_id: Option<i32> = match full_movie.director {
+        Some(director) => {
+            let new_director = NewDirector {
+                name: director.name,
+            };
 
-    let embedding: Vec<f32> = model.encode(embedding)?;
+            let director_id: i32 = diesel::insert_into(schema::director::table)
+                .values(&new_director)
+                .on_conflict(schema::director::name)
+                .do_update()
+                .set(schema::director::id.eq(schema::director::id))
+                .returning(schema::director::id)
+                .get_result(&mut conn)
+                .await?;
+
+            Some(director_id)
+        }
+        None => None,
+    };
+
+    let embedding = ai_chat::get_embedding(&embedding)
+        .await
+        .map(|em| Vector::from(em))
+        .ok();
 
     let new_movie = NewMovie {
         name: full_movie.name,
@@ -418,6 +417,19 @@ pub async fn run_dvd_filters(filters: DvdFilters) -> Result<Vec<i32>, DatabaseEr
         .select(movie::id)
         .distinct()
         .get_results(&mut conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
+pub async fn search_movies(embedding: Vec<f32>, limit: i64) -> Result<Vec<i32>, DatabaseError> {
+    let mut conn = get_database_connection().await?;
+
+    movie::table
+        .select(movie::id)
+        .filter(movie::embedding.is_not_null())
+        .order(movie::embedding.cosine_distance(Vector::from(embedding)))
+        .limit(limit)
+        .load::<i32>(&mut conn)
         .await
         .map_err(DatabaseError::from)
 }
