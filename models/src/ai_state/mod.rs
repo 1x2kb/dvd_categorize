@@ -2,10 +2,10 @@ pub mod dvd_filters;
 
 use std::error::Error;
 
+#[cfg(feature = "ai")]
 pub use ollama_rs::generation::chat::MessageRole;
 use question::AiMessage;
 use serde::{Deserialize, Serialize};
-pub use uuid::Uuid;
 
 pub mod question;
 
@@ -82,7 +82,7 @@ impl Default for AiState {
 impl AiState {
     pub fn new() -> Self {
         AiState {
-            chat_uuid: Uuid::new_v4().to_string(),
+            chat_uuid: "7".to_string(),
             chat_history: Vec::new(),
             latest_question: None,
             latest_answer: None,
@@ -193,7 +193,7 @@ impl SetUuid for AiState {
 
 impl GenerateUuid for AiState {
     fn generate_uuid(&mut self) -> &str {
-        self.chat_uuid = Uuid::new_v4().to_string();
+        self.chat_uuid = "7".to_string();
         &self.chat_uuid
     }
 }

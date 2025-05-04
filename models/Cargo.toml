@@ -6,10 +6,10 @@ edition = "2021"
 [features]
 postgres = ["diesel", "pgvector"]
 testing = []
+ai = ["ollama-rs"]
 
 [dependencies]
 serde.workspace = true
 diesel = { version = "^2.2.4", optional = true }
 pgvector = { version = "0.4.0", features = ["diesel"], optional = true }
-uuid = { version = "1.12.1", features = ["v4"] }
-ollama-rs.workspace = true
+ollama-rs = { workspace = true, optional = true }
