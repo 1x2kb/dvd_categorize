@@ -1,7 +1,10 @@
+#[cfg(feature = "ai")]
 pub mod ai_state;
 mod chat;
 
+#[cfg(feature = "ai")]
 pub use ai_state::*;
+#[cfg(feature = "postgres")]
 use pgvector::Vector;
 
 #[cfg(feature = "postgres")]
@@ -15,6 +18,9 @@ use rand::{thread_rng, Rng};
 #[cfg(feature = "postgres")]
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
+
+pub mod roled_message;
+pub use roled_message::*;
 
 #[cfg_attr(feature="postgres", derive(Queryable, Selectable,Identifiable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,7 +65,6 @@ pub struct Director {
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::director, check_for_backend(diesel::pg::Pg)))]
-#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewDirector {
     pub name: String,
 }
@@ -75,6 +80,7 @@ pub struct Movie {
     pub name: String,
     pub director_id: Option<i32>,
     pub description: Option<String>,
+    #[cfg(all(feature = "postgres", feature = "ai"))]
     pub embedding: Option<Vector>,
 }
 
@@ -84,6 +90,7 @@ pub struct NewMovie {
     pub name: String,
     pub director_id: Option<i32>,
     pub description: Option<String>,
+    #[cfg(all(feature = "postgres", feature = "ai"))]
     pub embedding: Option<Vector>,
 }
 
