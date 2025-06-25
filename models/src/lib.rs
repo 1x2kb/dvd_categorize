@@ -19,6 +19,9 @@ use rand::{thread_rng, Rng};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
+pub mod roled_message;
+pub use roled_message::*;
+
 #[cfg_attr(feature="postgres", derive(Queryable, Selectable,Identifiable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Actor {

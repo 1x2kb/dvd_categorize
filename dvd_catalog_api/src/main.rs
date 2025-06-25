@@ -1,11 +1,13 @@
 use std::env;
 
 use axum::{
+    http::{self, HeaderValue, Method},
     routing::{get, post},
     Router,
 };
 use dotenvy::dotenv;
 use dvd_catalog::*;
+use tower_http::cors::CorsLayer;
 extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
@@ -72,5 +74,15 @@ fn init_router() -> Router {
         .route(
             "/ai/chat",
             post(chat),
+        )
+        .layer(
+            CorsLayer::new()
+                .allow_origin(
+                    "http://localhost:8080"
+                        .parse::<HeaderValue>()
+                        .unwrap(),
+                )
+                .allow_headers([http::header::CONTENT_TYPE])
+                .allow_methods([Method::GET, Method::POST]),
         )
 }

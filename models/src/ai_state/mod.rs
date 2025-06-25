@@ -4,10 +4,10 @@ use std::error::Error;
 
 #[cfg(feature = "ai")]
 pub use ollama_rs::generation::chat::MessageRole;
-use question::AiMessage;
 use serde::{Deserialize, Serialize};
 
 pub mod question;
+pub use question::*;
 
 pub trait ChatWithHistory {
     fn chat(&self, message: String) -> Result<String, Box<dyn Error>>;

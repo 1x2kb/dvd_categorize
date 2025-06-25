@@ -1,11 +1,9 @@
-version: "3.8"
-
 services:
   postgres:
-    image: pgvector/pgvector:pg17 # Official image with extension
+    image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_USER: app_user
-      POSTGRES_PASSWORD: strongpassword
+      POSTGRES_USER: app_user # Change for your use
+      POSTGRES_PASSWORD: strongpassword # Change for your use
       POSTGRES_DB: app_db
     ports:
       - "5433:5432"
@@ -28,6 +26,13 @@ services:
       - seccomp:unconfined # Needed for memory mapping
     cap_add:
       - SYS_PTRACE # Required for ROCm
+
+  # dvd_categorize_web:
+  #   build:
+  #     context: . # Workspace root
+  #     dockerfile: docker/web.Dockerfile # Relative to context
+  #   ports:
+  #     - "8080:80"
 
   # postgres:
   #   image: postgres:15
