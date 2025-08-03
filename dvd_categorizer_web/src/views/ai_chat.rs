@@ -49,9 +49,12 @@ pub fn AiChat() -> Element {
         }
         button { onclick: move |_| {
             spawn(async move {
-                let server_host = std::env::var("server_host").unwrap_or("127.0.0.1".to_string());
+                // Use the current page's hostname instead of hardcoded localhost
+                let window = web_sys::window().unwrap();
+                let location = window.location();
+                let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
                 let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
-                let ai_action = AiAction { uuid: String::new(), action: input_value.read().clone(), model: Some("llama3.2".to_string()) };
+                let ai_action = AiAction { uuid: String::new(), action: input_value.read().clone(), model: Some("mistral".to_string()) };
 
                 app_data.write().ai_chat.with_mut(|chat| {
                     if let Some(chat) = chat {
@@ -62,7 +65,7 @@ pub fn AiChat() -> Element {
                 });
 
                 let client = reqwest::Client::new();
-                let result = client.post(format!("http://{server_host}:{server_port}/ai/chat")).json(&ai_action).send().await;
+                let result = client.post(format!("http://{hostname}:{server_port}/ai/chat")).json(&ai_action).send().await;
 
                 match result {
                     Ok(response) => {

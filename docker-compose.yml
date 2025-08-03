@@ -10,13 +10,20 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgresql/:/docker-entrypoint-initdb.d/ # Directory mount
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d app_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   ollama:
     image: ollama/ollama:rocm
     ports:
-      - "11434:11434"
+      - "0.0.0.0:11434:11434"
     volumes:
-      - ollama_data:/root/.ollama # Persistent storage for models
+      - ollama_data:/root/.ollama # Persistent storage for models.
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
     devices:
       - /dev/kfd # AMD compute device
       - /dev/dri/renderD128 # First AMD GPU
@@ -26,6 +33,48 @@ services:
       - seccomp:unconfined # Needed for memory mapping
     cap_add:
       - SYS_PTRACE # Required for ROCm
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  dvd_categorize_api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        UID: ${UID}
+        GID: ${GID}
+        USERNAME: ${USERNAME}
+    ports:
+      - "0.0.0.0:3000:3000"
+    volumes:
+      - ./:/app
+    depends_on:
+      diesel_migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://app_user:strongpassword@postgres:5432/app_db
+      RUST_LOG: info
+      server_host: ${SERVER_HOST:-0.0.0.0}
+      server_port: ${SERVER_PORT:-3000}
+      OLLAMA_HOST: ollama
+      OLLAMA_PORT: "11434"
+
+  dvd_categorize_web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    depends_on:
+      - dvd_categorize_api
+    ports:
+      - "0.0.0.0:8080:8080"
+    volumes:
+      - ./:/app
 
   # dvd_categorize_web:
   #   build:
@@ -59,17 +108,52 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
+  diesel_migrate:
+    build:
+      context: .
+      dockerfile: docker/diesel.Dockerfile
+      args:
+        UID: ${UID}
+        GID: ${GID}
+        USERNAME: ${USERNAME}
+    volumes:
+      - ./:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://app_user:strongpassword@postgres:5432/app_db
+      RUST_LOG: debug
+    working_dir: /app/database
+    command: ["diesel", "migration", "run"]
+    restart: "no"  # Don't restart after completion
+
+  csv_reader:
+    build:
+      context: .
+      dockerfile: docker/csv.Dockerfile
+      args:
+        UID: ${UID}
+        GID: ${GID}
+        USERNAME: ${USERNAME}
+    volumes:
+      - ./:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      diesel_migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://app_user:strongpassword@postgres:5432/app_db
+      RUST_LOG: info
+      OLLAMA_HOST: ollama
+      OLLAMA_PORT: "11434"
+    profiles:
+      - database_load  # This prevents it from starting with docker-compose up
+
 volumes:
   postgres_data:
   redis_data:
   pgdata:
-  ollama_data:
-    external: true
-
-  # app:
-  #   build: .
-  #   command: cargo run
-  #   environment:
-  #     DATABASE_URL: postgres://postgres:postgres@db/postgres
-  #   depends_on:
-  #     - db
+  ollama_data: # Note that this must be created manually. Prevents it from being deleted on docker compose down -v since models are very large files.
+    external: true 
