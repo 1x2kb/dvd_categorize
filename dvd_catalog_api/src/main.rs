@@ -7,7 +7,7 @@ use axum::{
 };
 use dotenvy::dotenv;
 use dvd_catalog::*;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
@@ -77,11 +77,7 @@ fn init_router() -> Router {
         )
         .layer(
             CorsLayer::new()
-                .allow_origin(
-                    "http://localhost:8080"
-                        .parse::<HeaderValue>()
-                        .unwrap(),
-                )
+                .allow_origin(Any)
                 .allow_headers([http::header::CONTENT_TYPE])
                 .allow_methods([Method::GET, Method::POST]),
         )

@@ -3,6 +3,7 @@ use std::{error::Error, fs::File, io::Read};
 use csv::Reader;
 use database::{Actor, Director, FullMovie};
 use dotenvy::dotenv;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -22,17 +23,30 @@ struct CsvRecord {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    pretty_env_logger::init();
+
+    info!("Starting csv reader");
     dotenv()
         .ok()
         .expect("Failed to run env reader");
+    debug!("Loaded env variables");
+
+    info!("Opening file");
     let reader = File::open("./movies.csv")?;
+    info!("File opened");
+
+    info!("Parsing csv");
     let movies = parse_csv(reader)?;
+    info!("Parsed csv");
+    debug!("{} movies read in", movies.len());
 
     for movie in movies {
         let result = database::insert_full_movie(movie).await?;
+        debug!("Inserted movie: {:#?}", result);
+        info!("Inserted movie");
     }
 
-    Ok(())
+    Ok(())  
 }
 
 pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> {

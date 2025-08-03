@@ -1,19 +1,19 @@
-# Builder stage
-FROM rust:latest AS builder
+FROM rust:latest
 
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g ${GID} appuser && useradd -m -u ${UID} -g appuser appuser
+
+USER appuser
 WORKDIR /app
 
-# Copy entire workspace including all crates
-COPY . .
+ENV CARGO_HOME="/home/appuser/.cargo"
+ENV RUSTUP_HOME="/home/appuser/.rustup"
+ENV PATH="/home/appuser/.cargo/bin:${PATH}"
 
-# Install Dioxus CLI
+RUN rustup default stable
+
 RUN cargo install --locked dioxus-cli
 
-# Build web crate
-WORKDIR /app/dvd_categorizer_web
-RUN dx bundle -p dvd_categorizer_web --platform web --release
-
-# Runtime stage
-FROM nginx:alpine
-COPY --from=builder /app/target/dx/dvd_categorizer_web/release/web/public /usr/share/nginx/html
-COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+# Configure dx serve with production features
+CMD ["dx", "serve", "-p", "dvd_categorizer_web"]
