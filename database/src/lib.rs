@@ -46,6 +46,7 @@ impl Display for DatabaseError {
     }
 }
 
+// TODO: Setup pool in main.rs?
 async fn get_database_connection() -> Result<AsyncPgConnection, DatabaseError> {
     let database_url =
         env::var("DATABASE_URL").expect("No database information found, cannot connect");
@@ -236,6 +237,7 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
         .collect::<Vec<_>>()
         .join(",");
 
+    // Create string data to be vectorized later.
     let embedding = format!(
         "{}-{} and has genres {} with actors {} and directed by {}",
         &full_movie.name,
@@ -277,10 +279,17 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
         None => None,
     };
 
-    let embedding = ai_chat::get_embedding(&embedding)
-        .await
-        .map(|em| Vector::from(em))
-        .ok();
+    // Vectorize string for storage in the database.
+    let embedding = match ai_chat::get_embedding(&embedding).await {
+        Ok(em) => {
+            debug!("Successfully generated embedding for movie: {}", full_movie.name);
+            Some(Vector::from(em))
+        },
+        Err(e) => {
+            error!("Failed to generate embedding for movie '{}': {:#?}", full_movie.name, e);
+            None
+        }
+    };
 
     let new_movie = NewMovie {
         name: full_movie.name,

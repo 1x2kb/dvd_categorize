@@ -58,9 +58,12 @@ fn App() -> Element {
     // Async data fetching (non-blocking)
     use_future(
         move || async move {
-            let server_host = var("server_host").unwrap_or_else(|_| "127.0.0.1".to_string());
+            // Use the current page's hostname instead of hardcoded localhost
+            let window = web_sys::window().unwrap();
+            let location = window.location();
+            let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
             let server_port = var("server_port").unwrap_or_else(|_| "3000".to_string());
-            let api_url = format!("http://{server_host}:{server_port}/dvd");
+            let api_url = format!("http://{hostname}:{server_port}/dvd");
 
             if let Ok(response) = reqwest::get(&api_url).await {
                 if let Ok(movies) = response

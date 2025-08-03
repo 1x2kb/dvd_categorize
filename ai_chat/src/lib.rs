@@ -63,7 +63,7 @@ pub async fn find_related_keys(
     ];
 
     let chat_request = ChatMessageRequest::new(
-        "llama3.2".to_string(),
+        "mistral".to_string(),
         messages,
     );
 
@@ -116,7 +116,7 @@ async fn bot_message(dvds: &[FullMovie], ollama: Arc<OllamaClient>) -> Result<St
             .model
             .as_ref()
             .map(|model| model.to_string())
-            .unwrap_or_else(|| "llama3.2".to_string()),
+            .unwrap_or_else(|| "mistral".to_string()),
         messages,
     )
     .options(GenerationOptions::default().num_ctx(64000));
@@ -148,7 +148,7 @@ where
     A: AsRef<str> + std::fmt::Debug + Send + Sync,
 {
     let ollama = Ollama::default();
-    let model = "llama3.2".to_string();
+    let model = "mistral".to_string();
 
     let prompt =
         "You are an expert on communcatation and reasoning. Your job is to decide if the user's question was answered by the AI. Do not be overly literal, the answer given does not have to be perfect. When giving a response please respond with yes or no, and then why or why not.\nExample User Question: Suggest a comedy for me to watch. AI Answer: I think you would enjoy Tommy Boy, as this is a comedy from your library. Your Answer: Yes, this answers the users question because they asked for a comedy film from their library".to_string();
@@ -202,7 +202,11 @@ where
 
 #[instrument(level = Level::INFO)]
 pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::OllamaError> {
-    let ollama = Ollama::default();
+    // Use ollama service name for Docker container communication
+    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
+    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
+    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
+    let ollama = Ollama::from_url(ollama_url.parse().unwrap());
 
     let request = GenerateEmbeddingsRequest::new(
         "nomic-embed-text".to_string(),
