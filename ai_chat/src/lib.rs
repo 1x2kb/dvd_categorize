@@ -2,7 +2,7 @@ mod prompts;
 
 use std::{future::Future, sync::Arc};
 
-use log::info;
+use log::{debug, info};
 use models::{dvd_filters::DvdFilters, question::AiAction, FullMovie};
 use ollama_rs::{
     generation::{
@@ -14,6 +14,8 @@ use ollama_rs::{
 };
 use prompts::USER_LIBRARY_PROMPT;
 use tracing::{instrument, Level};
+
+pub mod live_ui;
 
 pub trait GenerateMessage {
     fn generate_message(prompt: String) -> impl Future<Output = String>;
@@ -205,8 +207,21 @@ pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::Oll
     // Use ollama service name for Docker container communication
     let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
     let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
-    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
-    let ollama = Ollama::from_url(ollama_url.parse().unwrap());
+
+    let ollama_url = format!(
+        "http://{}:{}",
+        &ollama_host, &ollama_port
+    );
+    debug!(
+        "Connecting to ollama @ {}",
+        &ollama_url
+    );
+
+    let ollama = Ollama::from_url(
+        ollama_url
+            .parse()
+            .unwrap(),
+    );
 
     let request = GenerateEmbeddingsRequest::new(
         "nomic-embed-text".to_string(),

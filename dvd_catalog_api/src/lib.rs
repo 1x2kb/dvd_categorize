@@ -4,8 +4,8 @@ use ai_chat::OllamaClient;
 use axum::{extract::Path, Json};
 use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie};
-use log::{debug, error, info};
-use ollama_rs::Ollama;
+use log::{error, info};
+use ollama_rs::{error::OllamaError, Ollama};
 use tracing::instrument;
 
 #[instrument]
@@ -56,47 +56,29 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
         action.model,
     );
 
-    // Don't delete. should be extracted into another option for the user to select. Vector search, key matching
-    // let movie_ids = match ai_chat::find_related_keys(question.as_str()).await {
-    //     Ok(dvd_filters) => database::run_dvd_filters(dvd_filters)
-    //         .await
-    //         .ok()
-    //         .filter(|movies| !movies.is_empty()),
-    //     Err(e) => {
-    //         error!(
-    //             "{:#?}",
-    //             e
-    //         );
-    //         None
-    //     }
-    // };
+    let embedding = embedding(&question)
+        .await
+        .ok();
 
-    info!(
-        "Getting embeddings for user query {}",
-        &question
-    );
-    // Get embedding for the user's question
-    let embedding_result = ai_chat::get_embedding(&question).await;
-    info!("Got embeddings: {}", embedding_result.is_ok());
-
-    if let Err(e) = &embedding_result {
-        error!("Failed to get embeddings: {:#?}", e);
-    }
-    
-    let embedding = embedding_result.ok();
-    
     // Search for movies using the embedding if available
     let movie_ids = match embedding {
         Some(embedding_vector) => {
             info!("Searching for movies using embedding");
-            let search_result = database::search_movies(embedding_vector, 15).await;
+            let search_result = database::search_movies(
+                embedding_vector,
+                15,
+            )
+            .await;
 
             if let Err(e) = &search_result {
-                error!("Failed to search movies: {:#?}", e);
+                error!(
+                    "Failed to search movies: {:#?}",
+                    e
+                );
             }
 
             search_result.ok()
-        },
+        }
         None => None,
     };
 
@@ -119,10 +101,19 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
         Arc::new(
             OllamaClient {
                 ollama_client: {
-                    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
-                    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
-                    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
-                    Ollama::from_url(ollama_url.parse().unwrap())
+                    let ollama_host =
+                        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
+                    let ollama_port =
+                        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
+                    let ollama_url = format!(
+                        "http://{}:{}",
+                        ollama_host, ollama_port
+                    );
+                    Ollama::from_url(
+                        ollama_url
+                            .parse()
+                            .unwrap(),
+                    )
                 },
                 ai_action: AiAction {
                     uuid: uuid.to_string(),
@@ -153,4 +144,132 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
             model,
         },
     )
+}
+
+#[instrument]
+pub async fn embedding(question: &str) -> Result<Vec<f32>, OllamaError> {
+    info!(
+        "Getting embeddings for user query {}",
+        &question
+    );
+    // Get embedding for the user's question
+    let embedding_result = ai_chat::get_embedding(&question).await;
+    info!(
+        "Got embeddings: {}",
+        embedding_result.is_ok()
+    );
+
+    if let Err(e) = &embedding_result {
+        error!(
+            "Failed to get embeddings: {:#?}",
+            e
+        );
+    };
+
+    embedding_result
+}
+
+#[instrument]
+#[debug_handler]
+pub async fn get_matching_movies(question: String) -> Json<Option<Vec<FullMovie>>> {
+    let dvds = database::get_movies()
+        .await
+        .unwrap_or_else(|_| Vec::new());
+
+    let embedding = embedding(&question)
+        .await
+        .ok();
+
+    // Search for movies using the embedding if available
+    // TODO: Refactor search_movies to return results for the movie. Why am I only returning the id????
+    let movie_ids = match embedding {
+        Some(embedding_vector) => {
+            info!("Searching for movies using embedding");
+            let search_result = database::search_movies(
+                embedding_vector,
+                15,
+            )
+            .await;
+
+            if let Err(e) = &search_result {
+                error!(
+                    "Failed to search movies: {:#?}",
+                    e
+                );
+            }
+
+            search_result.ok()
+        }
+        None => None,
+    };
+
+    let full_movies = if let Some(movie_ids) = movie_ids {
+        database::get_movies_by_ids(movie_ids)
+            .await
+            .unwrap_or(dvds)
+    } else {
+        dvds
+    }; // For now fall back to all dvds
+
+    let ollama_client = Arc::new(
+        OllamaClient {
+            ollama_client: {
+                let ollama_host =
+                    std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
+                let ollama_port =
+                    std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
+                let ollama_url = format!(
+                    "http://{}:{}",
+                    ollama_host, ollama_port
+                );
+                Ollama::from_url(
+                    ollama_url
+                        .parse()
+                        .unwrap(),
+                )
+            },
+            ai_action: AiAction {
+                uuid: "Some placeholder".to_string(),
+                action: question,
+                model: Some("mistral".to_string()),
+            },
+        },
+    );
+
+    let result = ai_chat::live_ui::get_matching_movies(
+        Arc::new(&full_movies),
+        ollama_client,
+    )
+    .await;
+
+    let movie_ids = result.map(
+        |value| {
+            value
+                .split(",")
+                .map(
+                    |id| {
+                        id.trim()
+                            .parse::<i32>()
+                            .unwrap_or_default()
+                    },
+                )
+                .filter(|id| id > &0)
+                .collect::<Vec<i32>>()
+        },
+    );
+
+    let full_movies = match movie_ids {
+        Ok(ids) => database::get_movies_by_ids(ids)
+            .await
+            .ok(),
+        Err(e) => {
+            error!(
+                "Failed to get movies by ids: {:#?}",
+                e
+            );
+            None
+        }
+    };
+
+    Json(full_movies)
 }
