@@ -146,14 +146,36 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
     )
 }
 
+/// Generates vector embeddings for a given text question using the Ollama AI service.
+///
+/// This function takes text input and converts it into a numerical vector representation
+/// (embeddings) that can be used for semantic similarity comparisons and vector database
+/// operations. The embeddings are generated asynchronously using the Ollama client.
+///
+/// # Arguments
+///
+/// * `text` - A string slice containing the text to generate embeddings for
+///
+/// # Returns
+///
+/// * `Ok(Vec<f32>)` - A vector of floating-point numbers representing the text embeddings
+/// * `Err(OllamaError)` - An error if the embedding generation fails
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// - The Ollama service is unavailable
+/// - Network connectivity issues occur
+/// - The input text cannot be processed by the embedding model
+/// - Model is not installed
 #[instrument]
-pub async fn embedding(question: &str) -> Result<Vec<f32>, OllamaError> {
+pub async fn embedding(text: &str) -> Result<Vec<f32>, OllamaError> {
     info!(
         "Getting embeddings for user query {}",
-        &question
+        text
     );
     // Get embedding for the user's question
-    let embedding_result = ai_chat::get_embedding(&question).await;
+    let embedding_result = ai_chat::get_embedding(&text).await;
     info!(
         "Got embeddings: {}",
         embedding_result.is_ok()
