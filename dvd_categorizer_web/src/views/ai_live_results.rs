@@ -12,7 +12,7 @@ pub struct AiAction {
     pub model: Option<String>,
 }
 
-async fn send_search_request(query: String) -> Result<String, reqwest::Error> {
+async fn send_search_request(query: String) -> Result<Vec<FullMovie>, reqwest::Error> {
     let window = web_sys::window().unwrap();
     let location = window.location();
     let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
@@ -27,15 +27,16 @@ async fn send_search_request(query: String) -> Result<String, reqwest::Error> {
         .post(format!("http://{hostname}:{server_port}/ai/dvd-match"))
         .json(&search_request)
         .send()
+        .await?
+        .json()
         .await?;
-    
-    let text = response.text().await?;
-    Ok(text)
+
+    Ok(response)
 }
 
 #[component]
 pub fn AiLiveResults() -> Element {
-    let movies: Signal<Vec<Rc<FullMovie>>> = use_signal(|| vec![]);
+    let mut movies: Signal<Vec<Rc<FullMovie>>> = use_signal(|| vec![]);
     let mut input_value = use_signal(|| String::new());
     let mut is_loading = use_signal(|| false);
     
@@ -63,6 +64,15 @@ pub fn AiLiveResults() -> Element {
                                 spawn(async move {
                                     is_loading.set(true);
                                     let result = send_search_request(input_value()).await;
+                                    match result {
+                                        Ok(movie_list) => {
+                                            movies.set(movie_list.into_iter().map(Rc::new).collect());
+                                        }
+                                        Err(err) => {
+                                            log::error!("Failed to send search request {:#?}", err);
+                                            movies.set(vec![]);
+                                        }
+                                    }
                                     is_loading.set(false);
                                 });
                             }
@@ -73,8 +83,17 @@ pub fn AiLiveResults() -> Element {
                         onclick: move |_| {
                             spawn(async move {
                                 is_loading.set(true);
-                                let result = send_search_request(input_value()).await;
-                                is_loading.set(false);
+                                    let result = send_search_request(input_value()).await;
+                                    match result {
+                                        Ok(movie_list) => {
+                                            movies.set(movie_list.into_iter().map(Rc::new).collect());
+                                        }
+                                        Err(err) => {
+                                            log::error!("Failed to send search request {:#?}", err);
+                                            movies.set(vec![]);
+                                        }
+                                    }
+                                    is_loading.set(false);
                             });
                         },
                         disabled: is_loading(),
