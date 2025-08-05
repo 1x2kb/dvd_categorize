@@ -3,7 +3,7 @@ use std::sync::Arc;
 use ai_chat::OllamaClient;
 use axum::{extract::Path, Json};
 use axum_macros::debug_handler;
-use database::{question::AiAction, FullMovie};
+use database::{question::AiAction, FullMovie, SearchRequest};
 use log::{error, info};
 use ollama_rs::{error::OllamaError, Ollama};
 use tracing::instrument;
@@ -181,7 +181,12 @@ pub async fn embedding(text: &str) -> Result<Vec<f32>, OllamaError> {
         embedding_result.is_ok()
     );
 
-    if let Err(e) = &embedding_result {
+    if let Ok(embedding) = embedding_result.as_ref() {
+        info!(
+            "Embeddings length: {}",
+            embedding.len()
+        );
+    } else if let Err(e) = &embedding_result {
         error!(
             "Failed to get embeddings: {:#?}",
             e
@@ -193,12 +198,12 @@ pub async fn embedding(text: &str) -> Result<Vec<f32>, OllamaError> {
 
 #[instrument]
 #[debug_handler]
-pub async fn get_matching_movies(question: String) -> Json<Option<Vec<FullMovie>>> {
-    let dvds = database::get_movies()
-        .await
-        .unwrap_or_else(|_| Vec::new());
+pub async fn get_matching_movies(Json(search_request): Json<SearchRequest>) -> Json<Option<Vec<FullMovie>>> {
+    // let dvds = database::get_movies()
+    //     .await
+    //     .unwrap_or_else(|_| Vec::new());
 
-    let embedding = embedding(&question)
+    let embedding = embedding(&search_request.query)
         .await
         .ok();
 
@@ -228,9 +233,9 @@ pub async fn get_matching_movies(question: String) -> Json<Option<Vec<FullMovie>
     let full_movies = if let Some(movie_ids) = movie_ids {
         database::get_movies_by_ids(movie_ids)
             .await
-            .unwrap_or(dvds)
+            .unwrap_or(Vec::new())
     } else {
-        dvds
+        Vec::new()
     }; // For now fall back to all dvds
 
     let ollama_client = Arc::new(
@@ -252,7 +257,7 @@ pub async fn get_matching_movies(question: String) -> Json<Option<Vec<FullMovie>
             },
             ai_action: AiAction {
                 uuid: "Some placeholder".to_string(),
-                action: question,
+                action: search_request.query,
                 model: Some("mistral".to_string()),
             },
         },

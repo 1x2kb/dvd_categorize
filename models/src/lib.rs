@@ -166,6 +166,11 @@ impl
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct SearchRequest {
+    pub query: String,
+}
+
 #[cfg(feature = "testing")]
 impl Random for Actor {
     fn random() -> Self {
