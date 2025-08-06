@@ -1,9 +1,9 @@
-use dioxus::prelude::*;
 use crate::components::{movie_card::MovieCard, movie_grid::MovieGrid};
-use std::rc::Rc;
+use dioxus::prelude::*;
 use models::{Actor, Director, FullMovie, SearchRequest};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::rc::Rc;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct AiAction {
@@ -15,13 +15,13 @@ pub struct AiAction {
 async fn send_search_request(query: String) -> Result<Vec<FullMovie>, reqwest::Error> {
     let window = web_sys::window().unwrap();
     let location = window.location();
-    let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+    let hostname = location
+        .hostname()
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
     let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
 
-    let search_request = SearchRequest {
-        query,
-    };
-    
+    let search_request = SearchRequest { query };
+
     let client = reqwest::Client::new();
     let response = client
         .post(format!("http://{hostname}:{server_port}/ai/dvd-match"))
@@ -39,20 +39,20 @@ pub fn AiLiveResults() -> Element {
     let mut movies: Signal<Vec<Rc<FullMovie>>> = use_signal(|| vec![]);
     let mut input_value = use_signal(|| String::new());
     let mut is_loading = use_signal(|| false);
-    
+
     rsx! {
         div {
             class: "ai-live-results-container",
-            
+
             // Input and button section
             div {
                 class: "search-section",
                 style: "margin-bottom: 20px; padding: 20px; background: #1f2937; border-radius: 8px;",
-                
+
                 div {
                     class: "search-input-group",
                     style: "display: flex; gap: 10px; align-items: center;",
-                    
+
                     input {
                         r#type: "text",
                         placeholder: "Enter your search query...",
@@ -62,7 +62,13 @@ pub fn AiLiveResults() -> Element {
                         onkeypress: move |evt| {
                             if evt.key() == Key::Enter {
                                 spawn(async move {
+                                    if is_loading() {
+                                        return;
+                                    }
+
                                     is_loading.set(true);
+                                    movies.set(vec![]);
+
                                     let result = send_search_request(input_value()).await;
                                     match result {
                                         Ok(movie_list) => {
@@ -78,27 +84,33 @@ pub fn AiLiveResults() -> Element {
                             }
                         }
                     }
-                    
+
                     button {
                         onclick: move |_| {
                             spawn(async move {
+                                if is_loading() {
+                                    return;
+                                }
+
                                 is_loading.set(true);
-                                    let result = send_search_request(input_value()).await;
-                                    match result {
-                                        Ok(movie_list) => {
-                                            movies.set(movie_list.into_iter().map(Rc::new).collect());
-                                        }
-                                        Err(err) => {
-                                            log::error!("Failed to send search request {:#?}", err);
-                                            movies.set(vec![]);
-                                        }
+                                movies.set(vec![]);
+
+                                let result = send_search_request(input_value()).await;
+                                match result {
+                                    Ok(movie_list) => {
+                                        movies.set(movie_list.into_iter().map(Rc::new).collect());
                                     }
-                                    is_loading.set(false);
+                                    Err(err) => {
+                                        log::error!("Failed to send search request {:#?}", err);
+                                        movies.set(vec![]);
+                                    }
+                                }
+                                is_loading.set(false);
                             });
                         },
                         disabled: is_loading(),
                         style: "padding: 12px 24px; background: linear-gradient(135deg, #0891b2, #0e7490); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; min-width: 100px;",
-                        
+
                         if is_loading() {
                             "Searching..."
                         } else {
@@ -107,7 +119,7 @@ pub fn AiLiveResults() -> Element {
                     }
                 }
             }
-            
+
             // Movie grid section
             div {
                 class: "movie-grid movie-grid-cols-3",

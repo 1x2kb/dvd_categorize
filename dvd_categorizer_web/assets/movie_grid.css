@@ -57,6 +57,16 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* Blur effect for non-hovered cards (desktop only) */
+@media (hover: hover) and (pointer: fine) {
+    .movie-grid .movie-card:hover ~ .movie-card,
+    .movie-grid:has(.movie-card:hover) .movie-card:not(:hover) {
+        filter: blur(3px);
+        opacity: 0.6;
+        transform: scale(0.98);
+    }
+}
+
 .movie-card:hover {
     transform: translateY(-6px) scale(1.02);
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.08);
@@ -126,6 +136,23 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
     font-weight: 400;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    position: relative;
+    z-index: 10;
+}
+
+.movie-card:hover .movie-description {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+    background: rgba(31, 41, 55, 0.95);
+    padding: 12px;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(8, 145, 178, 0.3);
+    backdrop-filter: blur(8px);
+    max-height: none;
 }
 
 /* Movie info rows (director, cast) */
@@ -185,6 +212,19 @@
 .movie-genre-more {
     background: linear-gradient(135deg, #a0aec0, #718096);
     color: white;
+}
+
+/* Extra genres - hidden by default, shown on card hover */
+.movie-genre-extra {
+    display: none;
+}
+
+.movie-card:hover .movie-genre-extra {
+    display: inline-block;
+}
+
+.movie-card:hover .movie-genre-more {
+    display: none;
 }
 
 /* Responsive design */

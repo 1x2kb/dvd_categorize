@@ -118,7 +118,7 @@ async fn bot_message(dvds: &[FullMovie], ollama: Arc<OllamaClient>) -> Result<St
             .model
             .as_ref()
             .map(|model| model.to_string())
-            .unwrap_or_else(|| "mistral".to_string()),
+            .unwrap_or_else(|| "llama3.2".to_string()),
         messages,
     )
     .options(GenerationOptions::default().num_ctx(64000));

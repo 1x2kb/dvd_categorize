@@ -14,23 +14,23 @@ pub fn MovieGrid(props: MovieCardProps) -> Element {
     rsx! {
         div {
             class: "movie-card",
-            
+
             // Movie poster placeholder
             div {
                 class: "movie-poster",
                 "{movie.name}"
             }
-            
+
             // Movie details
             div {
                 class: "movie-details",
-                
+
                 // Title
                 h3 {
                     class: "movie-title",
                     "{movie.name}"
                 }
-                
+
                 // Description
                 if let Some(description) = &movie.description {
                     p {
@@ -38,7 +38,24 @@ pub fn MovieGrid(props: MovieCardProps) -> Element {
                         "{description}"
                     }
                 }
-                
+
+                // Actors
+                if !movie.actors.is_empty() {
+                    div {
+                        class: "movie-info-row",
+                        span {
+                            class: "movie-info-label",
+                            "Cast: "
+                        }
+                        span {
+                            class: "movie-info-value",
+                            {
+                                movie.actors.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
+                            }
+                        }
+                    }
+                }
+
                 // Director
                 if let Some(director) = &movie.director {
                     div {
@@ -53,35 +70,14 @@ pub fn MovieGrid(props: MovieCardProps) -> Element {
                         }
                     }
                 }
-                
-                // Actors
-                if !movie.actors.is_empty() {
-                    div {
-                        class: "movie-info-row",
-                        span {
-                            class: "movie-info-label",
-                            "Cast: "
-                        }
-                        span {
-                            class: "movie-info-value",
-                            {
-                                let actors_text = movie.actors.iter().take(3).map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                                if movie.actors.len() > 3 {
-                                    format!("{}, and {} more", actors_text, movie.actors.len() - 3)
-                                } else {
-                                    actors_text
-                                }
-                            }
-                        }
-                    }
-                }
-                
+
                 // Genres
                 if !movie.genres.is_empty() {
                     div {
                         class: "movie-genres-container",
                         div {
                             class: "movie-genres",
+                            // Show first 4 genres normally
                             for genre in movie.genres.iter().take(4) {
                                 span {
                                     key: "{genre}",
@@ -89,7 +85,15 @@ pub fn MovieGrid(props: MovieCardProps) -> Element {
                                     "{genre}"
                                 }
                             }
+                            // Show additional genres (hidden by default, shown on hover)
                             if movie.genres.len() > 4 {
+                                for genre in movie.genres.iter().skip(4) {
+                                    span {
+                                        key: "{genre}",
+                                        class: "movie-genre-tag movie-genre-extra",
+                                        "{genre}"
+                                    }
+                                }
                                 span {
                                     class: "movie-genre-tag movie-genre-more",
                                     "+{movie.genres.len() - 4}"
