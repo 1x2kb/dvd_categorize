@@ -263,7 +263,7 @@ pub async fn get_matching_movies(Json(search_request): Json<SearchRequest>) -> J
         },
     );
 
-    let result = ai_chat::live_ui::get_matching_movies(
+    let result = ai_chat::live_ui::get_matching_movies_with_ollama(
         Arc::new(&full_movies),
         ollama_client,
     )
