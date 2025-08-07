@@ -15,9 +15,13 @@ extern crate log;
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
-    dotenv()
-        .ok()
-        .expect("Failed to run env reader");
+    // Only load .env file in debug mode (development)
+    #[cfg(debug_assertions)]
+    {
+        dotenv()
+            .ok()
+            .expect("Failed to run env reader");
+    }
 
     let app = init_router();
 

@@ -43,7 +43,7 @@ services:
   dvd_categorize_api:
     build:
       context: .
-      dockerfile: docker/api.Dockerfile
+      dockerfile: docker/run/api.Dockerfile
       args:
         UID: ${UID}
         GID: ${GID}
@@ -68,7 +68,7 @@ services:
   dvd_categorize_web:
     build:
       context: .
-      dockerfile: docker/web.Dockerfile
+      dockerfile: docker/run/web.Dockerfile
     ports:
       - "0.0.0.0:8080:8080"
     volumes:
@@ -85,7 +85,7 @@ services:
   diesel_migrate:
     build:
       context: .
-      dockerfile: docker/diesel.Dockerfile
+      dockerfile: docker/run/diesel.Dockerfile
       args:
         UID: ${UID}
         GID: ${GID}
@@ -105,7 +105,7 @@ services:
   csv_reader:
     build:
       context: .
-      dockerfile: docker/csv.Dockerfile
+      dockerfile: docker/run/csv.Dockerfile
       args:
         UID: ${UID}
         GID: ${GID}

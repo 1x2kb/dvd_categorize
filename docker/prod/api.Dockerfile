@@ -1,0 +1,36 @@
+# Multi-stage build for production API
+FROM rust:latest as builder
+
+WORKDIR /app
+
+# Copy all source code
+COPY . .
+
+# Build the API application
+RUN cargo build --release --package dvd_catalog_api
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && \
+    apt-get install -y \
+        ca-certificates \
+        libssl3 \
+        libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Copy the binary from builder stage
+COPY --from=builder /app/target/release/dvd_catalog_api /usr/local/bin/dvd_catalog_api
+
+# Set ownership
+RUN chown appuser:appuser /usr/local/bin/dvd_catalog_api
+
+USER appuser
+
+EXPOSE 3000
+
+CMD ["dvd_catalog_api"]
