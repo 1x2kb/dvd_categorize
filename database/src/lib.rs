@@ -149,30 +149,35 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
         )>(&mut connection)
         .await?;
 
-    // Extract movie IDs for batch actor/genre queries
-    let movie_ids: Vec<i32> = movies_with_directors
+    // Early return if no movies found
+    if movies_with_directors.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Use original ids for batch queries (only query for movies that actually exist)
+    let existing_movie_ids: Vec<i32> = movies_with_directors
         .iter()
         .map(|(movie, _)| movie.id)
         .collect();
 
     // Batch get all actors for all movies
     let all_actors = schema::movie_actor::table
-        .filter(schema::movie_actor::movie_id.eq_any(&movie_ids))
+        .filter(schema::movie_actor::movie_id.eq_any(&existing_movie_ids))
         .inner_join(schema::actor::table)
-        .load::<(
-            MovieActor,
-            Actor,
-        )>(&mut connection)
+        .load::<(MovieActor, Actor)>(&mut connection)
         .await?;
 
     // Batch get all genres for all movies
     let all_genres = schema::movie_genre::table
-        .filter(schema::movie_genre::movie_id.eq_any(&movie_ids))
+        .filter(schema::movie_genre::movie_id.eq_any(&existing_movie_ids))
         .load::<MovieGenre>(&mut connection)
         .await?;
 
-    // Create lookup maps
-    let mut actors_map: HashMap<i32, Vec<Actor>> = HashMap::new();
+    // Pre-allocate HashMaps with capacity for better performance
+    let mut actors_map: HashMap<i32, Vec<Actor>> = HashMap::with_capacity(existing_movie_ids.len());
+    let mut genres_map: HashMap<i32, Vec<String>> = HashMap::with_capacity(existing_movie_ids.len());
+
+    // Build lookup maps
     for (ma, actor) in all_actors {
         actors_map
             .entry(ma.movie_id)
@@ -180,7 +185,6 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
             .push(actor);
     }
 
-    let mut genres_map: HashMap<i32, Vec<String>> = HashMap::new();
     for mg in all_genres {
         genres_map
             .entry(mg.movie_id)
@@ -188,7 +192,7 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
             .push(mg.genre);
     }
 
-    // Assemble final results
+    // Assemble final results - avoid cloning by using remove() instead of get().cloned()
     let results = movies_with_directors
         .into_iter()
         .map(
@@ -198,12 +202,10 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
                 director,
                 description: movie.description,
                 actors: actors_map
-                    .get(&movie.id)
-                    .cloned()
+                    .remove(&movie.id)
                     .unwrap_or_default(),
                 genres: genres_map
-                    .get(&movie.id)
-                    .cloned()
+                    .remove(&movie.id)
                     .unwrap_or_default(),
             },
         )

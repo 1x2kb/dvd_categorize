@@ -69,36 +69,10 @@ services:
     build:
       context: .
       dockerfile: docker/web.Dockerfile
-    depends_on:
-      - dvd_categorize_api
     ports:
       - "0.0.0.0:8080:8080"
     volumes:
       - ./:/app
-
-  # dvd_categorize_web:
-  #   build:
-  #     context: . # Workspace root
-  #     dockerfile: docker/web.Dockerfile # Relative to context
-  #   ports:
-  #     - "8080:80"
-
-  # postgres:
-  #   image: postgres:15
-  #   environment:
-  #     - POSTGRES_USER=app_user
-  #     - POSTGRES_PASSWORD=strongpassword
-  #     - POSTGRES_DB=app_db
-  #   ports:
-  #     - "5433:5432"
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U app_user -d app_db"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   restart: unless-stopped
 
   redis:
     image: redis:alpine

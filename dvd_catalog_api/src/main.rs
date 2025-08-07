@@ -75,6 +75,10 @@ fn init_router() -> Router {
             "/ai/chat",
             post(chat),
         )
+        .route(
+            "/ai/dvd-match",
+            post(get_matching_movies),
+        )
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
