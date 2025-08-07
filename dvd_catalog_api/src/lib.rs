@@ -299,7 +299,7 @@ pub async fn get_matching_movies(Json(search_request): Json<SearchRequest>) -> J
     
     // Step 4: Use AI to refine the movie selection
     let ai_response = match ai_chat::live_ui::get_matching_movies_with_ollama(
-        Arc::new(&candidate_movies),
+        Arc::new(candidate_movies),
         ollama_client,
     ).await {
         Ok(response) => response,

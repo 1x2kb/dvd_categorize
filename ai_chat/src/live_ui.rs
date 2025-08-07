@@ -55,7 +55,7 @@ impl AiChatProvider for OllamaClient {
 
 /// Refactored function that accepts any AI chat provider for better testability
 pub async fn get_matching_movies<T: AiChatProvider>(
-    dvds: Arc<&[FullMovie]>,
+    dvds: Arc<Vec<FullMovie>>,
     ai_provider: Arc<T>,
     user_action: &str,
     model: Option<&str>,
@@ -64,7 +64,7 @@ pub async fn get_matching_movies<T: AiChatProvider>(
         return Err("DVDs empty, cannot match".to_string());
     }
 
-    let prompt = build_movie_matcher_prompt(&**dvds)?;
+    let prompt = build_movie_matcher_prompt(&dvds)?;
     let messages = vec![
         ChatMessage::system(prompt),
         ChatMessage::user(user_action.to_string()),
@@ -83,7 +83,7 @@ pub async fn get_matching_movies<T: AiChatProvider>(
 
 /// Convenience function that maintains the original API for existing code
 pub async fn get_matching_movies_with_ollama(
-    dvds: Arc<&[FullMovie]>,
+    dvds: Arc<Vec<FullMovie>>,
     ollama: Arc<OllamaClient>,
 ) -> Result<String, String> {
     let user_action = ollama
@@ -219,14 +219,13 @@ mod tests {
     #[tokio::test]
     async fn test_get_matching_movies_success() {
         let movies = FullMovie::create_test_movies();
-        let movies_ref: &[FullMovie] = &movies;
-        let dvds = Arc::new(movies_ref);
+        let dvds = Arc::new(movies);
 
         let mock_provider = Arc::new(MockAiChatProvider::new("Mock AI response"));
 
         let result = get_matching_movies(
             dvds,
-            mock_provider.clone(),
+            Arc::clone(&mock_provider),
             "Find action movies",
             Some("test-model"),
         )
@@ -266,14 +265,13 @@ mod tests {
     #[tokio::test]
     async fn test_get_matching_movies_with_default_model() {
         let movies = FullMovie::create_test_movies();
-        let movies_ref: &[FullMovie] = &movies;
-        let dvds = Arc::new(movies_ref);
+        let dvds = Arc::new(movies);
 
         let mock_provider = Arc::new(MockAiChatProvider::new("Response with default model"));
 
         let result = get_matching_movies(
             dvds,
-            mock_provider.clone(),
+            Arc::clone(&mock_provider),
             "Find comedies",
             None, // No model specified, should use default
         )
@@ -288,14 +286,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_matching_movies_empty_dvds() {
-        let empty_movies: &[FullMovie] = &[];
+        let empty_movies: Vec<FullMovie> = vec![];
         let dvds = Arc::new(empty_movies);
 
         let mock_provider = Arc::new(MockAiChatProvider::new("Should not be called"));
 
         let result = get_matching_movies(
             dvds,
-            mock_provider.clone(),
+            Arc::clone(&mock_provider),
             "Find movies",
             Some("test-model"),
         )
@@ -317,14 +315,13 @@ mod tests {
     #[tokio::test]
     async fn test_get_matching_movies_ai_failure() {
         let movies = FullMovie::create_test_movies();
-        let movies_ref: &[FullMovie] = &movies;
-        let dvds = Arc::new(movies_ref);
+        let dvds = Arc::new(movies);
 
         let mock_provider = Arc::new(MockAiChatProvider::with_failure());
 
         let result = get_matching_movies(
             dvds,
-            mock_provider.clone(),
+            Arc::clone(&mock_provider),
             "Find movies",
             Some("test-model"),
         )
