@@ -26,13 +26,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::init();
 
     info!("Starting csv reader");
+    #[cfg(debug_assertions)]
     dotenv()
         .ok()
         .expect("Failed to run env reader");
     debug!("Loaded env variables");
 
     info!("Opening file");
-    let reader = File::open("./movies.csv")?;
+    // Try Docker mount path first, then local development path
+    let csv_path = if std::path::Path::new("/app/movies.csv").exists() {
+        "/app/movies.csv"
+    } else {
+        "./movies.csv"
+    };
+    info!("Using CSV file: {}", csv_path);
+    let reader = File::open(csv_path)?;
     info!("File opened");
 
     info!("Parsing csv");
