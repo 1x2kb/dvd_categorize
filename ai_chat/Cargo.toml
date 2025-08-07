@@ -11,3 +11,7 @@ serde_json.workspace = true
 log.workspace = true
 pretty_env_logger.workspace = true
 tracing.workspace = true
+tokio = { version = "1.0", features = ["rt", "macros"] }
+
+[dev-dependencies]
+models = { path = "../models", features = ["ai", "testing"] }

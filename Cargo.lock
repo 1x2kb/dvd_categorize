@@ -42,6 +42,7 @@ dependencies = [
  "pretty_env_logger",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
 ]
 
@@ -3064,6 +3065,7 @@ dependencies = [
  "diesel",
  "ollama-rs",
  "pgvector",
+ "rand 0.8.5",
  "serde",
 ]
 

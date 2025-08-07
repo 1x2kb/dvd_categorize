@@ -1,0 +1,268 @@
+/* Movie Grid Styles */
+
+/* Container */
+.movie-grid-container {
+    padding: 20px;
+}
+
+/* Empty state */
+.movie-grid-empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+}
+
+/* Grid layouts */
+.movie-grid {
+    display: grid;
+    gap: 20px;
+    max-width: 60vw;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+.movie-grid-cols-1 {
+    grid-template-columns: repeat(1, 1fr);
+}
+
+.movie-grid-cols-2 {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.movie-grid-cols-3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.movie-grid-cols-4 {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+.movie-grid-cols-5 {
+    grid-template-columns: repeat(5, 1fr);
+}
+
+.movie-grid-cols-6 {
+    grid-template-columns: repeat(6, 1fr);
+}
+
+/* Movie card */
+.movie-card {
+    background: #1f2937;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    height: fit-content;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Blur effect for non-hovered cards (desktop only) */
+@media (hover: hover) and (pointer: fine) {
+    .movie-grid .movie-card:hover ~ .movie-card,
+    .movie-grid:has(.movie-card:hover) .movie-card:not(:hover) {
+        filter: blur(3px);
+        opacity: 0.6;
+        transform: scale(0.98);
+    }
+}
+
+.movie-card:hover {
+    transform: translateY(-6px) scale(1.02);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.08);
+    border-color: rgba(8, 145, 178, 0.3);
+}
+
+/* Movie poster */
+.movie-poster {
+    height: 60px;
+    background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+    text-align: center;
+    padding: 8px;
+    position: relative;
+    overflow: hidden;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.movie-poster::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.2);
+    z-index: 1;
+    transition: background 0.3s ease;
+}
+
+.movie-card:hover .movie-poster {
+    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+}
+
+.movie-poster > * {
+    position: relative;
+    z-index: 2;
+}
+
+/* Movie details */
+.movie-details {
+    padding: 20px;
+    background: linear-gradient(to bottom, rgba(31, 41, 55, 1), rgba(17, 24, 39, 1));
+}
+
+.movie-title {
+    margin: 0 0 12px 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: #f9fafb;
+    line-height: 1.2;
+    letter-spacing: -0.025em;
+}
+
+.movie-description {
+    margin: 0 0 16px 0;
+    color: #d1d5db;
+    font-size: 14px;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-weight: 400;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    position: relative;
+    z-index: 10;
+}
+
+.movie-card:hover .movie-description {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+    background: rgba(31, 41, 55, 0.95);
+    padding: 12px;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(8, 145, 178, 0.3);
+    backdrop-filter: blur(8px);
+    max-height: none;
+}
+
+/* Movie info rows (director, cast) */
+.movie-info-row {
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    background: rgba(8, 145, 178, 0.05);
+    border-radius: 8px;
+    border-left: 3px solid rgba(8, 145, 178, 0.3);
+}
+
+.movie-info-label {
+    font-weight: 600;
+    color: #e5e7eb;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.movie-info-value {
+    color: #d1d5db;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* Genres */
+.movie-genres-container {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.movie-genres {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.movie-genre-tag {
+    background: linear-gradient(135deg, #0891b2, #0e7490);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 4px rgba(8, 145, 178, 0.2);
+    transition: all 0.2s ease;
+}
+
+.movie-genre-tag:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(8, 145, 178, 0.3);
+}
+
+.movie-genre-more {
+    background: linear-gradient(135deg, #a0aec0, #718096);
+    color: white;
+}
+
+/* Extra genres - hidden by default, shown on card hover */
+.movie-genre-extra {
+    display: none;
+}
+
+.movie-card:hover .movie-genre-extra {
+    display: inline-block;
+}
+
+.movie-card:hover .movie-genre-more {
+    display: none;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .movie-grid {
+        max-width: 90vw;
+        padding: 0 10px;
+    }
+    
+    .movie-grid-cols-3,
+    .movie-grid-cols-4,
+    .movie-grid-cols-5,
+    .movie-grid-cols-6 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    .movie-grid {
+        max-width: 95vw;
+        padding: 0 5px;
+    }
+    
+    .movie-grid-cols-1,
+    .movie-grid-cols-2,
+    .movie-grid-cols-3,
+    .movie-grid-cols-4,
+    .movie-grid-cols-5,
+    .movie-grid-cols-6 {
+        grid-template-columns: repeat(1, 1fr);
+    }
+    
+    .movie-grid-container {
+        padding: 10px;
+    }
+    
+    .movie-poster {
+        height: 50px;
+        font-size: 12px;
+    }
+}
