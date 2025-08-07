@@ -11,9 +11,12 @@ use pgvector::Vector;
 pub mod schema;
 
 #[cfg(feature = "testing")]
-use crate::Random;
-#[cfg(feature = "testing")]
 use rand::{thread_rng, Rng};
+
+#[cfg(feature = "testing")]
+pub trait Random {
+    fn random() -> Self;
+}
 
 #[cfg(feature = "postgres")]
 use diesel::prelude::*;
@@ -228,5 +231,53 @@ impl Random for FullMovie {
                 .map(|_| GENRES[random.gen_range(1..GENRES.len())].to_string())
                 .collect(),
         }
+    }
+}
+
+#[cfg(feature = "testing")]
+impl FullMovie {
+    /// Creates a consistent set of test movies for unit testing.
+    /// Returns well-known movies with realistic data that can be used
+    /// across all test suites in the workspace.
+    pub fn create_test_movies() -> Vec<FullMovie> {
+        vec![
+            FullMovie {
+                id: 1,
+                name: "The Matrix".to_string(),
+                description: Some(
+                    "A computer hacker learns about the true nature of reality".to_string(),
+                ),
+                actors: vec![Actor {
+                    id: 1,
+                    name: "Keanu Reeves".to_string(),
+                }],
+                director: Some(
+                    Director {
+                        id: 1,
+                        name: "The Wachowskis".to_string(),
+                    },
+                ),
+                genres: vec!["Sci-Fi".to_string(), "Action".to_string()],
+            },
+            FullMovie {
+                id: 2,
+                name: "Inception".to_string(),
+                description: Some(
+                    "A thief who steals corporate secrets through dream-sharing technology"
+                        .to_string(),
+                ),
+                actors: vec![Actor {
+                    id: 2,
+                    name: "Leonardo DiCaprio".to_string(),
+                }],
+                director: Some(
+                    Director {
+                        id: 2,
+                        name: "Christopher Nolan".to_string(),
+                    },
+                ),
+                genres: vec!["Sci-Fi".to_string(), "Thriller".to_string()],
+            },
+        ]
     }
 }
