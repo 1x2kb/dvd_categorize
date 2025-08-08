@@ -202,7 +202,7 @@ async fn search_movies_by_embedding(query: &str) -> Result<Vec<i32>, String> {
         .map_err(|e| format!("Failed to generate embedding: {}", e))?;
     
     info!("Searching for movies using embedding");
-    let movie_ids = database::search_movies(embedding, 22).await
+    let movie_ids = database::search_movies(embedding, 15).await
         .map_err(|e| {
             error!("Failed to search movies: {:#?}", e);
             format!("Database search failed: {}", e)
