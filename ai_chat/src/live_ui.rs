@@ -26,11 +26,16 @@ impl AiChatProvider for OllamaClient {
             .as_deref() 
             .unwrap_or("mistral");
 
+        let num_ctx = std::env::var("OLLAMA_NUM_CTX")
+            .unwrap_or_else(|_| "8000".to_string())
+            .parse::<u64>()
+            .unwrap_or(8000);
+            
         let chat_request = ChatMessageRequest::new(
             model_name.to_string(),
             messages,
         )
-        .options(GenerationOptions::default().num_ctx(16000));
+        .options(GenerationOptions::default().num_ctx(num_ctx));
 
         let response = self
             .ollama_client
