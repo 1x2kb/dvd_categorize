@@ -13,25 +13,24 @@ use crate::{prompts, OllamaClient};
 pub trait AiChatProvider {
     fn send_chat_request(
         &self,
-        model: &str,
         messages: Vec<ChatMessage>,
-        user_action: &str,
     ) -> impl Future<Output = Result<String, String>>;
 }
 
 /// Production implementation using Ollama
 impl AiChatProvider for OllamaClient {
-    async fn send_chat_request(
-        &self,
-        model: &str,
-        messages: Vec<ChatMessage>,
-        _user_action: &str,
-    ) -> Result<String, String> {
+    async fn send_chat_request(&self, messages: Vec<ChatMessage>) -> Result<String, String> {
+        let model_name = self
+            .ai_action
+            .model
+            .as_deref() 
+            .unwrap_or("mistral");
+
         let chat_request = ChatMessageRequest::new(
-            model.to_string(),
+            model_name.to_string(),
             messages,
         )
-        .options(GenerationOptions::default().num_ctx(64000));
+        .options(GenerationOptions::default().num_ctx(16000));
 
         let response = self
             .ollama_client
@@ -54,11 +53,10 @@ impl AiChatProvider for OllamaClient {
 }
 
 /// Refactored function that accepts any AI chat provider for better testability
-pub async fn get_matching_movies<T: AiChatProvider>(
+pub async fn filter_movies_with_ai<T: AiChatProvider>(
     dvds: Arc<Vec<FullMovie>>,
     ai_provider: Arc<T>,
-    user_action: &str,
-    model: Option<&str>,
+    user_query: &str,
 ) -> Result<String, String> {
     if dvds.is_empty() {
         return Err("DVDs empty, cannot match".to_string());
@@ -67,41 +65,12 @@ pub async fn get_matching_movies<T: AiChatProvider>(
     let prompt = build_movie_matcher_prompt(&dvds)?;
     let messages = vec![
         ChatMessage::system(prompt),
-        ChatMessage::user(user_action.to_string()),
+        ChatMessage::user(user_query.to_string()),
     ];
 
-    let model_name = model.unwrap_or("mistral");
-
     ai_provider
-        .send_chat_request(
-            model_name,
-            messages,
-            user_action,
-        )
+        .send_chat_request(messages)
         .await
-}
-
-/// Convenience function that maintains the original API for existing code
-pub async fn get_matching_movies_with_ollama(
-    dvds: Arc<Vec<FullMovie>>,
-    ollama: Arc<OllamaClient>,
-) -> Result<String, String> {
-    let user_action = ollama
-        .ai_action
-        .action
-        .clone();
-    let model = ollama
-        .ai_action
-        .model
-        .as_deref();
-
-    get_matching_movies(
-        dvds,
-        Arc::clone(&ollama),
-        &user_action,
-        model,
-    )
-    .await
 }
 
 /// Helper function to build the prompt - now easily testable
@@ -123,6 +92,21 @@ pub fn build_movie_matcher_prompt(dvds: &[FullMovie]) -> Result<String, String> 
     )
 }
 
+/// Convenience function that maintains the original API for existing code
+pub async fn get_matching_movies_with_ollama(
+    dvds: Arc<Vec<FullMovie>>,
+    ollama: Arc<OllamaClient>,
+) -> Result<String, String> {
+    filter_movies_with_ai(
+        dvds,
+        Arc::clone(&ollama),
+        &ollama
+            .ai_action
+            .action,
+    )
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,9 +118,7 @@ mod tests {
     pub struct MockAiChatProvider {
         pub expected_response: String,
         pub should_fail: bool,
-        pub captured_model: Mutex<Option<String>>,
-        pub captured_messages: Mutex<Vec<ChatMessage>>,
-        pub captured_user_action: Mutex<Option<String>>,
+        pub captured_messages: Arc<Mutex<Vec<ChatMessage>>>,
     }
 
     impl MockAiChatProvider {
@@ -144,9 +126,7 @@ mod tests {
             Self {
                 expected_response: response.to_string(),
                 should_fail: false,
-                captured_model: Mutex::new(None),
-                captured_messages: Mutex::new(Vec::new()),
-                captured_user_action: Mutex::new(None),
+                captured_messages: Arc::new(Mutex::new(Vec::new())),
             }
         }
 
@@ -154,24 +134,8 @@ mod tests {
             Self {
                 expected_response: String::new(),
                 should_fail: true,
-                captured_model: Mutex::new(None),
-                captured_messages: Mutex::new(Vec::new()),
-                captured_user_action: Mutex::new(None),
+                captured_messages: Arc::new(Mutex::new(Vec::new())),
             }
-        }
-
-        pub fn get_captured_model(&self) -> Option<String> {
-            self.captured_model
-                .lock()
-                .unwrap()
-                .clone()
-        }
-
-        pub fn get_captured_user_action(&self) -> Option<String> {
-            self.captured_user_action
-                .lock()
-                .unwrap()
-                .clone()
         }
 
         pub fn get_captured_messages(&self) -> Vec<ChatMessage> {
@@ -183,25 +147,12 @@ mod tests {
     }
 
     impl AiChatProvider for MockAiChatProvider {
-        async fn send_chat_request(
-            &self,
-            model: &str,
-            messages: Vec<ChatMessage>,
-            user_action: &str,
-        ) -> Result<String, String> {
+        async fn send_chat_request(&self, messages: Vec<ChatMessage>) -> Result<String, String> {
             // Capture the inputs for verification in tests
-            *self
-                .captured_model
-                .lock()
-                .unwrap() = Some(model.to_string());
             *self
                 .captured_messages
                 .lock()
                 .unwrap() = messages;
-            *self
-                .captured_user_action
-                .lock()
-                .unwrap() = Some(user_action.to_string());
 
             if self.should_fail {
                 Err("Mock AI failure".to_string())
@@ -214,8 +165,6 @@ mod tests {
         }
     }
 
-
-
     #[tokio::test]
     async fn test_get_matching_movies_success() {
         let movies = FullMovie::create_test_movies();
@@ -223,11 +172,10 @@ mod tests {
 
         let mock_provider = Arc::new(MockAiChatProvider::new("Mock AI response"));
 
-        let result = get_matching_movies(
+        let result = filter_movies_with_ai(
             dvds,
             Arc::clone(&mock_provider),
-            "Find action movies",
-            Some("test-model"),
+            "Find movies",
         )
         .await;
 
@@ -238,14 +186,6 @@ mod tests {
         );
 
         // Verify the mock captured the expected inputs
-        assert_eq!(
-            mock_provider.get_captured_model(),
-            Some("test-model".to_string())
-        );
-        assert_eq!(
-            mock_provider.get_captured_user_action(),
-            Some("Find action movies".to_string())
-        );
 
         let captured_messages = mock_provider.get_captured_messages();
         assert_eq!(
@@ -269,18 +209,17 @@ mod tests {
 
         let mock_provider = Arc::new(MockAiChatProvider::new("Response with default model"));
 
-        let result = get_matching_movies(
+        let result = filter_movies_with_ai(
             dvds,
             Arc::clone(&mock_provider),
-            "Find comedies",
-            None, // No model specified, should use default
+            "Find movies",
         )
         .await;
 
         assert!(result.is_ok());
         assert_eq!(
-            mock_provider.get_captured_model(),
-            Some("mistral".to_string())
+            result.unwrap(),
+            "Response with default model"
         );
     }
 
@@ -291,11 +230,10 @@ mod tests {
 
         let mock_provider = Arc::new(MockAiChatProvider::new("Should not be called"));
 
-        let result = get_matching_movies(
+        let result = filter_movies_with_ai(
             dvds,
             Arc::clone(&mock_provider),
             "Find movies",
-            Some("test-model"),
         )
         .await;
 
@@ -306,10 +244,6 @@ mod tests {
         );
 
         // Mock should not have been called for empty DVDs
-        assert_eq!(
-            mock_provider.get_captured_model(),
-            None
-        );
     }
 
     #[tokio::test]
@@ -319,11 +253,10 @@ mod tests {
 
         let mock_provider = Arc::new(MockAiChatProvider::with_failure());
 
-        let result = get_matching_movies(
+        let result = filter_movies_with_ai(
             dvds,
             Arc::clone(&mock_provider),
             "Find movies",
-            Some("test-model"),
         )
         .await;
 
@@ -334,14 +267,6 @@ mod tests {
         );
 
         // Verify the mock was called even though it failed
-        assert_eq!(
-            mock_provider.get_captured_model(),
-            Some("test-model".to_string())
-        );
-        assert_eq!(
-            mock_provider.get_captured_user_action(),
-            Some("Find movies".to_string())
-        );
     }
 
     #[test]

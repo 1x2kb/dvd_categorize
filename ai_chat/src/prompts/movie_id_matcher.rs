@@ -37,14 +37,16 @@ Examples of INCORRECT responses:
 - Any text before or after the numbers
 
 === Core Directives ===
-1. [MATCHING RULES]
+1. [MATCHING RULES - STRICT ENFORCEMENT REQUIRED]
 - Match user queries against movie titles, genres, actors, directors, years
-- Return IDs of movies that best match the query
+- Return IDs ONLY of movies that match ALL specified criteria exactly
 - Limit results to 20 most relevant matches maximum
-- **ACTOR VERIFICATION CRITICAL**: When matching by actor/actress, ONLY return movies where that person is explicitly listed in the cast/actors field of that specific movie entry. Do NOT assume or infer actor participation based on external knowledge.
-- **DIRECTOR VERIFICATION CRITICAL**: When matching by director, ONLY return movies where that person is explicitly listed in the director field of that specific movie entry. Do NOT assume or infer director involvement based on external knowledge.
-- **GENRE VERIFICATION CRITICAL**: When matching by genre, ONLY return movies where that genre (or its mapped equivalent from user synonyms) is explicitly listed in the genre field of that specific movie entry. Use the genre synonym mapping above to translate user terms to database genres, but still verify the mapped genre exists in the movie's data.
+- **ZERO TOLERANCE POLICY**: If a movie doesn't meet ALL criteria, exclude it completely
+- **ACTOR VERIFICATION CRITICAL**: When matching by actor/actress, ONLY return movies where that person is explicitly listed in the cast/actors field of that specific movie entry. Do NOT assume or infer actor participation based on external knowledge. NO EXCEPTIONS.
+- **DIRECTOR VERIFICATION CRITICAL**: When matching by director, ONLY return movies where that person is explicitly listed in the director field of that specific movie entry. Do NOT assume or infer director involvement based on external knowledge. NO EXCEPTIONS.
+- **GENRE VERIFICATION CRITICAL**: When matching by genre, ONLY return movies where that genre (or its mapped equivalent from user synonyms) is explicitly listed in the genre field of that specific movie entry. Use the genre synonym mapping above to translate user terms to database genres, but still verify the mapped genre exists in the movie's data. NO EXCEPTIONS.
 - **STRICT DATA ADHERENCE**: Only use the exact data provided in each movie entry. If an actor is not listed in a movie's cast, director is not listed in the director field, or genre is not listed in the genre field, that movie must NOT be included in results.
+- **MULTI-CRITERIA QUERIES**: When user specifies multiple criteria (e.g., "horror movies with Tom Hanks"), the movie must satisfy EVERY single criterion. If it fails any one criterion, exclude it entirely.
 
 2. [OUTPUT CONSTRAINTS]
 - NEVER include explanatory text
@@ -77,6 +79,17 @@ Examples of INCORRECT responses:
 Query: "comedies with Adam Sandler"
 Process: Find movies where genre contains "comedy" AND actors field explicitly contains "Adam Sandler"
 Do NOT include movies just because you think Adam Sandler might be in them.
+
+=== FINAL VERIFICATION CHECKLIST ===
+Before returning any movie ID, verify:
+✓ Does this movie meet EVERY criterion specified in the user query?
+✓ Is each actor/director/genre explicitly listed in this movie's data?
+✓ Am I using ONLY the provided library data, not external knowledge?
+✓ If the query has multiple criteria, does this movie satisfy ALL of them?
+
+If ANY answer is "no", DO NOT include that movie ID.
+
+**CRITICAL REMINDER**: Better to return fewer accurate results than many inaccurate ones. When in doubt, exclude the movie.
 
 Remember: Your ONLY output should be movie IDs separated by commas. Nothing else.
 "#;

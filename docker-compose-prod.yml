@@ -7,14 +7,14 @@ volumes:
   redis_data:
 
 services:
-  postgres:
+  postgres-prod:
     image: pgvector/pgvector:pg17
     environment:
       POSTGRES_USER: app_user
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-strongpassword}
       POSTGRES_DB: app_db
     ports:
-      - "0.0.0.0:5433:5432"
+      - "0.0.0.0:5434:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgresql/:/docker-entrypoint-initdb.d/
@@ -25,10 +25,10 @@ services:
       retries: 5
     restart: unless-stopped
 
-  ollama:
+  ollama-prod:
     image: ollama/ollama:rocm
     ports:
-      - "0.0.0.0:11434:11434"
+      - "0.0.0.0:11435:11434"
     volumes:
       - ollama_data:/root/.ollama
     environment:
@@ -50,66 +50,66 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-  redis:
+  redis-prod:
     image: redis:alpine
     ports:
-      - "0.0.0.0:6379:6379"
+      - "0.0.0.0:6380:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
 
-  diesel_migrate:
+  diesel_migrate-prod:
     build:
       context: .
       dockerfile: docker/prod/diesel.Dockerfile
     depends_on:
-      postgres:
+      postgres-prod:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres:5432/app_db
+      DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres-prod:5432/app_db
     restart: "no"
 
-  dvd_categorize_api:
+  dvd_categorize_api-prod:
     build:
       context: .
       dockerfile: docker/prod/api.Dockerfile
     ports:
-      - "0.0.0.0:3000:3000"
+      - "0.0.0.0:3001:3000"
     depends_on:
-      diesel_migrate:
+      diesel_migrate-prod:
         condition: service_completed_successfully
-      postgres:
+      postgres-prod:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres:5432/app_db
+      DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres-prod:5432/app_db
       RUST_LOG: ${RUST_LOG:-info}
       server_host: 0.0.0.0
       server_port: 3000
-      OLLAMA_HOST: ollama
+      OLLAMA_HOST: ollama-prod
       OLLAMA_PORT: "11434"
     restart: unless-stopped
 
-  dvd_categorize_web:
+  dvd_categorize_web-prod:
     build:
       context: .
       dockerfile: docker/prod/web.Dockerfile
     ports:
-      - "0.0.0.0:8080:8080"
+      - "0.0.0.0:8081:8080"
     depends_on:
-      - dvd_categorize_api
+      - dvd_categorize_api-prod
     restart: unless-stopped
 
-  csv_reader:
+  csv_reader-prod:
     build:
       context: .
       dockerfile: docker/prod/csv.Dockerfile
     depends_on:
-      diesel_migrate:
+      diesel_migrate-prod:
         condition: service_completed_successfully
-      postgres:
+      postgres-prod:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres:5432/app_db
+      DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres-prod:5432/app_db
     volumes:
       - ./movies.csv:/app/movies.csv:ro
     restart: "no"
