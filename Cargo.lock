@@ -1561,6 +1561,7 @@ dependencies = [
  "axum-macros",
  "database",
  "dotenvy",
+ "itertools",
  "log",
  "ollama-rs",
  "pretty_env_logger",
@@ -2701,6 +2702,15 @@ dependencies = [
  "hermit-abi 0.4.0",
  "libc",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "itertools"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
+dependencies = [
+ "either",
 ]
 
 [[package]]

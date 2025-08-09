@@ -55,6 +55,45 @@ async fn get_database_connection() -> Result<AsyncPgConnection, DatabaseError> {
         .map_err(DatabaseError::from)
 }
 
+/// Get all unique genres from the database
+pub async fn get_all_genres() -> Result<Vec<String>, DatabaseError> {
+    use crate::schema::movie_genre::dsl::*;
+    let mut conn = get_database_connection().await?;
+    
+    movie_genre
+        .select(genre)
+        .distinct()
+        .load::<String>(&mut conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
+/// Get all unique actor names from the database
+pub async fn get_all_actors() -> Result<Vec<String>, DatabaseError> {
+    use crate::schema::actor::dsl::*;
+    let mut conn = get_database_connection().await?;
+    
+    actor
+        .select(name)
+        .distinct()
+        .load::<String>(&mut conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
+/// Get all unique director names from the database
+pub async fn get_all_directors() -> Result<Vec<String>, DatabaseError> {
+    use crate::schema::director::dsl::*;
+    let mut conn = get_database_connection().await?;
+    
+    director
+        .select(name)
+        .distinct()
+        .load::<String>(&mut conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
 pub async fn get_movies() -> Result<Vec<FullMovie>, DatabaseError> {
     let mut connection = get_database_connection().await?;
 
