@@ -65,7 +65,7 @@ pub async fn find_related_keys(
     ];
 
     let chat_request = ChatMessageRequest::new(
-        "mistral".to_string(),
+        "phi3.5".to_string(),
         messages,
     );
 
@@ -150,7 +150,7 @@ where
     A: AsRef<str> + std::fmt::Debug + Send + Sync,
 {
     let ollama = Ollama::default();
-    let model = "mistral".to_string();
+    let model = "phi3.5".to_string();
 
     let prompt =
         "You are an expert on communcatation and reasoning. Your job is to decide if the user's question was answered by the AI. Do not be overly literal, the answer given does not have to be perfect. When giving a response please respond with yes or no, and then why or why not.\nExample User Question: Suggest a comedy for me to watch. AI Answer: I think you would enjoy Tommy Boy, as this is a comedy from your library. Your Answer: Yes, this answers the users question because they asked for a comedy film from their library".to_string();

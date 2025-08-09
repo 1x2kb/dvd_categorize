@@ -43,108 +43,111 @@ pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
     )
 }
 
-#[instrument]
-#[debug_handler]
-pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
-    let dvds = database::get_movies()
-        .await
-        .unwrap_or_else(|_| Vec::new());
+// #[instrument]
+// #[debug_handler]
+// pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
+//     let dvds = database::get_movies()
+//         .await
+//         .unwrap_or_else(|_| Vec::new());
 
-    let (uuid, question, model) = (
-        action.uuid,
-        action.action,
-        action.model,
-    );
+//     let (uuid, question, model, temperature) = (
+//         action.uuid,
+//         action.action,
+//         action.model,
+//         action.temperature
+//     );
 
-    let embedding = embedding(&question)
-        .await
-        .ok();
+//     let embedding = embedding(&question)
+//         .await
+//         .ok();
 
-    // Search for movies using the embedding if available
-    let movie_ids = match embedding {
-        Some(embedding_vector) => {
-            info!("Searching for movies using embedding");
-            let search_result = database::search_movies(
-                embedding_vector,
-                15,
-            )
-            .await;
+//     // Search for movies using the embedding if available
+//     let movie_ids = match embedding {
+//         Some(embedding_vector) => {
+//             info!("Searching for movies using embedding");
+//             let search_result = database::search_movies(
+//                 embedding_vector,
+//                 15,
+//             )
+//             .await;
 
-            if let Err(e) = &search_result {
-                error!(
-                    "Failed to search movies: {:#?}",
-                    e
-                );
-            }
+//             if let Err(e) = &search_result {
+//                 error!(
+//                     "Failed to search movies: {:#?}",
+//                     e
+//                 );
+//             }
 
-            search_result.ok()
-        }
-        None => None,
-    };
+//             search_result.ok()
+//         }
+//         None => None,
+//     };
 
-    let full_movies = if let Some(movie_ids) = movie_ids {
-        database::get_movies_by_ids(movie_ids)
-            .await
-            .unwrap_or(dvds)
-    } else {
-        dvds
-    }; // For now fall back to all dvds
+//     let full_movies = if let Some(movie_ids) = movie_ids {
+//         database::get_movies_by_ids(movie_ids)
+//             .await
+//             .unwrap_or(dvds)
+//     } else {
+//         dvds
+//     }; // For now fall back to all dvds
 
-    info!(
-        "Found {} matching movies",
-        full_movies.len()
-    );
+//     info!(
+//         "Found {} matching movies",
+//         full_movies.len()
+//     );
 
-    info!("Sending question to AI.");
-    let result = ai_chat::ai_message(
-        Arc::new(full_movies),
-        Arc::new(
-            OllamaClient {
-                ollama_client: {
-                    let ollama_host =
-                        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
-                    let ollama_port =
-                        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
-                    let ollama_url = format!(
-                        "http://{}:{}",
-                        ollama_host, ollama_port
-                    );
-                    Ollama::from_url(
-                        ollama_url
-                            .parse()
-                            .unwrap(),
-                    )
-                },
-                ai_action: AiAction {
-                    uuid: uuid.to_string(),
-                    action: question,
-                    model: model.clone(),
-                },
-            },
-        ),
-    )
-    .await;
-    info!("Response received.");
+//     info!("Sending question to AI.");
+//     let result = ai_chat::ai_message(
+//         Arc::new(full_movies),
+//         Arc::new(
+//             OllamaClient {
+//                 ollama_client: {
+//                     let ollama_host =
+//                         std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
+//                     let ollama_port =
+//                         std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
+//                     let ollama_url = format!(
+//                         "http://{}:{}",
+//                         ollama_host, ollama_port
+//                     );
+//                     Ollama::from_url(
+//                         ollama_url
+//                             .parse()
+//                             .unwrap(),
+//                     )
+//                 },
+//                 ai_action: AiAction {
+//                     uuid: uuid.to_string(),
+//                     action: question,
+//                     model: model.clone(),
+//                     temperature: temperature,
+//                 },
+//             },
+//         ),
+//     )
+//     .await;
+//     info!("Response received.");
 
-    let response = match result {
-        Ok(response) => response,
-        Err(e) => {
-            error!(
-                "Failed to get AI response: {:#?}",
-                e
-            );
-            "There was an error that made communication with the AI impossible.".to_string()
-        }
-    };
+//     let response = match result {
+//         Ok(response) => response,
+//         Err(e) => {
+//             error!(
+//                 "Failed to get AI response: {:#?}",
+//                 e
+//             );
+//             "There was an error that made communication with the AI impossible.".to_string()
+//         }
+//     };
 
-    Json(
-        AiAction {
-            uuid,
-            action: response,
-            model,
-        },
-    )
-}
+//     Json(
+//         AiAction {
+//             uuid,
+//             action: response,
+//             model,
+//             temperature: None,
+//         },
+//     )
+// }
 
 /// Generates vector embeddings for a given text question using the Ollama AI service.
 ///
@@ -197,7 +200,7 @@ pub async fn embedding(text: &str) -> Result<Vec<f32>, OllamaError> {
 }
 
 /// Helper function to search for movies using vector embeddings
-async fn search_movies_by_embedding(query: &str) -> Result<Vec<i32>, String> {
+async fn search_movies_by_embedding(query: &str) -> Result<Vec<FullMovie>, String> {
     let embedding = embedding(query).await
         .map_err(|e| format!("Failed to generate embedding: {}", e))?;
     
@@ -227,7 +230,8 @@ fn create_ollama_client(query: String) -> Result<Arc<OllamaClient>, String> {
         ai_action: AiAction {
             uuid: "movie_search".to_string(),
             action: query,
-            model: Some("mistral".to_string()),
+            model: Some("phi3.5".to_string()),
+            temperature: None,
         },
     });
     
@@ -266,66 +270,71 @@ fn parse_movie_ids_from_response(response: String) -> Result<Vec<i32>, String> {
 #[debug_handler]
 pub async fn get_matching_movies(Json(search_request): Json<SearchRequest>) -> Json<Option<Vec<FullMovie>>> {
     // Step 1: Search for candidate movies using vector embeddings
-    let candidate_movie_ids = match search_movies_by_embedding(&search_request.query).await {
-        Ok(ids) => ids,
-        Err(e) => {
-            error!("Embedding search failed: {}", e);
-            return Json(None);
-        }
-    };
-    
-    // Step 2: Get full movie details for candidates
-    let candidate_movies = match database::get_movies_by_ids(candidate_movie_ids).await {
+    let movie_result = search_movies_by_embedding(&search_request.query).await;
+
+    let move_result = match movie_result {
         Ok(movies) => movies,
         Err(e) => {
             error!("Failed to fetch candidate movies: {:#?}", e);
             return Json(None);
         }
     };
+
+    Json(Some(move_result))
     
-    if candidate_movies.is_empty() {
-        info!("No candidate movies found for query: {}", search_request.query);
-        return Json(Some(Vec::new()));
-    }
     
-    // Step 3: Create Ollama client for AI processing
-    let ollama_client = match create_ollama_client(search_request.query.clone()) {
-        Ok(client) => client,
-        Err(e) => {
-            error!("Failed to create Ollama client: {}", e);
-            return Json(None);
-        }
-    };
+    // // Step 2: Get full movie details for candidates
+    // let candidate_movies = match database::get_movies_by_ids(candidate_movie_ids).await {
+    //     Ok(movies) => movies,
+    //     Err(e) => {
+    //         error!("Failed to fetch candidate movies: {:#?}", e);
+    //         return Json(None);
+    //     }
+    // };
     
-    // Step 4: Use AI to refine the movie selection
-    let ai_response = match ai_chat::live_ui::get_matching_movies_with_ollama(
-        Arc::new(candidate_movies),
-        ollama_client,
-    ).await {
-        Ok(response) => response,
-        Err(e) => {
-            error!("AI processing failed: {}", e);
-            return Json(None);
-        }
-    };
+    // if candidate_movies.is_empty() {
+    //     info!("No candidate movies found for query: {}", search_request.query);
+    //     return Json(Some(Vec::new()));
+    // }
     
-    // Step 5: Parse AI response to get final movie IDs
-    let final_movie_ids = match parse_movie_ids_from_response(ai_response) {
-        Ok(ids) => ids,
-        Err(e) => {
-            error!("Failed to parse AI response: {}", e);
-            return Json(None);
-        }
-    };
+    // // Step 3: Create Ollama client for AI processing
+    // let ollama_client = match create_ollama_client(search_request.query.clone()) {
+    //     Ok(client) => client,
+    //     Err(e) => {
+    //         error!("Failed to create Ollama client: {}", e);
+    //         return Json(None);
+    //     }
+    // };
     
-    // Step 6: Get final movie details
-    let final_movies = match database::get_movies_by_ids(final_movie_ids).await {
-        Ok(movies) => Some(movies),
-        Err(e) => {
-            error!("Failed to fetch final movies: {:#?}", e);
-            None
-        }
-    };
+    // // Step 4: Use AI to refine the movie selection
+    // let ai_response = match ai_chat::live_ui::get_matching_movies_with_ollama(
+    //     Arc::new(candidate_movies),
+    //     ollama_client,
+    // ).await {
+    //     Ok(response) => response,
+    //     Err(e) => {
+    //         error!("AI processing failed: {}", e);
+    //         return Json(None);
+    //     }
+    // };
     
-    Json(final_movies)
+    // // Step 5: Parse AI response to get final movie IDs
+    // let final_movie_ids = match parse_movie_ids_from_response(ai_response) {
+    //     Ok(ids) => ids,
+    //     Err(e) => {
+    //         error!("Failed to parse AI response: {}", e);
+    //         return Json(None);
+    //     }
+    // };
+    
+    // // Step 6: Get final movie details
+    // let final_movies = match database::get_movies_by_ids(final_movie_ids).await {
+    //     Ok(movies) => Some(movies),
+    //     Err(e) => {
+    //         error!("Failed to fetch final movies: {:#?}", e);
+    //         None
+    //     }
+    // };
+    
+    // Json(final_movies)
 }

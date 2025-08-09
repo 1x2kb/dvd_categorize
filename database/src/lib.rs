@@ -432,15 +432,18 @@ pub async fn run_dvd_filters(filters: DvdFilters) -> Result<Vec<i32>, DatabaseEr
         .map_err(DatabaseError::from)
 }
 
-pub async fn search_movies(embedding: Vec<f32>, limit: i64) -> Result<Vec<i32>, DatabaseError> {
+pub async fn search_movies(embedding: Vec<f32>, limit: i64) -> Result<Vec<FullMovie>, DatabaseError> {
     let mut conn = get_database_connection().await?;
 
-    movie::table
+    // Get the IDs of the most similar movies
+    let movie_ids: Vec<i32> = movie::table
         .select(movie::id)
         .filter(movie::embedding.is_not_null())
         .order(movie::embedding.cosine_distance(Vector::from(embedding)))
         .limit(limit)
         .load::<i32>(&mut conn)
-        .await
-        .map_err(DatabaseError::from)
+        .await?;
+
+    // Use the optimized helper function to get full movie data
+    get_movies_by_ids(movie_ids).await
 }

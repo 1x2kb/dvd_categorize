@@ -75,10 +75,10 @@ fn init_router() -> Router {
             "/dvd",
             post(insert_dvd),
         )
-        .route(
-            "/ai/chat",
-            post(chat),
-        )
+        // .route(
+        //     "/ai/chat",
+        //     post(chat),
+        // )
         .route(
             "/ai/dvd-match",
             post(get_matching_movies),
