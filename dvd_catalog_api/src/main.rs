@@ -8,13 +8,22 @@ use axum::{
 use dotenvy::dotenv;
 use dvd_catalog::*;
 use tower_http::cors::{Any, CorsLayer};
-extern crate pretty_env_logger;
-#[macro_use]
-extern crate log;
+use log::{info, warn};
 
 #[tokio::main]
 async fn main() {
-    pretty_env_logger::init();
+    // Initialize logger with timestamp and module info
+    let env = env_logger::Env::default()
+        .filter_or("RUST_LOG", "info")
+        .write_style_or("RUST_LOG_STYLE", "always");
+    
+    env_logger::Builder::from_env(env)
+        .format_timestamp(Some(env_logger::TimestampPrecision::Millis))
+        .format_module_path(false)
+        .init();
+    
+    info!("Starting DVD Catalog API");
+    
     // Only load .env file in debug mode (development)
     #[cfg(debug_assertions)]
     {

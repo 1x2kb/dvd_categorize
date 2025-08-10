@@ -3,6 +3,7 @@ use std::{error::Error, fs::File, io::Read};
 use csv::Reader;
 use database::{Actor, Director, FullMovie};
 use dotenvy::dotenv;
+use env_logger;
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +24,7 @@ struct CsvRecord {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    pretty_env_logger::init();
+    env_logger::init();
 
     info!("Starting csv reader");
     #[cfg(debug_assertions)]
