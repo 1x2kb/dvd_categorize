@@ -10,6 +10,53 @@ use log::{error, info, warn};
 use ollama_rs::{error::OllamaError, Ollama};
 use tracing::instrument;
 
+/// Extracts all unique entities from a list of movies
+#[instrument(skip(movies))]
+async fn extract_entities_from_movies(movies: &[FullMovie]) -> (Vec<String>, Vec<String>, Vec<String>) {
+    use std::time::Instant;
+    use std::collections::HashSet;
+    
+    let start_time = Instant::now();
+    let total_movies = movies.len();
+    info!("Starting entity extraction for {} movies", total_movies);
+    
+    let mut all_genres = HashSet::new();
+    let mut all_actors = HashSet::new();
+    let mut all_directors = HashSet::new();
+    
+    // Process each movie sequentially
+    for movie in movies {
+        // Process genres
+        for genre in &movie.genres {
+            all_genres.insert(genre.to_lowercase());
+        }
+        
+        // Process actors
+        for actor in &movie.actors {
+            all_actors.insert(actor.name.to_lowercase());
+        }
+        
+        // Process director if present
+        if let Some(director) = &movie.director {
+            all_directors.insert(director.name.to_lowercase());
+        }
+    }
+    
+    let elapsed = start_time.elapsed();
+    info!(
+        "Extracted entities from {} movies in {:.2?} ({} movies/sec)",
+        total_movies,
+        elapsed,
+        total_movies as f64 / elapsed.as_secs_f64()
+    );
+    
+    (
+        all_genres.into_iter().collect(),
+        all_actors.into_iter().collect(),
+        all_directors.into_iter().collect()
+    )
+}
+
 #[instrument]
 pub async fn hello_world() -> &'static str {
     "Hello from DVD_CATALOG_API!"
@@ -201,14 +248,29 @@ pub async fn embedding(text: &str) -> Result<Vec<f32>, OllamaError> {
     embedding_result
 }
 
-/// Helper function to parse query into components
-async fn extract_entities(query: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
-    use std::collections::HashSet;
+/// 
+/// # Arguments
+/// * `query` - The search query to parse
+/// * `movies` - List of all movies to extract entities from
+#[instrument(skip(movies))]
+async fn extract_entities(
+    query: &str,
+    movies: &[FullMovie],
+) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let start_time = std::time::Instant::now();
     
-    // Get all known entities from the database
-    let all_genres = database::get_all_genres().await.unwrap_or_default();
-    let all_actors = database::get_all_actors().await.unwrap_or_default();
-    let all_directors = database::get_all_directors().await.unwrap_or_default();
+    // Extract all unique entities from the movie list
+    info!("Starting entity extraction for query: {}", query);
+    let (all_genres, all_actors, all_directors) = extract_entities_from_movies(movies).await;
+    
+    info!(
+        "Entity extraction completed in {:.2?} ({} unique genres, {} unique actors, {} unique directors)",
+        start_time.elapsed(),
+        all_genres.len(),
+        all_actors.len(),
+        all_directors.len()
+    );
+    use std::collections::HashSet;
     
     let query_lower = query.to_lowercase();
     let mut titles = Vec::new();
@@ -395,8 +457,8 @@ async fn search_movies_by_text(query: &str) -> Result<Vec<FullMovie>, String> {
     info!("Fetched {} movies in {:.2?}", 
           all_movies.len(), start_time.elapsed());
 
-    // Extract search criteria
-    let (titles, actors, genres) = extract_entities(query).await;
+    // Extract search criteria from the movie list
+    let (titles, actors, genres) = extract_entities(query, &all_movies).await;
     info!("Extracted entities - titles: {:?}, actors: {:?}, genres: {:?}", 
           titles, actors, genres);
     
@@ -557,8 +619,12 @@ fn parse_movie_ids_from_response(response: String) -> Result<Vec<i32>, String> {
 async fn combined_search(query: &str) -> Result<Vec<FullMovie>, String> {
     info!("Starting combined search for: {}", query);
     
-    // Extract entities once to avoid multiple database calls
-    let (titles, actors, genres) = extract_entities(query).await;
+    // Fetch all movies for entity extraction
+    let all_movies = database::get_movies().await
+        .map_err(|e| format!("Failed to fetch movies: {}", e))?;
+    
+    // Extract entities from the movie list
+    let (titles, actors, genres) = extract_entities(query, &all_movies).await;
     info!("Extracted entities for combined search - titles: {:?}, actors: {:?}, genres: {:?}", 
         titles, actors, genres);
     
