@@ -1,29 +1,35 @@
-use std::env;
+use std::{env, sync::Arc};
 
 use axum::{
     http::{self, HeaderValue, Method},
     routing::{get, post},
     Router,
 };
+use database::FullMovie;
 use dotenvy::dotenv;
 use dvd_catalog::*;
-use tower_http::cors::{Any, CorsLayer};
 use log::{info, warn};
+use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
 async fn main() {
     // Initialize logger with timestamp and module info
     let env = env_logger::Env::default()
-        .filter_or("RUST_LOG", "info")
-        .write_style_or("RUST_LOG_STYLE", "always");
-    
+        .filter_or(
+            "RUST_LOG", "info",
+        )
+        .write_style_or(
+            "RUST_LOG_STYLE",
+            "always",
+        );
+
     env_logger::Builder::from_env(env)
         .format_timestamp(Some(env_logger::TimestampPrecision::Millis))
         .format_module_path(false)
         .init();
-    
+
     info!("Starting DVD Catalog API");
-    
+
     // Only load .env file in debug mode (development)
     #[cfg(debug_assertions)]
     {
@@ -67,31 +73,38 @@ fn get_host() -> String {
 }
 
 fn init_router() -> Router {
-    Router::new()
-        .route(
-            "/",
-            get(hello_world),
-        )
+    // Create state
+    let state = CacheState {
+        movies: Arc::new(Vec::new()),
+    };
+
+    // Create a router for endpoints that need CacheState
+    let stateful_router = Router::new()
         .route(
             "/dvd",
             get(get_dvds),
         )
         .route(
+            "/ai/dvd-match",
+            post(get_matching_movies),
+        )
+        .with_state(state);
+
+    // Create a router for stateless endpoints
+    let stateless_router = Router::new()
+        .route(
             "/dvd/{id}",
             get(get_dvd),
         )
         .route(
-            "/dvd",
-            post(insert_dvd),
-        )
-        // .route(
-        //     "/ai/chat",
-        //     post(chat),
-        // )
-        .route(
-            "/ai/dvd-match",
-            post(get_matching_movies),
-        )
+            "/",
+            get(hello_world),
+        );
+
+    // Merge the routers
+    Router::new()
+        .merge(stateful_router)
+        .merge(stateless_router)
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
