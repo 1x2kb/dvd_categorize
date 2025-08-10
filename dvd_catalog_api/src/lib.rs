@@ -228,15 +228,42 @@ async fn extract_entities(query: &str) -> (Vec<String>, Vec<String>, Vec<String>
     // Look for actors and directors
     for entity in all_actors.iter().chain(all_directors.iter()) {
         let entity_lower = entity.to_lowercase();
-        // Split name into parts to handle first/last name matching
         let name_parts: Vec<&str> = entity_lower.split_whitespace().collect();
         
-        // Check if any part of the name is in the query
-        if name_parts.iter().any(|part| 
-            part.len() > 2 && // Avoid matching very short parts
-            query_lower.split_whitespace().any(|w| w == *part)
-        ) || query_lower.contains(&entity_lower) {
+        // Check for exact match first (most reliable)
+        if query_lower == entity_lower || query_lower.contains(&format!(" {entity_lower} ")) ||
+           query_lower.starts_with(&format!("{entity_lower} ")) ||
+           query_lower.ends_with(&format!(" {entity_lower}")) {
             actors.insert(entity_lower);
+            continue;
+        }
+        
+        // For multi-word names, check if all parts appear in order in the query
+        if name_parts.len() > 1 {
+            let mut query_words = query_lower.split_whitespace();
+            let mut all_parts_found = name_parts.iter().all(|&part| {
+                // Skip very short words in the name to avoid false positives
+                if part.len() <= 2 { return true; }
+                query_words.any(|w| w == part)
+            });
+            
+            // If all parts found in order, it's a match
+            if all_parts_found && name_parts.iter().all(|p| p.len() > 2) {
+                actors.insert(entity_lower);
+                continue;
+            }
+        }
+        
+        // For single-word names or as a fallback, check for standalone word match
+        if name_parts.len() == 1 && name_parts[0].len() > 2 {
+            // Match whole word only (with word boundaries)
+            let word = name_parts[0];
+            if query_lower.split_whitespace().any(|w| w == word) ||
+               query_lower == word ||
+               query_lower.starts_with(&format!("{word} ")) ||
+               query_lower.ends_with(&format!(" {word}")) {
+                actors.insert(entity_lower);
+            }
         }
     }
     
@@ -278,27 +305,109 @@ async fn extract_entities(query: &str) -> (Vec<String>, Vec<String>, Vec<String>
     )
 }
 
-/// Helper function to search for movies by exact text match with multiple conditions
+/// Processes movies in parallel to find matches against search criteria.
+/// 
+/// # Arguments
+/// * `movies` - Vector of movies to search through
+/// * `criteria` - Search criteria (titles, actors, genres)
+/// 
+/// # Returns
+/// Vector of tuples containing matching movies and their match scores
+async fn process_movies_parallel(
+    movies: Vec<FullMovie>,
+    criteria: SearchCriteria,
+) -> Result<Vec<(FullMovie, usize)>, String> {
+    use std::sync::Arc;
+    use std::time::Instant;
+    
+    let start_time = Instant::now();
+    let total_movies = movies.len();
+    info!("Starting parallel processing of {} movies", total_movies);
+    
+    // Wrap criteria in Arc to share between tasks
+    let criteria = Arc::new(criteria);
+    
+    // Process movies in parallel
+    let tasks = movies.into_iter().map(|movie| {
+        let criteria = Arc::clone(&criteria);
+        
+        tokio::task::spawn(async move {
+            let score = count_matches(&movie, &criteria.titles, &criteria.actors, &criteria.genres);
+            if score > 0 {
+                Some((movie, score))
+            } else {
+                None
+            }
+        })
+    }).collect::<Vec<_>>();
+    
+    info!("Spawned {} parallel tasks", tasks.len());
+    
+    // Process results
+    let mut results = Vec::with_capacity(tasks.len());
+    let mut processed = 0;
+    let log_interval = (total_movies / 10).max(1); // Log every 10%
+    
+    for task in tasks {
+        if let Some(scored_movie) = task.await
+            .map_err(|e| format!("Task failed: {}", e))? 
+        {
+            results.push(scored_movie);
+        }
+        
+        // Log progress
+        processed += 1;
+        if processed % log_interval == 0 || processed == total_movies {
+            let progress = (processed as f64 / total_movies as f64 * 100.0) as u32;
+            info!("Processed {}/{} movies ({}%)", processed, total_movies, progress);
+        }
+    }
+    
+    let duration = start_time.elapsed();
+    info!("Processed {} movies in {:.2?} ({} matches found)", 
+          total_movies, duration, results.len());
+    
+    Ok(results)
+}
+
+/// Search criteria for movie matching
+#[derive(Clone)]
+struct SearchCriteria {
+    titles: Vec<String>,
+    actors: Vec<String>,
+    genres: Vec<String>,
+}
+
+/// Searches for movies matching the given query text using parallel processing.
+/// 
+/// # Arguments
+/// * `query` - Search query string
+/// 
+/// # Returns
+/// Vector of movies matching the query, sorted by relevance
 async fn search_movies_by_text(query: &str) -> Result<Vec<FullMovie>, String> {
     info!("Starting text search for: {}", query);
+    let start_time = std::time::Instant::now();
+    
+    // Fetch movies
     let all_movies = database::get_movies().await
         .map_err(|e| format!("Failed to fetch movies: {}", e))?;
+    info!("Fetched {} movies in {:.2?}", 
+          all_movies.len(), start_time.elapsed());
 
-    // Use the new entity extraction function
+    // Extract search criteria
     let (titles, actors, genres) = extract_entities(query).await;
-    info!("Extracted entities - titles: {:?}, actors: {:?}, genres: {:?}", titles, actors, genres);
+    info!("Extracted entities - titles: {:?}, actors: {:?}, genres: {:?}", 
+          titles, actors, genres);
     
-    let mut results: Vec<(FullMovie, usize)> = all_movies.into_iter().filter_map(|movie| {
-        // Calculate a score based on how well this movie matches the query
-        let score = count_matches(&movie, &titles, &actors, &genres);
-        
-        // Only include movies that match at least one condition
-        if score > 0 {
-            Some((movie, score))
-        } else {
-            None
-        }
-    }).collect();
+    // Process movies in parallel
+    let criteria = SearchCriteria {
+        titles,
+        actors,
+        genres,
+    };
+    
+    let mut results = process_movies_parallel(all_movies, criteria).await?;
     
     // Sort by score (highest first)
     results.sort_by(|(_, score_a), (_, score_b)| score_b.cmp(score_a));
