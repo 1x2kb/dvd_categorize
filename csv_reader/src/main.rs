@@ -126,6 +126,7 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
                     },
                 )
                 .unwrap_or_default(),
+            embedding: None,
         };
         movies.push(movie);
     }
@@ -158,6 +159,7 @@ mod tests {
                 "Adventure".to_string(),
                 "Comedy".to_string(),
             ],
+            embedding: None,
         };
 
         let full_movies = parse_csv(csv.as_bytes());

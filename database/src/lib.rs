@@ -99,7 +99,11 @@ pub async fn get_movies() -> Result<Vec<FullMovie>, DatabaseError> {
 
     let movies = schema::movie::table
         .left_join(schema::director::table)
-        .get_results::<(
+        .select((
+            movie::all_columns,
+            director::all_columns.nullable(),
+        ))
+        .load::<(
             Movie,
             Option<Director>,
         )>(&mut connection)
@@ -143,7 +147,11 @@ pub async fn get_movie(id: i32) -> Result<FullMovie, DatabaseError> {
     let (movie, director) = schema::movie::table
         .find(id)
         .left_join(schema::director::table)
-        .get_result::<(
+        .select((
+            movie::all_columns,
+            director::all_columns.nullable(),
+        ))
+        .first::<(
             Movie,
             Option<Director>,
         )>(&mut connection)
@@ -246,6 +254,7 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
                 genres: genres_map
                     .remove(&movie.id)
                     .unwrap_or_default(),
+                embedding: movie.embedding.map(|v| v.into()),
             },
         )
         .collect();
@@ -324,7 +333,7 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
     let embedding = match ai_chat::get_embedding(&embedding).await {
         Ok(em) => {
             debug!("Successfully generated embedding for movie: {}", full_movie.name);
-            Some(Vector::from(em))
+            Some(em) // Store as Vec<f32>
         },
         Err(e) => {
             error!("Failed to generate embedding for movie '{}': {:#?}", full_movie.name, e);
@@ -336,7 +345,7 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
         name: full_movie.name,
         director_id,
         description: full_movie.description,
-        embedding,
+        embedding: embedding.map(|v| v.into()),
     };
 
     let movie_id = diesel::insert_into(schema::movie::table)

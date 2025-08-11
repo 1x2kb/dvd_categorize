@@ -83,7 +83,7 @@ pub struct Movie {
     pub name: String,
     pub director_id: Option<i32>,
     pub description: Option<String>,
-    #[cfg(all(feature = "postgres", feature = "ai"))]
+    #[cfg(feature = "postgres")]
     pub embedding: Option<Vector>,
 }
 
@@ -93,7 +93,7 @@ pub struct NewMovie {
     pub name: String,
     pub director_id: Option<i32>,
     pub description: Option<String>,
-    #[cfg(all(feature = "postgres", feature = "ai"))]
+    #[cfg(feature = "postgres")]
     pub embedding: Option<Vector>,
 }
 
@@ -131,7 +131,7 @@ pub struct NewMovieGenre {
     pub genre: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FullMovie {
     pub id: i32,
     pub name: String,
@@ -140,6 +140,9 @@ pub struct FullMovie {
     pub actors: Vec<Actor>,
     pub director: Option<Director>,
     pub genres: Vec<String>,
+    #[serde(skip)]
+    #[cfg(feature = "postgres")]
+    pub embedding: Option<Vec<f32>>,
 }
 
 impl
@@ -165,6 +168,8 @@ impl
             director,
             actors,
             genres,
+            #[cfg(feature = "postgres")]
+            embedding: movie.embedding.map(|v| v.into()),
         }
     }
 }
