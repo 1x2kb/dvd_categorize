@@ -18,6 +18,8 @@ async fn send_search_request(query: String) -> Result<Vec<FullMovie>, reqwest::E
     let hostname = location
         .hostname()
         .unwrap_or_else(|_| "127.0.0.1".to_string());
+
+    // TODO: This is incorrect! Front-end does not have access to environment variables
     let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
 
     let search_request = SearchRequest { query };

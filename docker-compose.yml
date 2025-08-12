@@ -64,6 +64,7 @@ services:
       server_port: ${SERVER_PORT:-3000}
       OLLAMA_HOST: ollama
       OLLAMA_PORT: "11434"
+      OLLAMA_NUM_CTX: "18000"
 
   dvd_categorize_web:
     build:

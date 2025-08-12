@@ -1,20 +1,35 @@
-use std::env;
+use std::{env, sync::Arc};
 
 use axum::{
     http::{self, HeaderValue, Method},
     routing::{get, post},
     Router,
 };
+use database::FullMovie;
 use dotenvy::dotenv;
 use dvd_catalog::*;
+use log::{error, info, warn};
 use tower_http::cors::{Any, CorsLayer};
-extern crate pretty_env_logger;
-#[macro_use]
-extern crate log;
 
 #[tokio::main]
 async fn main() {
-    pretty_env_logger::init();
+    // Initialize logger with timestamp and module info
+    let env = env_logger::Env::default()
+        .filter_or(
+            "RUST_LOG", "info",
+        )
+        .write_style_or(
+            "RUST_LOG_STYLE",
+            "always",
+        );
+
+    env_logger::Builder::from_env(env)
+        .format_timestamp(Some(env_logger::TimestampPrecision::Millis))
+        .format_module_path(false)
+        .init();
+
+    info!("Starting DVD Catalog API");
+
     // Only load .env file in debug mode (development)
     #[cfg(debug_assertions)]
     {
@@ -23,13 +38,26 @@ async fn main() {
             .expect("Failed to run env reader");
     }
 
-    let app = init_router();
+    // Load movies into cache state on startup
+    let movies = match database::get_movies().await {
+        Ok(movies) => {
+            info!("Successfully loaded {} movies into cache", movies.len());
+            movies
+        },
+        Err(e) => {
+            error!("Failed to load movies: {}", e);
+            Vec::new()
+        }
+    };
+
+    let app = init_router(Arc::new(movies));
 
     let connection = get_host();
-    let listener = tokio::net::TcpListener::bind(connection)
+    info!("Starting server on {}", &connection);
+
+    let listener = tokio::net::TcpListener::bind(&connection)
         .await
         .unwrap();
-
     axum::serve(
         listener, app,
     )
@@ -57,32 +85,37 @@ fn get_host() -> String {
     format!("{host}:{port}")
 }
 
-fn init_router() -> Router {
-    Router::new()
-        .route(
-            "/",
-            get(hello_world),
-        )
+fn init_router(movies: Arc<Vec<FullMovie>>) -> Router {
+    // Create state with the provided movies
+    let state = CacheState { movies };
+
+    // Create a router for endpoints that need CacheState
+    let stateful_router = Router::new()
         .route(
             "/dvd",
             get(get_dvds),
         )
         .route(
+            "/ai/dvd-match",
+            post(get_matching_movies),
+        )
+        .with_state(state);
+
+    // Create a router for stateless endpoints
+    let stateless_router = Router::new()
+        .route(
             "/dvd/{id}",
             get(get_dvd),
         )
         .route(
-            "/dvd",
-            post(insert_dvd),
-        )
-        .route(
-            "/ai/chat",
-            post(chat),
-        )
-        .route(
-            "/ai/dvd-match",
-            post(get_matching_movies),
-        )
+            "/",
+            get(hello_world),
+        );
+
+    // Merge the routers
+    Router::new()
+        .merge(stateful_router)
+        .merge(stateless_router)
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

@@ -55,12 +55,55 @@ async fn get_database_connection() -> Result<AsyncPgConnection, DatabaseError> {
         .map_err(DatabaseError::from)
 }
 
+/// Get all unique genres from the database
+pub async fn get_all_genres() -> Result<Vec<String>, DatabaseError> {
+    use crate::schema::movie_genre::dsl::*;
+    let mut conn = get_database_connection().await?;
+    
+    movie_genre
+        .select(genre)
+        .distinct()
+        .load::<String>(&mut conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
+/// Get all unique actor names from the database
+pub async fn get_all_actors() -> Result<Vec<String>, DatabaseError> {
+    use crate::schema::actor::dsl::*;
+    let mut conn = get_database_connection().await?;
+    
+    actor
+        .select(name)
+        .distinct()
+        .load::<String>(&mut conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
+/// Get all unique director names from the database
+pub async fn get_all_directors() -> Result<Vec<String>, DatabaseError> {
+    use crate::schema::director::dsl::*;
+    let mut conn = get_database_connection().await?;
+    
+    director
+        .select(name)
+        .distinct()
+        .load::<String>(&mut conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
 pub async fn get_movies() -> Result<Vec<FullMovie>, DatabaseError> {
     let mut connection = get_database_connection().await?;
 
     let movies = schema::movie::table
         .left_join(schema::director::table)
-        .get_results::<(
+        .select((
+            movie::all_columns,
+            director::all_columns.nullable(),
+        ))
+        .load::<(
             Movie,
             Option<Director>,
         )>(&mut connection)
@@ -104,7 +147,11 @@ pub async fn get_movie(id: i32) -> Result<FullMovie, DatabaseError> {
     let (movie, director) = schema::movie::table
         .find(id)
         .left_join(schema::director::table)
-        .get_result::<(
+        .select((
+            movie::all_columns,
+            director::all_columns.nullable(),
+        ))
+        .first::<(
             Movie,
             Option<Director>,
         )>(&mut connection)
@@ -207,6 +254,7 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
                 genres: genres_map
                     .remove(&movie.id)
                     .unwrap_or_default(),
+                embedding: movie.embedding.map(|v| v.into()),
             },
         )
         .collect();
@@ -285,7 +333,7 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
     let embedding = match ai_chat::get_embedding(&embedding).await {
         Ok(em) => {
             debug!("Successfully generated embedding for movie: {}", full_movie.name);
-            Some(Vector::from(em))
+            Some(em) // Store as Vec<f32>
         },
         Err(e) => {
             error!("Failed to generate embedding for movie '{}': {:#?}", full_movie.name, e);
@@ -297,7 +345,7 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
         name: full_movie.name,
         director_id,
         description: full_movie.description,
-        embedding,
+        embedding: embedding.map(|v| v.into()),
     };
 
     let movie_id = diesel::insert_into(schema::movie::table)
@@ -432,15 +480,18 @@ pub async fn run_dvd_filters(filters: DvdFilters) -> Result<Vec<i32>, DatabaseEr
         .map_err(DatabaseError::from)
 }
 
-pub async fn search_movies(embedding: Vec<f32>, limit: i64) -> Result<Vec<i32>, DatabaseError> {
+pub async fn search_movies(embedding: Vec<f32>, limit: i64) -> Result<Vec<FullMovie>, DatabaseError> {
     let mut conn = get_database_connection().await?;
 
-    movie::table
+    // Get the IDs of the most similar movies
+    let movie_ids: Vec<i32> = movie::table
         .select(movie::id)
         .filter(movie::embedding.is_not_null())
         .order(movie::embedding.cosine_distance(Vector::from(embedding)))
         .limit(limit)
         .load::<i32>(&mut conn)
-        .await
-        .map_err(DatabaseError::from)
+        .await?;
+
+    // Use the optimized helper function to get full movie data
+    get_movies_by_ids(movie_ids).await
 }

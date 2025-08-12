@@ -54,7 +54,7 @@ pub fn AiChat() -> Element {
                 let location = window.location();
                 let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
                 let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
-                let ai_action = AiAction { uuid: String::new(), action: input_value.read().clone(), model: Some("mistral".to_string()) };
+                let ai_action = AiAction { uuid: String::new(), action: input_value.read().clone(), model: Some("phi3.5".to_string()) };
 
                 app_data.write().ai_chat.with_mut(|chat| {
                     if let Some(chat) = chat {

@@ -23,19 +23,33 @@ impl AiChatProvider for OllamaClient {
         let model_name = self
             .ai_action
             .model
-            .as_deref() 
-            .unwrap_or("mistral");
+            .as_deref()
+            .unwrap_or("phi3.5");
 
         let num_ctx = std::env::var("OLLAMA_NUM_CTX")
             .unwrap_or_else(|_| "8000".to_string())
             .parse::<u64>()
             .unwrap_or(8000);
-            
+
+        let temperature = self.ai_action.temperature.unwrap_or(0.5);
+
+        info!(
+            "Using num_ctx {}",
+            num_ctx
+        );
+        info!(
+            "Using temprature {}",
+            temperature
+        );
         let chat_request = ChatMessageRequest::new(
             model_name.to_string(),
             messages,
         )
-        .options(GenerationOptions::default().num_ctx(num_ctx));
+        .options(
+            GenerationOptions::default()
+                .num_ctx(num_ctx)
+                .temperature(temperature),
+        );
 
         let response = self
             .ollama_client
