@@ -197,23 +197,9 @@ impl
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct SearchRequest {
     pub query: String,
-}
-
-impl std::fmt::Debug for SearchRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Only show the first 50 chars of the query to avoid verbose logs
-        let query_preview = if self.query.len() > 50 {
-            format!("{}... ({} more chars)", &self.query[..47], self.query.len() - 47)
-        } else {
-            self.query.clone()
-        };
-        f.debug_struct("SearchRequest")
-            .field("query", &query_preview)
-            .finish()
-    }
 }
 
 #[cfg(feature = "testing")]
