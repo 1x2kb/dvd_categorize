@@ -28,7 +28,7 @@ pub async fn hello_world() -> &'static str {
     "Hello from DVD_CATALOG_API!"
 }
 
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
 pub async fn get_dvds(State(state): State<CacheState>) -> Json<Option<Vec<FullMovie>>> {
     if state.movies.is_empty() {

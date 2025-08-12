@@ -144,7 +144,7 @@ pub struct NewMovieGenre {
     pub genre: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct FullMovie {
     pub id: i32,
     pub name: String,
@@ -156,6 +156,27 @@ pub struct FullMovie {
     #[serde(skip)]
     #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
     pub embedding: Option<Vec<f32>>,
+}
+
+impl std::fmt::Debug for FullMovie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug_struct = f.debug_struct("FullMovie");
+        debug_struct
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("description", &self.description)
+            .field("actors", &self.actors)
+            .field("director", &self.director)
+            .field("genres", &self.genres);
+            
+        #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+        {
+            let embedding_len = self.embedding.as_ref().map(|v| v.len());
+            debug_struct.field("embedding_len", &embedding_len);
+        }
+        
+        debug_struct.finish()
+    }
 }
 
 #[cfg(feature = "vector-similarity")]

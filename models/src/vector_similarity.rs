@@ -21,6 +21,8 @@ pub trait VectorSimilarity {
     /// 
     /// This is a utility function that can be used by implementors of this trait.
     /// 
+    /// Order of a and b do not matter.
+    /// 
     /// # Arguments
     /// * `a` - First vector
     /// * `b` - Second vector
