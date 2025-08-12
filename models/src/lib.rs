@@ -22,6 +22,15 @@ pub trait Random {
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "postgres")]
+use diesel::{prelude::*, sql_types::*};
+
+#[cfg(feature = "vector-similarity")]
+pub mod vector_similarity;
+
+#[cfg(feature = "vector-similarity")]
+pub use vector_similarity::VectorSimilarity;
+
 pub mod roled_message;
 pub use roled_message::*;
 
@@ -141,8 +150,22 @@ pub struct FullMovie {
     pub director: Option<Director>,
     pub genres: Vec<String>,
     #[serde(skip)]
-    #[cfg(feature = "postgres")]
+    #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
     pub embedding: Option<Vec<f32>>,
+}
+
+#[cfg(feature = "vector-similarity")]
+impl VectorSimilarity for FullMovie {
+    fn cosine_similarity(&self, query_embedding: &[f32]) -> Option<f32> {
+        #[cfg(feature = "postgres")]
+        {
+            self.embedding.as_ref().and_then(|movie_embedding| {
+                Self::cosine_similarity_vectors(movie_embedding, query_embedding)
+            })
+        }
+        #[cfg(not(feature = "postgres"))]
+        None
+    }
 }
 
 impl
@@ -174,9 +197,23 @@ impl
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct SearchRequest {
     pub query: String,
+}
+
+impl std::fmt::Debug for SearchRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Only show the first 50 chars of the query to avoid verbose logs
+        let query_preview = if self.query.len() > 50 {
+            format!("{}... ({} more chars)", &self.query[..47], self.query.len() - 47)
+        } else {
+            self.query.clone()
+        };
+        f.debug_struct("SearchRequest")
+            .field("query", &query_preview)
+            .finish()
+    }
 }
 
 #[cfg(feature = "testing")]
@@ -235,6 +272,8 @@ impl Random for FullMovie {
             genres: (1..num_genres)
                 .map(|_| GENRES[random.gen_range(1..GENRES.len())].to_string())
                 .collect(),
+            #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+            embedding: None,
         }
     }
 }
@@ -263,6 +302,8 @@ impl FullMovie {
                     },
                 ),
                 genres: vec!["Sci-Fi".to_string(), "Action".to_string()],
+                #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+                embedding: None,
             },
             FullMovie {
                 id: 2,
@@ -282,6 +323,29 @@ impl FullMovie {
                     },
                 ),
                 genres: vec!["Sci-Fi".to_string(), "Thriller".to_string()],
+                #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+                embedding: None,
+            },
+            FullMovie {
+                id: 3,
+                name: "Interstellar".to_string(),
+                description: Some(
+                    "A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival"
+                        .to_string(),
+                ),
+                actors: vec![Actor {
+                    id: 3,
+                    name: "Matthew McConaughey".to_string(),
+                }],
+                director: Some(
+                    Director {
+                        id: 3,
+                        name: "Christopher Nolan".to_string(),
+                    },
+                ),
+                genres: vec!["Sci-Fi".to_string(), "Adventure".to_string()],
+                #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+                embedding: None,
             },
         ]
     }
