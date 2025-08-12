@@ -4,6 +4,13 @@ mod chat;
 
 #[cfg(feature = "ai")]
 pub use ai_state::*;
+
+#[cfg(feature = "text-matching")]
+pub mod text_match_scoring;
+
+#[cfg(feature = "text-matching")]
+pub use text_match_scoring::TextMatchScoring;
+
 #[cfg(feature = "postgres")]
 use pgvector::Vector;
 
@@ -22,10 +29,16 @@ pub trait Random {
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "vector-similarity")]
+pub mod vector_similarity;
+
+#[cfg(feature = "vector-similarity")]
+pub use vector_similarity::VectorSimilarity;
+
 pub mod roled_message;
 pub use roled_message::*;
 
-#[cfg_attr(feature="postgres", derive(Queryable, Selectable,Identifiable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Actor {
     pub id: i32,
@@ -83,7 +96,7 @@ pub struct Movie {
     pub name: String,
     pub director_id: Option<i32>,
     pub description: Option<String>,
-    #[cfg(all(feature = "postgres", feature = "ai"))]
+    #[cfg(feature = "postgres")]
     pub embedding: Option<Vector>,
 }
 
@@ -93,7 +106,7 @@ pub struct NewMovie {
     pub name: String,
     pub director_id: Option<i32>,
     pub description: Option<String>,
-    #[cfg(all(feature = "postgres", feature = "ai"))]
+    #[cfg(feature = "postgres")]
     pub embedding: Option<Vector>,
 }
 
@@ -131,7 +144,7 @@ pub struct NewMovieGenre {
     pub genre: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct FullMovie {
     pub id: i32,
     pub name: String,
@@ -140,6 +153,70 @@ pub struct FullMovie {
     pub actors: Vec<Actor>,
     pub director: Option<Director>,
     pub genres: Vec<String>,
+    #[serde(skip)]
+    #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+    pub embedding: Option<Vec<f32>>,
+}
+
+impl std::fmt::Debug for FullMovie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug_struct = f.debug_struct("FullMovie");
+        debug_struct
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("description", &self.description)
+            .field("actors", &self.actors)
+            .field("director", &self.director)
+            .field("genres", &self.genres);
+            
+        #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+        {
+            let embedding_len = self.embedding.as_ref().map(|v| v.len());
+            debug_struct.field("embedding_len", &embedding_len);
+        }
+        
+        debug_struct.finish()
+    }
+}
+
+#[cfg(feature = "vector-similarity")]
+impl VectorSimilarity for FullMovie {
+    fn cosine_similarity(&self, query_embedding: &[f32]) -> Option<f32> {
+        self.embedding
+            .as_deref()
+            .and_then(|embedding| <Self as VectorSimilarity>::cosine_similarity_vectors(embedding, query_embedding))
+    }
+}
+
+#[cfg(feature = "text-matching")]
+impl TextMatchScoring for FullMovie {
+    fn text_match_score(&self, titles: &[String], actors: &[String], genres: &[String]) -> usize {
+        let mut score = 0;
+
+        // Check title matches (highest weight)
+        let movie_title = self.name.to_lowercase();
+        for title in titles {
+            if movie_title.contains(&title.to_lowercase()) {
+                score += 3; // Higher weight for title matches
+            }
+        }
+
+        // Check actor matches (medium weight)
+        for actor in actors {
+            if self.actors.iter().any(|a| a.name.to_lowercase().contains(&actor.to_lowercase())) {
+                score += 2;
+            }
+        }
+
+        // Check genre matches (lowest weight)
+        for genre in genres {
+            if self.genres.iter().any(|g| g.to_lowercase() == genre.to_lowercase()) {
+                score += 1;
+            }
+        }
+
+        score
+    }
 }
 
 impl
@@ -165,6 +242,8 @@ impl
             director,
             actors,
             genres,
+            #[cfg(feature = "postgres")]
+            embedding: movie.embedding.map(|v| v.into()),
         }
     }
 }
@@ -230,6 +309,8 @@ impl Random for FullMovie {
             genres: (1..num_genres)
                 .map(|_| GENRES[random.gen_range(1..GENRES.len())].to_string())
                 .collect(),
+            #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+            embedding: None,
         }
     }
 }
@@ -258,6 +339,8 @@ impl FullMovie {
                     },
                 ),
                 genres: vec!["Sci-Fi".to_string(), "Action".to_string()],
+                #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+                embedding: None,
             },
             FullMovie {
                 id: 2,
@@ -277,6 +360,29 @@ impl FullMovie {
                     },
                 ),
                 genres: vec!["Sci-Fi".to_string(), "Thriller".to_string()],
+                #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+                embedding: None,
+            },
+            FullMovie {
+                id: 3,
+                name: "Interstellar".to_string(),
+                description: Some(
+                    "A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival"
+                        .to_string(),
+                ),
+                actors: vec![Actor {
+                    id: 3,
+                    name: "Matthew McConaughey".to_string(),
+                }],
+                director: Some(
+                    Director {
+                        id: 3,
+                        name: "Christopher Nolan".to_string(),
+                    },
+                ),
+                genres: vec!["Sci-Fi".to_string(), "Adventure".to_string()],
+                #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+                embedding: None,
             },
         ]
     }

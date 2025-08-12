@@ -74,7 +74,7 @@ services:
       context: .
       dockerfile: docker/prod/api.Dockerfile
     ports:
-      - "0.0.0.0:3001:3000"
+      - "0.0.0.0:3000:3000"  # API port
     depends_on:
       diesel_migrate-prod:
         condition: service_completed_successfully
@@ -95,9 +95,9 @@ services:
       context: .
       dockerfile: docker/prod/web.Dockerfile
     ports:
-      - "0.0.0.0:8081:8080"
-    depends_on:
-      - dvd_categorize_api-prod
+      - "0.0.0.0:8080:8080"  # Web UI port
+    environment:
+      VITE_API_BASE_URL: http://localhost:3000
     restart: unless-stopped
 
   csv_reader-prod:
