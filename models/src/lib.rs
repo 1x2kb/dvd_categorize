@@ -2,14 +2,14 @@
 pub mod ai_state;
 mod chat;
 
-#[cfg(feature = "text-matching")]
-pub mod movie_scoring;
-
 #[cfg(feature = "ai")]
 pub use ai_state::*;
 
 #[cfg(feature = "text-matching")]
-pub use movie_scoring::TextMatchScoring;
+pub mod text_match_scoring;
+
+#[cfg(feature = "text-matching")]
+pub use text_match_scoring::TextMatchScoring;
 
 #[cfg(feature = "postgres")]
 use pgvector::Vector;
