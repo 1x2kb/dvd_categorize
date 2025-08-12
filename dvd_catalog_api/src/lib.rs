@@ -9,6 +9,7 @@ use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie, SearchRequest};
 use log::{debug, error, info, warn};
 use models::VectorSimilarity;
+use crate::movie_search::count_matches;
 use ollama_rs::{Ollama, error::OllamaError};
 use tokio_rayon::rayon::prelude::*;
 use tracing::instrument;
@@ -119,130 +120,6 @@ pub async fn embedding(text: &str) -> Result<Vec<f32>, OllamaError> {
 // SearchCriteria has been moved to movie_search.rs
 
 // search_movies_by_text has been moved to movie_search.rs
-
-/// Helper function to count how many conditions a movie matches with weighted scoring
-fn count_matches(
-    movie: &FullMovie,
-    titles: &[String],
-    actors: &[String],
-    genres: &[String],
-) -> usize {
-    let mut score = 0;
-
-    // Title matches are very specific, give them higher weight
-    if !titles.is_empty()
-        && titles
-            .iter()
-            .any(
-                |t| {
-                    movie
-                        .name
-                        .to_lowercase()
-                        .contains(t)
-                },
-            )
-    {
-        score += 3; // Higher weight for title matches
-    }
-
-    // Check director matches
-    if let Some(director) = &movie.director {
-        let director_name = director
-            .name
-            .to_lowercase();
-        if !titles.is_empty()
-            && titles
-                .iter()
-                .any(|t| director_name.contains(t))
-        {
-            score += 3; // Title matched in director name
-        }
-        if !actors.is_empty()
-            && actors
-                .iter()
-                .any(|a| director_name.contains(a))
-        {
-            score += 2; // Actor name matched in director name
-        }
-    }
-
-    // Check actor matches
-    let actor_matches = if !actors.is_empty() {
-        let matches: Vec<_> = movie
-            .actors
-            .iter()
-            .filter(
-                |a| {
-                    let actor_name = a
-                        .name
-                        .to_lowercase();
-                    let found = actors
-                        .iter()
-                        .any(
-                            |name| {
-                                name.split_whitespace()
-                                    .all(|part| actor_name.contains(&part.to_lowercase()))
-                            },
-                        );
-                    if found {
-                        info!(
-                            "Actor match: {} in {}",
-                            a.name, movie.name
-                        );
-                    }
-                    found
-                },
-            )
-            .collect();
-        matches.len()
-    } else {
-        0
-    };
-
-    // Give extra points for each matching actor (up to 2 actors)
-    score += actor_matches.min(2) * 2;
-
-    // Check genre matches
-    let genre_matches = if !genres.is_empty() {
-        let matches: Vec<_> = genres
-            .iter()
-            .filter(
-                |g| {
-                    let found = movie
-                        .genres
-                        .iter()
-                        .any(
-                            |genre| {
-                                genre
-                                    .to_lowercase()
-                                    .contains(&g.to_lowercase())
-                            },
-                        );
-                    if found {
-                        info!(
-                            "Genre match: {} contains {}",
-                            movie.name, g
-                        );
-                    }
-                    found
-                },
-            )
-            .collect();
-        matches.len()
-    } else {
-        0
-    };
-
-    // Give points for genre matches
-    score += genre_matches;
-
-    // Bonus: If we have both actor and genre matches, give extra points
-    if actor_matches > 0 && genre_matches > 0 {
-        score += 2; // Bonus for matching both actor and genre
-    }
-
-    score
-}
 
 /// Helper function to search for movies using vector embeddings
 async fn search_movies_by_embedding(query: &str) -> Result<Vec<FullMovie>, String> {

@@ -8,6 +8,7 @@ postgres = ["diesel", "pgvector"]
 testing = ["rand"]
 ai = ["ollama-rs"]
 vector-similarity = []
+text-matching = []
 
 [dependencies]
 serde.workspace = true

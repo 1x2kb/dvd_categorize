@@ -7,6 +7,7 @@ use axum::{
 };
 use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie};
+use models::TextMatchScoring;
 use log::{error, info};
 use ollama_rs::Ollama;
 use tracing::instrument;
@@ -280,37 +281,15 @@ async fn process_movies_parallel(
 }
 
 /// Helper function to count how many conditions a movie matches with weighted scoring
-fn count_matches(
+/// 
+/// This is now a thin wrapper around the `text_match_score` method from the `TextMatchScoring` trait.
+pub fn count_matches(
     movie: &FullMovie,
     titles: &[String],
     actors: &[String],
     genres: &[String],
 ) -> usize {
-    let mut score = 0;
-
-    // Check title matches (highest weight)
-    let movie_title = movie.name.to_lowercase();
-    for title in titles {
-        if movie_title.contains(&title.to_lowercase()) {
-            score += 3; // Higher weight for title matches
-        }
-    }
-
-    // Check actor matches (medium weight)
-    for actor in actors {
-        if movie.actors.iter().any(|a| a.name.to_lowercase().contains(actor)) {
-            score += 2;
-        }
-    }
-
-    // Check genre matches (lowest weight)
-    for genre in genres {
-        if movie.genres.iter().any(|g| g.to_lowercase() == *genre) {
-            score += 1;
-        }
-    }
-
-    score
+    movie.text_match_score(titles, actors, genres)
 }
 
 /// Searches for movies matching the given query text using parallel processing.

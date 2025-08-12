@@ -2,8 +2,15 @@
 pub mod ai_state;
 mod chat;
 
+#[cfg(feature = "text-matching")]
+pub mod movie_scoring;
+
 #[cfg(feature = "ai")]
 pub use ai_state::*;
+
+#[cfg(feature = "text-matching")]
+pub use movie_scoring::TextMatchScoring;
+
 #[cfg(feature = "postgres")]
 use pgvector::Vector;
 
@@ -22,9 +29,6 @@ pub trait Random {
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "postgres")]
-use diesel::{prelude::*, sql_types::*};
-
 #[cfg(feature = "vector-similarity")]
 pub mod vector_similarity;
 
@@ -34,7 +38,7 @@ pub use vector_similarity::VectorSimilarity;
 pub mod roled_message;
 pub use roled_message::*;
 
-#[cfg_attr(feature="postgres", derive(Queryable, Selectable,Identifiable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Actor {
     pub id: i32,
@@ -157,14 +161,40 @@ pub struct FullMovie {
 #[cfg(feature = "vector-similarity")]
 impl VectorSimilarity for FullMovie {
     fn cosine_similarity(&self, query_embedding: &[f32]) -> Option<f32> {
-        #[cfg(feature = "postgres")]
-        {
-            self.embedding.as_ref().and_then(|movie_embedding| {
-                Self::cosine_similarity_vectors(movie_embedding, query_embedding)
-            })
+        self.embedding
+            .as_deref()
+            .and_then(|embedding| <Self as VectorSimilarity>::cosine_similarity_vectors(embedding, query_embedding))
+    }
+}
+
+#[cfg(feature = "text-matching")]
+impl TextMatchScoring for FullMovie {
+    fn text_match_score(&self, titles: &[String], actors: &[String], genres: &[String]) -> usize {
+        let mut score = 0;
+
+        // Check title matches (highest weight)
+        let movie_title = self.name.to_lowercase();
+        for title in titles {
+            if movie_title.contains(&title.to_lowercase()) {
+                score += 3; // Higher weight for title matches
+            }
         }
-        #[cfg(not(feature = "postgres"))]
-        None
+
+        // Check actor matches (medium weight)
+        for actor in actors {
+            if self.actors.iter().any(|a| a.name.to_lowercase().contains(&actor.to_lowercase())) {
+                score += 2;
+            }
+        }
+
+        // Check genre matches (lowest weight)
+        for genre in genres {
+            if self.genres.iter().any(|g| g.to_lowercase() == genre.to_lowercase()) {
+                score += 1;
+            }
+        }
+
+        score
     }
 }
 
