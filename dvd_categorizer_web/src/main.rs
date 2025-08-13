@@ -1,4 +1,4 @@
-use std::{env::var, path::PathBuf};
+use std::env::var;
 
 use app_data::AppData;
 use dioxus::prelude::*;
@@ -6,7 +6,6 @@ pub mod app_data;
 pub mod components;
 pub mod views;
 
-use console_error_panic_hook;
 
 use dotenvy::dotenv;
 use log::error;

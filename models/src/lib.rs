@@ -281,7 +281,7 @@ impl Random for Director {
 }
 
 #[cfg(feature = "testing")]
-const GENRES: [&'static str; 4] = ["Western", "Action", "Sci-Fi", "Fantasy"];
+const GENRES: [&str; 4] = ["Western", "Action", "Sci-Fi", "Fantasy"];
 
 #[cfg(feature = "testing")]
 impl Random for FullMovie {

@@ -93,7 +93,7 @@ pub async fn embedding(text: &str) -> Result<Vec<f32>, OllamaError> {
         text
     );
     // Get embedding for the user's question
-    let embedding_result = ai_chat::get_embedding(&text).await;
+    let embedding_result = ai_chat::get_embedding(text).await;
     info!(
         "Got embeddings: {}",
         embedding_result.is_ok()
@@ -218,7 +218,6 @@ fn parse_movie_ids_from_response(response: String) -> Result<Vec<i32>, String> {
     Ok(ids)
 }
 
-use tokio_rayon::rayon::prelude::*;
 
 /// Combines text and vector search results using parallel processing
 async fn combined_search(

@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 
 #[cfg(feature = "text-matching")]
 /// Trait for calculating text-based match scores for movies.
