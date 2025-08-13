@@ -293,7 +293,7 @@ async fn combined_search(
             combined_b.partial_cmp(&combined_a).unwrap_or(std::cmp::Ordering::Equal)
         });
         sorted.into_iter()
-            .take(50)
+            .take(15)  // Limit to top 15 results
             .map(|(movie, _, _)| movie)
             .collect()
     };
