@@ -254,7 +254,8 @@ async fn process_movies_parallel(
     // Process results
     let mut results = Vec::with_capacity(tasks.len());
     let mut processed = 0;
-    let log_interval = (total_movies / 10).max(1); // Log every 10%
+    let log_percent = 10;
+    let log_interval = (total_movies / log_percent).max(1); // Log every log_percent
 
     for task in tasks {
         if let Some(scored_movie) = task.await.map_err(|e| format!("Task failed: {}", e))? {
