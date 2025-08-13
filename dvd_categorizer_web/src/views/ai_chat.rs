@@ -1,6 +1,5 @@
-use dioxus::html::button;
 use dioxus::prelude::*;
-use log::{error, info};
+use log::error;
 use models::{AiResponse, Role, RoledMessage};
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +15,7 @@ pub struct AiAction {
 #[component]
 pub fn AiChat() -> Element {
     let mut app_data = consume_context::<Signal<AppData>>();
-    let mut input_value = use_signal(|| String::new());
+    let mut input_value = use_signal(String::new);
 
     rsx! {
 

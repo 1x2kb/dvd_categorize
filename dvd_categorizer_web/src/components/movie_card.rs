@@ -1,4 +1,3 @@
-use std::thread::Scope;
 
 pub use dioxus::prelude::*;
 use models::FullMovie;

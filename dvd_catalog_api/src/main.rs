@@ -1,7 +1,7 @@
 use std::{env, sync::Arc};
 
 use axum::{
-    http::{self, HeaderValue, Method},
+    http::{self, Method},
     routing::{get, post},
     Router,
 };

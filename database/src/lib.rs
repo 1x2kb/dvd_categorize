@@ -141,8 +141,7 @@ pub async fn get_movies() -> Result<Vec<FullMovie>, DatabaseError> {
 
 pub async fn get_movie(id: i32) -> Result<FullMovie, DatabaseError> {
     let mut connection = get_database_connection()
-        .await
-        .map_err(DatabaseError::from)?;
+        .await?;
 
     let (movie, director) = schema::movie::table
         .find(id)
@@ -178,8 +177,7 @@ pub async fn get_movie(id: i32) -> Result<FullMovie, DatabaseError> {
 
 pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, DatabaseError> {
     let mut connection = get_database_connection()
-        .await
-        .map_err(DatabaseError::from)?;
+        .await?;
 
     // Early return for empty input
     if ids.is_empty() {
@@ -264,8 +262,7 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
 
 pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, DatabaseError> {
     let mut conn = get_database_connection()
-        .await
-        .map_err(DatabaseError::from)?;
+        .await?;
 
     let actors: String = full_movie
         .actors
