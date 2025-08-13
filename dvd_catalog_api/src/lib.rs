@@ -114,13 +114,6 @@ pub async fn embedding(text: &str) -> Result<Vec<f32>, OllamaError> {
     embedding_result
 }
 
-
-// process_movies_parallel has been moved to movie_search.rs
-
-// SearchCriteria has been moved to movie_search.rs
-
-// search_movies_by_text has been moved to movie_search.rs
-
 /// Helper function to search for movies using vector embeddings
 async fn search_movies_by_embedding(query: &str) -> Result<Vec<FullMovie>, String> {
     let embedding = embedding(query)
