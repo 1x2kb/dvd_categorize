@@ -1,6 +1,5 @@
 #[cfg(feature = "ai")]
 pub mod ai_state;
-mod chat;
 
 #[cfg(feature = "ai")]
 pub use ai_state::*;

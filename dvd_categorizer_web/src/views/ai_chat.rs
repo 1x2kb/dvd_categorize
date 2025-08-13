@@ -21,7 +21,7 @@ pub fn AiChat() -> Element {
 
         div {
                 class: "chat-history",
-                {app_data.read().ai_chat.read().as_ref().map(|messages| {
+                {app_data.read().ai_chat.read().as_ref().map(|_messages| {
                     rsx! {
                         {app_data.read().ai_chat.read().as_ref().map(|messages| {
                             rsx! {
