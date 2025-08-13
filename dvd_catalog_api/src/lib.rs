@@ -120,42 +120,8 @@ pub async fn embedding(text: &str) -> Result<Vec<f32>, OllamaError> {
     embedding_result
 }
 
-/// Helper function to search for movies using vector embeddings
-async fn search_movies_by_embedding(query: &str) -> Result<Vec<FullMovie>, String> {
-    let embedding = embedding(query)
-        .await
-        .map_err(
-            |e| {
-                format!(
-                    "Failed to generate embedding: {}",
-                    e
-                )
-            },
-        )?;
-
-    info!("Searching for movies using embedding");
-    let movie_ids = database::search_movies(
-        embedding, 15,
-    )
-    .await
-    .map_err(
-        |e| {
-            error!(
-                "Failed to search movies: {:#?}",
-                e
-            );
-            format!(
-                "Database search failed: {}",
-                e
-            )
-        },
-    )?;
-
-    Ok(movie_ids)
-}
-
 /// Helper function to create Ollama client with configuration
-fn create_ollama_client(query: String) -> Result<Arc<OllamaClient>, String> {
+fn _create_ollama_client(query: String) -> Result<Arc<OllamaClient>, String> {
     let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
     let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
 
@@ -190,7 +156,7 @@ fn create_ollama_client(query: String) -> Result<Arc<OllamaClient>, String> {
 }
 
 /// Helper function to parse AI response into movie IDs
-fn parse_movie_ids_from_response(response: String) -> Result<Vec<i32>, String> {
+fn _parse_movie_ids_from_response(response: String) -> Result<Vec<i32>, String> {
     let ids: Vec<i32> = response
         .split(",")
         .filter_map(
