@@ -1,7 +1,6 @@
-use crate::components::{movie_card::MovieCard, movie_grid::MovieGrid};
+use crate::components::movie_grid::MovieGrid;
 use dioxus::prelude::*;
-use models::{Actor, Director, FullMovie, SearchRequest};
-use reqwest::Client;
+use models::{FullMovie, SearchRequest};
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
 
@@ -38,8 +37,8 @@ async fn send_search_request(query: String) -> Result<Vec<FullMovie>, reqwest::E
 
 #[component]
 pub fn AiLiveResults() -> Element {
-    let mut movies: Signal<Vec<Rc<FullMovie>>> = use_signal(|| vec![]);
-    let mut input_value = use_signal(|| String::new());
+    let mut movies: Signal<Vec<Rc<FullMovie>>> = use_signal(std::vec::Vec::new);
+    let mut input_value = use_signal(String::new);
     let mut is_loading = use_signal(|| false);
 
     rsx! {

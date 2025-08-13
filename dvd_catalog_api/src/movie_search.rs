@@ -433,7 +433,7 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
                     uuid: uuid.to_string(),
                     action: question,
                     model: model.clone(),
-                    temperature: temperature,
+                    temperature,
                 },
             },
         ),

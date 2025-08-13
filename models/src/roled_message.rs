@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Role {
@@ -15,7 +15,7 @@ impl Display for Role {
             Role::User => "You",
         };
 
-        f.write_str(&value)
+        f.write_str(value)
     }
 }
 

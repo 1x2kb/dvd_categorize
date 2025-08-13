@@ -3,7 +3,6 @@ use std::{error::Error, fs::File, io::Read};
 use csv::Reader;
 use database::{Actor, Director, FullMovie};
 use dotenvy::dotenv;
-use env_logger;
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 
