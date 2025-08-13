@@ -162,19 +162,41 @@ impl std::fmt::Debug for FullMovie {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut debug_struct = f.debug_struct("FullMovie");
         debug_struct
-            .field("id", &self.id)
-            .field("name", &self.name)
-            .field("description", &self.description)
-            .field("actors", &self.actors)
-            .field("director", &self.director)
-            .field("genres", &self.genres);
-            
+            .field(
+                "id", &self.id,
+            )
+            .field(
+                "name", &self.name,
+            )
+            .field(
+                "description",
+                &self.description,
+            )
+            .field(
+                "actors",
+                &self.actors,
+            )
+            .field(
+                "director",
+                &self.director,
+            )
+            .field(
+                "genres",
+                &self.genres,
+            );
+
         #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
         {
-            let embedding_len = self.embedding.as_ref().map(|v| v.len());
-            debug_struct.field("embedding_len", &embedding_len);
+            let embedding_len = self
+                .embedding
+                .as_ref()
+                .map(|v| v.len());
+            debug_struct.field(
+                "embedding_len",
+                &embedding_len,
+            );
         }
-        
+
         debug_struct.finish()
     }
 }
@@ -184,7 +206,14 @@ impl VectorSimilarity for FullMovie {
     fn cosine_similarity(&self, query_embedding: &[f32]) -> Option<f32> {
         self.embedding
             .as_deref()
-            .and_then(|embedding| <Self as VectorSimilarity>::cosine_similarity_vectors(embedding, query_embedding))
+            .and_then(
+                |embedding| {
+                    <Self as VectorSimilarity>::cosine_similarity_vectors(
+                        embedding,
+                        query_embedding,
+                    )
+                },
+            )
     }
 }
 
@@ -194,7 +223,9 @@ impl TextMatchScoring for FullMovie {
         let mut score = 0;
 
         // Check title matches (highest weight)
-        let movie_title = self.name.to_lowercase();
+        let movie_title = self
+            .name
+            .to_lowercase();
         for title in titles {
             if movie_title.contains(&title.to_lowercase()) {
                 score += 3; // Higher weight for title matches
@@ -203,14 +234,28 @@ impl TextMatchScoring for FullMovie {
 
         // Check actor matches (medium weight)
         for actor in actors {
-            if self.actors.iter().any(|a| a.name.to_lowercase().contains(&actor.to_lowercase())) {
+            if self
+                .actors
+                .iter()
+                .any(
+                    |a| {
+                        a.name
+                            .to_lowercase()
+                            .contains(&actor.to_lowercase())
+                    },
+                )
+            {
                 score += 2;
             }
         }
 
         // Check genre matches (lowest weight)
         for genre in genres {
-            if self.genres.iter().any(|g| g.to_lowercase() == genre.to_lowercase()) {
+            if self
+                .genres
+                .iter()
+                .any(|g| g.to_lowercase() == genre.to_lowercase())
+            {
                 score += 1;
             }
         }
@@ -243,7 +288,9 @@ impl
             actors,
             genres,
             #[cfg(feature = "postgres")]
-            embedding: movie.embedding.map(|v| v.into()),
+            embedding: movie
+                .embedding
+                .map(|v| v.into()),
         }
     }
 }

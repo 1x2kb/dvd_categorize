@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::movie_search::count_matches;
 use ai_chat::OllamaClient;
 use axum::{
     extract::{Path, State},
@@ -9,8 +10,7 @@ use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie, SearchRequest};
 use log::{debug, error, info, warn};
 use models::VectorSimilarity;
-use crate::movie_search::count_matches;
-use ollama_rs::{Ollama, error::OllamaError};
+use ollama_rs::{error::OllamaError, Ollama};
 use tokio_rayon::rayon::prelude::*;
 use tracing::instrument;
 
@@ -31,7 +31,10 @@ pub async fn hello_world() -> &'static str {
 #[instrument(skip(state))]
 #[debug_handler]
 pub async fn get_dvds(State(state): State<CacheState>) -> Json<Option<Vec<FullMovie>>> {
-    if state.movies.is_empty() {
+    if state
+        .movies
+        .is_empty()
+    {
         Json(None)
     } else {
         Json(Some((*state.movies).clone()))
@@ -61,7 +64,10 @@ pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
 #[instrument]
 #[debug_handler]
 pub async fn chat() -> impl axum::response::IntoResponse {
-    (axum::http::StatusCode::NOT_FOUND, "Chat endpoint temporarily disabled")
+    (
+        axum::http::StatusCode::NOT_FOUND,
+        "Chat endpoint temporarily disabled",
+    )
 }
 
 /// Generates vector embeddings for a given text question using the Ollama AI service.
@@ -218,16 +224,22 @@ fn parse_movie_ids_from_response(response: String) -> Result<Vec<i32>, String> {
     Ok(ids)
 }
 
-
 /// Combines text and vector search results using parallel processing
 async fn combined_search(
     query: &str,
     all_movies: Arc<Vec<FullMovie>>,
 ) -> Result<Vec<FullMovie>, String> {
-    info!("Starting combined search for: {}", query);
+    info!(
+        "Starting combined search for: {}",
+        query
+    );
 
     // Extract entities from the movie list
-    let (titles, actors, genres) = extract_entities(query, &all_movies).await;
+    let (titles, actors, genres) = extract_entities(
+        query,
+        &all_movies,
+    )
+    .await;
     info!(
         "Extracted entities for combined search - titles: {:?}, actors: {:?}, genres: {:?}",
         titles, actors, genres
@@ -237,45 +249,81 @@ async fn combined_search(
     let query_embedding = match embedding(query).await {
         Ok(embedding) => Some(embedding),
         Err(e) => {
-            warn!("Failed to generate query embedding: {}", e);
+            warn!(
+                "Failed to generate query embedding: {}",
+                e
+            );
             None
         }
     };
 
     // Process movies in parallel using tokio-rayon 2.1.0
-    info!("Total movies to search: {}", all_movies.len());
-    info!("Query embedding generated: {}", query_embedding.is_some());
+    info!(
+        "Total movies to search: {}",
+        all_movies.len()
+    );
+    info!(
+        "Query embedding generated: {}",
+        query_embedding.is_some()
+    );
     if let Some(embedding) = &query_embedding {
-        info!("Query embedding length: {}", embedding.len());
+        info!(
+            "Query embedding length: {}",
+            embedding.len()
+        );
     }
 
-    let movies_with_scores: Vec<(FullMovie, usize, f32)> = all_movies
+    let movies_with_scores: Vec<(
+        FullMovie,
+        usize,
+        f32,
+    )> = all_movies
         .iter()
         .par_bridge()
-        .filter_map(|movie| {
-            // Calculate text score (reusing existing logic)
-            let text_score = count_matches(movie, &titles, &actors, &genres);
-            
-            // Calculate vector similarity score if embedding is available
-            let vector_score = query_embedding.as_ref()
-                .and_then(|embedding| {
-                    let score = movie.cosine_similarity(embedding);
-                    if score.is_none() {
-                        debug!("No embedding for movie: {}", movie.name);
-                    }
-                    score
-                })
-                .unwrap_or(0.0);
-            
-            // Only include movies that match at least one criterion
-            if text_score > 0 || vector_score > 0.0 {
-                debug!("Match found - Movie: {}, text_score: {}, vector_score: {}", movie.name, text_score, vector_score);
-                Some((movie.clone(), text_score, vector_score))
-            } else {
-                debug!("No match - Movie: {}, text_score: {}, vector_score: {}", movie.name, text_score, vector_score);
-                None
-            }
-        })
+        .filter_map(
+            |movie| {
+                // Calculate text score (reusing existing logic)
+                let text_score = count_matches(
+                    movie, &titles, &actors, &genres,
+                );
+
+                // Calculate vector similarity score if embedding is available
+                let vector_score = query_embedding
+                    .as_ref()
+                    .and_then(
+                        |embedding| {
+                            let score = movie.cosine_similarity(embedding);
+                            if score.is_none() {
+                                debug!(
+                                    "No embedding for movie: {}",
+                                    movie.name
+                                );
+                            }
+                            score
+                        },
+                    )
+                    .unwrap_or(0.0);
+
+                // Only include movies that match at least one criterion
+                if text_score > 0 || vector_score > 0.0 {
+                    debug!(
+                        "Match found - Movie: {}, text_score: {}, vector_score: {}",
+                        movie.name, text_score, vector_score
+                    );
+                    Some((
+                        movie.clone(),
+                        text_score,
+                        vector_score,
+                    ))
+                } else {
+                    debug!(
+                        "No match - Movie: {}, text_score: {}, vector_score: {}",
+                        movie.name, text_score, vector_score
+                    );
+                    None
+                }
+            },
+        )
         .collect();
 
     info!(
@@ -285,14 +333,21 @@ async fn combined_search(
 
     // Sort by combined score (text matches weighted more heavily) and take top 50
     let mut combined: Vec<FullMovie> = {
-        let mut sorted: Vec<_> = movies_with_scores.into_iter().collect();
-        sorted.par_sort_unstable_by(|(_, score_a, sim_a), (_, score_b, sim_b)| {
-            let combined_a = (*score_a as f32 * 2.0) + sim_a;
-            let combined_b = (*score_b as f32 * 2.0) + sim_b;
-            combined_b.partial_cmp(&combined_a).unwrap_or(std::cmp::Ordering::Equal)
-        });
-        sorted.into_iter()
-            .take(15)  // Limit to top 15 results
+        let mut sorted: Vec<_> = movies_with_scores
+            .into_iter()
+            .collect();
+        sorted.par_sort_unstable_by(
+            |(_, score_a, sim_a), (_, score_b, sim_b)| {
+                let combined_a = (*score_a as f32 * 2.0) + sim_a;
+                let combined_b = (*score_b as f32 * 2.0) + sim_b;
+                combined_b
+                    .partial_cmp(&combined_a)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            },
+        );
+        sorted
+            .into_iter()
+            .take(15) // Limit to top 15 results
             .map(|(movie, _, _)| movie)
             .collect()
     };
@@ -301,19 +356,30 @@ async fn combined_search(
     if combined.len() < 10 {
         let additional_movies = all_movies
             .iter()
-            .filter(|m| !combined.iter().any(|cm| cm.id == m.id))
-            .filter(|movie| {
-                // Include movies that match any criteria
-                count_matches(movie, &titles, &actors, &genres) > 0 ||
-                query_embedding.as_ref()
-                    .and_then(|e| movie.cosine_similarity(e))
-                    .map(|score| score > 0.5) // Threshold for similarity
-                    .unwrap_or(false)
-            })
+            .filter(
+                |m| {
+                    !combined
+                        .iter()
+                        .any(|cm| cm.id == m.id)
+                },
+            )
+            .filter(
+                |movie| {
+                    // Include movies that match any criteria
+                    count_matches(
+                        movie, &titles, &actors, &genres,
+                    ) > 0
+                        || query_embedding
+                            .as_ref()
+                            .and_then(|e| movie.cosine_similarity(e))
+                            .map(|score| score > 0.5) // Threshold for similarity
+                            .unwrap_or(false)
+                },
+            )
             .take(10 - combined.len())
             .cloned()
             .collect::<Vec<_>>();
-            
+
         combined.extend(additional_movies);
     }
 
@@ -324,9 +390,20 @@ async fn combined_search(
 
     // Log top 5 results for debugging with match scores
     if !combined.is_empty() {
-        info!("Top {} search results:", combined.len().min(5));
-        for (i, movie) in combined.iter().take(5).enumerate() {
-            let score = count_matches(movie, &titles, &actors, &genres);
+        info!(
+            "Top {} search results:",
+            combined
+                .len()
+                .min(5)
+        );
+        for (i, movie) in combined
+            .iter()
+            .take(5)
+            .enumerate()
+        {
+            let score = count_matches(
+                movie, &titles, &actors, &genres,
+            );
             info!(
                 "  {}. {} (ID: {}, match score: {})",
                 i + 1,
@@ -356,7 +433,9 @@ pub async fn get_matching_movies(
     State(state): State<CacheState>,
     Json(search_request): Json<SearchRequest>,
 ) -> Json<Option<Vec<FullMovie>>> {
-    let query = search_request.query.trim();
+    let query = search_request
+        .query
+        .trim();
     if query.is_empty() {
         return Json(Some(Vec::new()));
     }

@@ -31,7 +31,10 @@ impl AiChatProvider for OllamaClient {
             .parse::<u64>()
             .unwrap_or(8000);
 
-        let temperature = self.ai_action.temperature.unwrap_or(0.5);
+        let temperature = self
+            .ai_action
+            .temperature
+            .unwrap_or(0.5);
 
         info!(
             "Using num_ctx {}",
