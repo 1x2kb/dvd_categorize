@@ -59,7 +59,7 @@ async fn get_database_connection() -> Result<AsyncPgConnection, DatabaseError> {
 pub async fn get_all_genres() -> Result<Vec<String>, DatabaseError> {
     use crate::schema::movie_genre::dsl::*;
     let mut conn = get_database_connection().await?;
-    
+
     movie_genre
         .select(genre)
         .distinct()
@@ -72,7 +72,7 @@ pub async fn get_all_genres() -> Result<Vec<String>, DatabaseError> {
 pub async fn get_all_actors() -> Result<Vec<String>, DatabaseError> {
     use crate::schema::actor::dsl::*;
     let mut conn = get_database_connection().await?;
-    
+
     actor
         .select(name)
         .distinct()
@@ -85,7 +85,7 @@ pub async fn get_all_actors() -> Result<Vec<String>, DatabaseError> {
 pub async fn get_all_directors() -> Result<Vec<String>, DatabaseError> {
     use crate::schema::director::dsl::*;
     let mut conn = get_database_connection().await?;
-    
+
     director
         .select(name)
         .distinct()
@@ -140,8 +140,7 @@ pub async fn get_movies() -> Result<Vec<FullMovie>, DatabaseError> {
 }
 
 pub async fn get_movie(id: i32) -> Result<FullMovie, DatabaseError> {
-    let mut connection = get_database_connection()
-        .await?;
+    let mut connection = get_database_connection().await?;
 
     let (movie, director) = schema::movie::table
         .find(id)
@@ -176,8 +175,7 @@ pub async fn get_movie(id: i32) -> Result<FullMovie, DatabaseError> {
 }
 
 pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, DatabaseError> {
-    let mut connection = get_database_connection()
-        .await?;
+    let mut connection = get_database_connection().await?;
 
     // Early return for empty input
     if ids.is_empty() {
@@ -209,7 +207,10 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
     let all_actors = schema::movie_actor::table
         .filter(schema::movie_actor::movie_id.eq_any(&existing_movie_ids))
         .inner_join(schema::actor::table)
-        .load::<(MovieActor, Actor)>(&mut connection)
+        .load::<(
+            MovieActor,
+            Actor,
+        )>(&mut connection)
         .await?;
 
     // Batch get all genres for all movies
@@ -220,7 +221,8 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
 
     // Pre-allocate HashMaps with capacity for better performance
     let mut actors_map: HashMap<i32, Vec<Actor>> = HashMap::with_capacity(existing_movie_ids.len());
-    let mut genres_map: HashMap<i32, Vec<String>> = HashMap::with_capacity(existing_movie_ids.len());
+    let mut genres_map: HashMap<i32, Vec<String>> =
+        HashMap::with_capacity(existing_movie_ids.len());
 
     // Build lookup maps
     for (ma, actor) in all_actors {
@@ -252,7 +254,9 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
                 genres: genres_map
                     .remove(&movie.id)
                     .unwrap_or_default(),
-                embedding: movie.embedding.map(|v| v.into()),
+                embedding: movie
+                    .embedding
+                    .map(|v| v.into()),
             },
         )
         .collect();
@@ -261,8 +265,7 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
 }
 
 pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, DatabaseError> {
-    let mut conn = get_database_connection()
-        .await?;
+    let mut conn = get_database_connection().await?;
 
     let actors: String = full_movie
         .actors
@@ -329,11 +332,17 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
     // Vectorize string for storage in the database.
     let embedding = match ai_chat::get_embedding(&embedding).await {
         Ok(em) => {
-            debug!("Successfully generated embedding for movie: {}", full_movie.name);
+            debug!(
+                "Successfully generated embedding for movie: {}",
+                full_movie.name
+            );
             Some(em) // Store as Vec<f32>
-        },
+        }
         Err(e) => {
-            error!("Failed to generate embedding for movie '{}': {:#?}", full_movie.name, e);
+            error!(
+                "Failed to generate embedding for movie '{}': {:#?}",
+                full_movie.name, e
+            );
             None
         }
     };
@@ -477,7 +486,10 @@ pub async fn run_dvd_filters(filters: DvdFilters) -> Result<Vec<i32>, DatabaseEr
         .map_err(DatabaseError::from)
 }
 
-pub async fn search_movies(embedding: Vec<f32>, limit: i64) -> Result<Vec<FullMovie>, DatabaseError> {
+pub async fn search_movies(
+    embedding: Vec<f32>,
+    limit: i64,
+) -> Result<Vec<FullMovie>, DatabaseError> {
     let mut conn = get_database_connection().await?;
 
     // Get the IDs of the most similar movies

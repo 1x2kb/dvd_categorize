@@ -39,22 +39,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
     } else {
         "./movies.csv"
     };
-    info!("Using CSV file: {}", csv_path);
+    info!(
+        "Using CSV file: {}",
+        csv_path
+    );
     let reader = File::open(csv_path)?;
     info!("File opened");
 
     info!("Parsing csv");
     let movies = parse_csv(reader)?;
     info!("Parsed csv");
-    debug!("{} movies read in", movies.len());
+    debug!(
+        "{} movies read in",
+        movies.len()
+    );
 
     for movie in movies {
         let result = database::insert_full_movie(movie).await?;
-        debug!("Inserted movie: {:#?}", result);
+        debug!(
+            "Inserted movie: {:#?}",
+            result
+        );
         info!("Inserted movie");
     }
 
-    Ok(())  
+    Ok(())
 }
 
 pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> {

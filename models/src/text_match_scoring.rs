@@ -1,4 +1,3 @@
-
 #[cfg(feature = "text-matching")]
 /// Trait for calculating text-based match scores for movies.
 /// This allows for different text matching implementations and makes the code more testable.
@@ -6,12 +5,12 @@
 pub trait TextMatchScoring {
     /// Calculates a weighted text match score for the movie based on provided criteria.
     /// This performs text-based matching on titles, actors, and genres.
-    /// 
+    ///
     /// # Arguments
     /// * `titles` - Slice of title strings to match against the movie's title
     /// * `actors` - Slice of actor names to match against the movie's actors
     /// * `genres` - Slice of genre names to match against the movie's genres
-    /// 
+    ///
     /// # Returns
     /// A score representing how well the movie matches the text criteria, where higher scores
     /// indicate better matches. The scoring is weighted as follows:
@@ -31,10 +30,18 @@ mod tests {
         let movie = FullMovie {
             id: 1,
             name: "The Matrix".to_string(),
-            description: Some("A computer hacker learns about the true nature of reality".to_string()),
+            description: Some(
+                "A computer hacker learns about the true nature of reality".to_string(),
+            ),
             actors: vec![
-                Actor { id: 1, name: "Keanu Reeves".to_string() },
-                Actor { id: 2, name: "Laurence Fishburne".to_string() },
+                Actor {
+                    id: 1,
+                    name: "Keanu Reeves".to_string(),
+                },
+                Actor {
+                    id: 2,
+                    name: "Laurence Fishburne".to_string(),
+                },
             ],
             director: None,
             genres: vec!["Sci-Fi".to_string(), "Action".to_string()],
@@ -44,21 +51,33 @@ mod tests {
 
         // Test title match
         assert_eq!(
-            movie.text_match_score(&["Matrix".to_string()], &[], &[]),
+            movie.text_match_score(
+                &["Matrix".to_string()],
+                &[],
+                &[]
+            ),
             3,
             "Should match on title"
         );
 
         // Test actor match
         assert_eq!(
-            movie.text_match_score(&[], &["Reeves".to_string()], &[]),
+            movie.text_match_score(
+                &[],
+                &["Reeves".to_string()],
+                &[]
+            ),
             2,
             "Should match on actor"
         );
 
         // Test genre match
         assert_eq!(
-            movie.text_match_score(&[], &[], &["Sci-Fi".to_string()]),
+            movie.text_match_score(
+                &[],
+                &[],
+                &["Sci-Fi".to_string()]
+            ),
             1,
             "Should match on genre"
         );
@@ -69,8 +88,8 @@ mod tests {
         let genre = "Action".to_string();
         assert_eq!(
             movie.text_match_score(
-                &[title.to_string()], 
-                &[actor.clone()], 
+                &[title.to_string()],
+                &[actor.clone()],
                 &[genre.clone()]
             ),
             6, // 3 (title) + 2 (actor) + 1 (genre)
@@ -79,7 +98,11 @@ mod tests {
 
         // Test no matches
         assert_eq!(
-            movie.text_match_score(&[], &[], &[]),
+            movie.text_match_score(
+                &[],
+                &[],
+                &[]
+            ),
             0,
             "Should return 0 for no matches"
         );

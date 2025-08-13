@@ -6,10 +6,9 @@ pub mod app_data;
 pub mod components;
 pub mod views;
 
-
 use dotenvy::dotenv;
 use log::error;
-pub use views::{ai_chat::AiChat, movies_list::MoviesList, ai_live_results::AiLiveResults};
+pub use views::{ai_chat::AiChat, ai_live_results::AiLiveResults, movies_list::MoviesList};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
@@ -63,7 +62,9 @@ fn App() -> Element {
             // Use the current page's hostname instead of hardcoded localhost
             let window = web_sys::window().unwrap();
             let location = window.location();
-            let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+            let hostname = location
+                .hostname()
+                .unwrap_or_else(|_| "127.0.0.1".to_string());
             let server_port = var("server_port").unwrap_or_else(|_| "3000".to_string());
             let api_url = format!("http://{hostname}:{server_port}/dvd");
 

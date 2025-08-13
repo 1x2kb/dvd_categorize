@@ -41,11 +41,17 @@ async fn main() {
     // Load movies into cache state on startup
     let movies = match database::get_movies().await {
         Ok(movies) => {
-            info!("Successfully loaded {} movies into cache", movies.len());
+            info!(
+                "Successfully loaded {} movies into cache",
+                movies.len()
+            );
             movies
-        },
+        }
         Err(e) => {
-            error!("Failed to load movies: {}", e);
+            error!(
+                "Failed to load movies: {}",
+                e
+            );
             Vec::new()
         }
     };
@@ -53,7 +59,10 @@ async fn main() {
     let app = init_router(Arc::new(movies));
 
     let connection = get_host();
-    info!("Starting server on {}", &connection);
+    info!(
+        "Starting server on {}",
+        &connection
+    );
 
     let listener = tokio::net::TcpListener::bind(&connection)
         .await
