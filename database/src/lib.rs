@@ -3,11 +3,9 @@ use std::env;
 use std::error::Error;
 use std::fmt::Display;
 
-use diesel::dsl::{any, exists}; // Function-style exists for subqueries
 use diesel::prelude::*;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use log::{debug, error};
-use models::dvd_filters::DvdFilters;
 pub use models::{schema::*, *};
 use pgvector::{Vector, VectorExpressionMethods};
 
@@ -420,70 +418,6 @@ pub async fn genres_for_movie(movie: &Movie, connection: &mut AsyncPgConnection)
         .load::<String>(connection)
         .await
         .unwrap_or_else(|_| Vec::new())
-}
-
-pub async fn run_dvd_filters(filters: DvdFilters) -> Result<Vec<i32>, DatabaseError> {
-    // Base query with joins needed for nullable director
-    let mut query = movie::table
-        .left_join(director::table)
-        .into_boxed();
-
-    // Apply filters conditionally
-    if let Some(names) = filters.movie_names {
-        query = query.filter(movie::name.eq_any(names));
-    }
-
-    if let Some(directors) = filters.directors {
-        query = query.filter(director::name.eq_any(directors));
-    }
-
-    // Actor filter using EXISTS subquery
-    if let Some(actors) = filters.actors {
-        query = query.filter(
-            exists(
-                movie_actor::table
-                    .inner_join(actor::table)
-                    .filter(movie_actor::movie_id.eq(movie::id))
-                    .filter(actor::name.eq_any(actors)),
-            ),
-        );
-    }
-
-    // Genre filter using EXISTS subquery
-    if let Some(genres) = filters.genres {
-        query = query.filter(
-            exists(
-                movie_genre::table
-                    .filter(movie_genre::movie_id.eq(movie::id))
-                    .filter(movie_genre::genre.eq_any(genres)),
-            ),
-        );
-    }
-
-    if let Some(terms) = filters.plot_terms {
-        let search_patterns = terms
-            .iter()
-            .map(
-                |t| {
-                    format!(
-                        "%{}%",
-                        t
-                    )
-                },
-            )
-            .collect::<Vec<_>>();
-
-        query = query.filter(movie::description.ilike(any(search_patterns)));
-    }
-
-    let mut conn = get_database_connection().await?;
-
-    query
-        .select(movie::id)
-        .distinct()
-        .get_results(&mut conn)
-        .await
-        .map_err(DatabaseError::from)
 }
 
 pub async fn search_movies(
