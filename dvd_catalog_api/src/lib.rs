@@ -245,8 +245,9 @@ async fn combined_search(
 
     let min_text_score = 0;
     let min_vector_score = 0.55;
+    // First collect movie references and their scores
     let movies_with_scores: Vec<(
-        FullMovie,
+        &FullMovie,
         usize,
         f32,
     )> = all_movies
@@ -255,19 +256,10 @@ async fn combined_search(
         .filter_map(
             |movie| {
                 // Calculate text score (reusing existing logic)
-                let text_start = Instant::now();
                 let text_score = movie.text_match_score(
                     &titles, &actors, &genres,
                 );
-                info!(
-                    "Text score calculated in {:.3}ms",
-                    text_start
-                        .elapsed()
-                        .as_micros()
-                );
 
-                let vector_start = Instant::now();
-                // Calculate vector similarity score if embedding is available
                 let vector_score = query_embedding
                     .as_ref()
                     .and_then(
@@ -283,17 +275,11 @@ async fn combined_search(
                         },
                     )
                     .unwrap_or(0.0);
-                info!(
-                    "Vector score calculated in {:.3}ms",
-                    vector_start
-                        .elapsed()
-                        .as_micros()
-                );
 
                 // Only include movies that match at least one criterion
                 if text_score > min_text_score || vector_score > min_vector_score {
                     Some((
-                        movie.clone(),
+                        movie,  // Only store reference here
                         text_score,
                         vector_score,
                     ))
@@ -309,11 +295,9 @@ async fn combined_search(
         movies_with_scores.len()
     );
 
-    // Sort by combined score (text matches weighted more heavily) and take top 50
+    // Sort by combined score (text matches weighted more heavily) and take top 15
     let mut combined: Vec<FullMovie> = {
-        let mut sorted: Vec<_> = movies_with_scores
-            .into_iter()
-            .collect();
+        let mut sorted: Vec<_> = movies_with_scores;
         sorted.par_sort_unstable_by(
             |(_, score_a, sim_a), (_, score_b, sim_b)| {
                 let combined_a = (*score_a as f32 * 2.0) + sim_a;
@@ -326,7 +310,7 @@ async fn combined_search(
         sorted
             .into_iter()
             .take(15) // Limit to top 15 results
-            .map(|(movie, _, _)| movie)
+            .map(|(movie, _, _)| movie.clone())  // Only clone the movies we keep
             .collect()
     };
 
