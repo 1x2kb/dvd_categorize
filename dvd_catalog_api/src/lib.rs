@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use crate::movie_search::count_matches;
 use ai_chat::OllamaClient;
 use axum::{
     extract::{Path, State},
@@ -9,14 +6,16 @@ use axum::{
 use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie, SearchRequest};
 use log::{debug, error, info, warn};
+use models::TextMatchScoring;
 use models::VectorSimilarity;
 use ollama_rs::{error::OllamaError, Ollama};
+use std::{sync::Arc, time::Instant};
 use tokio_rayon::rayon::prelude::*;
 use tracing::instrument;
 
 // Movie search functionality module
 pub mod movie_search;
-pub use movie_search::{extract_entities, search_movies_by_text};
+pub use movie_search::extract_entities;
 
 #[derive(Clone, Debug)]
 pub struct CacheState {
@@ -211,6 +210,7 @@ async fn combined_search(
         titles, actors, genres
     );
 
+    let embedding_start = Instant::now();
     // Generate query embedding once
     let query_embedding = match embedding(query).await {
         Ok(embedding) => Some(embedding),
@@ -223,15 +223,11 @@ async fn combined_search(
         }
     };
 
-    // Process movies in parallel using tokio-rayon 2.1.0
-    info!(
-        "Total movies to search: {}",
-        all_movies.len()
-    );
     info!(
         "Query embedding generated: {}",
         query_embedding.is_some()
     );
+
     if let Some(embedding) = &query_embedding {
         info!(
             "Query embedding length: {}",
@@ -239,8 +235,19 @@ async fn combined_search(
         );
     }
 
+    let embedding_duration = embedding_start.elapsed();
+    info!(
+        "Query embedding generated in {:.3}ms",
+        embedding_duration.as_millis()
+    );
+
+    let start_time = Instant::now();
+
+    let min_text_score = 0;
+    let min_vector_score = 0.55;
+    // First collect movie references and their scores
     let movies_with_scores: Vec<(
-        FullMovie,
+        &FullMovie,
         usize,
         f32,
     )> = all_movies
@@ -249,11 +256,10 @@ async fn combined_search(
         .filter_map(
             |movie| {
                 // Calculate text score (reusing existing logic)
-                let text_score = count_matches(
-                    movie, &titles, &actors, &genres,
+                let text_score = movie.text_match_score(
+                    &titles, &actors, &genres,
                 );
 
-                // Calculate vector similarity score if embedding is available
                 let vector_score = query_embedding
                     .as_ref()
                     .and_then(
@@ -271,21 +277,13 @@ async fn combined_search(
                     .unwrap_or(0.0);
 
                 // Only include movies that match at least one criterion
-                if text_score > 0 || vector_score > 0.0 {
-                    debug!(
-                        "Match found - Movie: {}, text_score: {}, vector_score: {}",
-                        movie.name, text_score, vector_score
-                    );
+                if text_score > min_text_score || vector_score > min_vector_score {
                     Some((
-                        movie.clone(),
+                        movie,  // Only store reference here
                         text_score,
                         vector_score,
                     ))
                 } else {
-                    debug!(
-                        "No match - Movie: {}, text_score: {}, vector_score: {}",
-                        movie.name, text_score, vector_score
-                    );
                     None
                 }
             },
@@ -297,11 +295,9 @@ async fn combined_search(
         movies_with_scores.len()
     );
 
-    // Sort by combined score (text matches weighted more heavily) and take top 50
+    // Sort by combined score (text matches weighted more heavily) and take top 15
     let mut combined: Vec<FullMovie> = {
-        let mut sorted: Vec<_> = movies_with_scores
-            .into_iter()
-            .collect();
+        let mut sorted: Vec<_> = movies_with_scores;
         sorted.par_sort_unstable_by(
             |(_, score_a, sim_a), (_, score_b, sim_b)| {
                 let combined_a = (*score_a as f32 * 2.0) + sim_a;
@@ -314,7 +310,7 @@ async fn combined_search(
         sorted
             .into_iter()
             .take(15) // Limit to top 15 results
-            .map(|(movie, _, _)| movie)
+            .map(|(movie, _, _)| movie.clone())  // Only clone the movies we keep
             .collect()
     };
 
@@ -332,8 +328,8 @@ async fn combined_search(
             .filter(
                 |movie| {
                     // Include movies that match any criteria
-                    count_matches(
-                        movie, &titles, &actors, &genres,
+                    movie.text_match_score(
+                        &titles, &actors, &genres,
                     ) > 0
                         || query_embedding
                             .as_ref()
@@ -367,9 +363,9 @@ async fn combined_search(
             .take(5)
             .enumerate()
         {
-            let score = count_matches(
-                movie, &titles, &actors, &genres,
-            );
+            let score = movie.text_match_score(
+                &titles, &actors, &genres,
+            ) as f32;
             info!(
                 "  {}. {} (ID: {}, match score: {})",
                 i + 1,
@@ -381,6 +377,12 @@ async fn combined_search(
     } else {
         info!("No matching movies found");
     }
+
+    let duration = start_time.elapsed();
+    info!(
+        "Completed combined search in {}ms",
+        duration.as_millis()
+    );
 
     Ok(combined)
 }
