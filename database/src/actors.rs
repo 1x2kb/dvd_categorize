@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use diesel::prelude::*;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use models::{schema::actor, Actor, Movie, MovieActor, NewActor};
@@ -7,16 +5,16 @@ use models::{schema::actor, Actor, Movie, MovieActor, NewActor};
 use crate::DatabaseError;
 
 pub async fn insert_actors(
-    actors: impl Iterator<Item = NewActor>,
+    actors: &[NewActor],
     connection: &mut AsyncPgConnection,
-) -> Result<Vec<(String, i32)>, DatabaseError> {
+) -> Result<Vec<(i32, String)>, DatabaseError> {
     diesel::insert_into(actor::table)
-        .values(&actors)
+        .values(actors)
         .on_conflict(actor::name)
         .do_update()
         .set(actor::id.eq(actor::id))
-        .returning(actor::id, actor::name)
-        .get_results::<i32>(connection)
+        .returning((actor::id, actor::name))
+        .get_results::<(i32, String)>(connection)
         .await
         .map_err(DatabaseError::from)
 }

@@ -1,16 +1,14 @@
-use std::collections::HashMap;
-
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use models::{schema, NewDirector};
 
 use crate::DatabaseError;
 
 pub async fn insert_directors(
-    directors: impl Iterator<Item = NewDirector>,
+    directors: &[NewDirector],
     connection: &mut AsyncPgConnection,
 ) -> Result<Vec<(i32, String)>, DatabaseError> {
     diesel::insert_into(schema::director::table)
-        .values(&directors)
+        .values(directors)
         .returning((
             schema::director::id,
             schema::director::name,
