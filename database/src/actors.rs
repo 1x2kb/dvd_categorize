@@ -7,31 +7,18 @@ use models::{schema::actor, Actor, Movie, MovieActor, NewActor};
 use crate::DatabaseError;
 
 pub async fn insert_actors(
-    actors: impl Iterator<Item = String>,
+    actors: impl Iterator<Item = NewActor>,
     connection: &mut AsyncPgConnection,
-) -> Result<HashMap<String, i32>, DatabaseError> {
-    let new_actors: Vec<NewActor> = actors
-        .into_iter()
-        .map(|name| NewActor { name: name })
-        .collect();
-
-    let ids: Vec<i32> = diesel::insert_into(actor::table)
-        .values(&new_actors)
+) -> Result<Vec<(String, i32)>, DatabaseError> {
+    diesel::insert_into(actor::table)
+        .values(&actors)
         .on_conflict(actor::name)
         .do_update()
         .set(actor::id.eq(actor::id))
-        .returning(actor::id)
+        .returning(actor::id, actor::name)
         .get_results::<i32>(connection)
         .await
-        .map_err(DatabaseError::from)?;
-
-    Ok(
-        new_actors
-            .into_iter()
-            .map(|actor| actor.name)
-            .zip(ids)
-            .collect(),
-    )
+        .map_err(DatabaseError::from)
 }
 
 pub async fn actors_for_movie(movie: &Movie, connection: &mut AsyncPgConnection) -> Vec<Actor> {

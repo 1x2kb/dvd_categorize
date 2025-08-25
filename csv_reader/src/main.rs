@@ -1,9 +1,10 @@
-use std::{error::Error, fs::File, io::Read};
+use std::{collections::HashSet, error::Error, fs::File, io::Read};
 
 use csv::Reader;
-use database::{Actor, Director, FullMovie};
+use database::{director, Actor, Director, FullMovie};
 use dotenvy::dotenv;
 use log::{debug, info};
+use models::NewMovie;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,7 +27,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     info!("Starting csv reader");
-    #[cfg(debug_assertions)]
     dotenv()
         .ok()
         .expect("Failed to run env reader");
@@ -47,21 +47,74 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("File opened");
 
     info!("Parsing csv");
-    let movies = parse_csv(reader)?;
+    let full_movies: Vec<FullMovie> = parse_csv(reader)?;
     info!("Parsed csv");
     debug!(
         "{} movies read in",
-        movies.len()
+        full_movies.len()
     );
 
-    for movie in movies {
-        let result = database::insert_full_movie(movie).await?;
-        debug!(
-            "Inserted movie: {:#?}",
-            result
-        );
-        info!("Inserted movie");
-    }
+    let (actors, genres, directors) = (
+        get_unique_actors(&full_movies),
+        get_unique_genres(&full_movies),
+        get_unique_directors(&full_movies),
+    );
+
+    let mut connection = database::get_database_connection().await?;
+    let actors = database::insert_actors(
+        actors
+            .into_iter()
+            .map(|s| s.to_string()),
+        &mut connection,
+    )
+    .await?;
+
+    let directors = database::insert_directors(
+        directors,
+        &mut connection,
+    )
+    .await?;
+
+    let embeddings: Vec<String> = full_movies
+        .iter()
+        .map(|movie| (movie.embedding_str()))
+        .collect();
+
+    let embeddings = ai_chat::get_embeddings(
+        embeddings,
+        "nomic-embed-text",
+    )
+    .await?;
+
+    let movies = full_movies
+        .iter()
+        .enumerate()
+        .map(
+            |(i, movie)| {
+                NewMovie {
+                    name: movie
+                        .name
+                        .to_string(),
+                    director_id: directors
+                        .iter()
+                        .find(
+                            |(_, director_name)| {
+                                movie
+                                    .director
+                                    .as_deref()
+                                    .is_some_and(|d| &d.name == director_name)
+                            },
+                        ),
+                    description: movie
+                        .description
+                        .clone(),
+                    embedding: Some(embeddings[i]),
+                };
+            },
+        )
+        .collect();
+
+
 
     Ok(())
 }
@@ -140,6 +193,62 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
     }
 
     Ok(movies)
+}
+
+fn get_unique_actors(movies: &[FullMovie]) -> HashSet<&str> {
+    movies
+        .into_iter()
+        .flat_map(
+            |movie| {
+                movie
+                    .actors
+                    .iter()
+                    .map(
+                        |actor| {
+                            actor
+                                .name
+                                .as_str()
+                        },
+                    )
+            },
+        )
+        .collect()
+}
+
+fn get_unique_genres(movies: &[FullMovie]) -> HashSet<&str> {
+    movies
+        .into_iter()
+        .flat_map(
+            |movie| {
+                movie
+                    .genres
+                    .iter()
+                    .map(|genre| genre.as_str())
+            },
+        )
+        .collect()
+}
+
+fn get_unique_directors(movies: &[FullMovie]) -> HashSet<&str> {
+    movies
+        .into_iter()
+        .flat_map(
+            |movie| {
+                movie
+                    .director
+                    .as_ref()
+                    .map(
+                        |d| {
+                            Some(
+                                d.name
+                                    .as_str(),
+                            )
+                        },
+                    )
+                    .unwrap_or(None)
+            },
+        )
+        .collect()
 }
 
 #[cfg(test)]

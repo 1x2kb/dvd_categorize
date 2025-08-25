@@ -1,7 +1,13 @@
 use crate::{get_database_connection, DatabaseError};
-use diesel::prelude::*;
+use diesel::{dsl::Set, insert_into, prelude::*};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
-use models::{schema::movie_genre, Movie, MovieGenre};
+use models::{
+    schema::{
+        self,
+        movie_genre::{self},
+    },
+    Movie, MovieGenre, NewMovieGenre,
+};
 
 /// Get all unique genres from the database
 pub async fn get_all_genres() -> Result<Vec<String>, DatabaseError> {
