@@ -4,7 +4,7 @@ use csv::Reader;
 use database::{director, Actor, Director, FullMovie};
 use dotenvy::dotenv;
 use log::{debug, info};
-use models::NewMovie;
+use models::{MovieActor, NewActor, NewDirector, NewMovie, NewMovieActor};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -47,30 +47,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("File opened");
 
     info!("Parsing csv");
-    let full_movies: Vec<FullMovie> = parse_csv(reader)?;
+    let mut full_movies: Vec<FullMovie> = parse_csv(reader)?;
     info!("Parsed csv");
     debug!(
         "{} movies read in",
         full_movies.len()
     );
 
-    let (actors, genres, directors) = (
+    let (mut actors, mut genres, mut directors) = (
         get_unique_actors(&full_movies),
         get_unique_genres(&full_movies),
         get_unique_directors(&full_movies),
     );
 
+    actors.sort_by(
+        |a, b| {
+            a.name
+                .cmp(&b.name)
+        },
+    ); // Sort results for binary search.
+    directors.sort_by(
+        |a, b| {
+            a.name
+                .cmp(&b.name)
+        },
+    ); // Sort results for binary search
+
     let mut connection = database::get_database_connection().await?;
     let actors = database::insert_actors(
-        actors
-            .into_iter()
-            .map(|s| s.to_string()),
+        &actors,
         &mut connection,
     )
     .await?;
 
     let directors = database::insert_directors(
-        directors,
+        &directors,
         &mut connection,
     )
     .await?;
@@ -86,35 +97,104 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )
     .await?;
 
-    let movies = full_movies
-        .iter()
-        .enumerate()
+    let movies: Vec<NewMovie> = full_movies
+        .iter_mut()
+        .zip(embeddings.into_iter())
         .map(
-            |(i, movie)| {
-                NewMovie {
-                    name: movie
-                        .name
-                        .to_string(),
-                    director_id: directors
-                        .iter()
-                        .find(
-                            |(_, director_name)| {
-                                movie
-                                    .director
-                                    .as_deref()
-                                    .is_some_and(|d| &d.name == director_name)
-                            },
-                        ),
-                    description: movie
-                        .description
-                        .clone(),
-                    embedding: Some(embeddings[i]),
-                };
+            |(movie, embedding)| NewMovie {
+                name: movie
+                    .name
+                    .to_string(),
+                director_id: movie
+                    .director
+                    .iter()
+                    .flat_map(
+                        |director| {
+                            directors
+                                .binary_search_by(
+                                    |(_, director_name)| director_name.cmp(&director.name),
+                                )
+                                .ok()
+                                .and_then(
+                                    |index| {
+                                        directors
+                                            .get(index)
+                                            .map(|(id, _)| *id)
+                                    },
+                                )
+                        },
+                    )
+                    .next(),
+                description: movie
+                    .description
+                    .clone(),
+                embedding: Some(embedding.into()),
             },
         )
         .collect();
 
+    let mut movie_inserts = database::insert_movies(
+        &movies,
+        &mut connection,
+    )
+    .await?;
 
+    movie_inserts.sort_by(
+        |a, b| {
+            a.1.cmp(&b.1)
+        },
+    );
+
+    let movie_actors: Vec<NewMovieActor> = full_movies
+        .iter()
+        .flat_map(
+            |movie| {
+                let movie_id = movie_inserts
+                    .binary_search_by(|(_, movie_name)| movie_name.cmp(&movie.name))
+                    .ok()
+                    .and_then(
+                        |found_index| {
+                            movie_inserts
+                                .get(found_index)
+                                .map(|(id, _)| *id)
+                        },
+                    );
+
+                let movie_actor = movie
+                    .actors
+                    .iter()
+                    .flat_map(
+                        |actor| {
+                            actors
+                                .binary_search_by(|(_, name)| name.cmp(&actor.name))
+                                .map(
+                                    |found_index| {
+                                        actors
+                                            .get(found_index)
+                                            .map(|(id, _)| *id)
+                                    },
+                                )
+                        },
+                    )
+                    .flatten();
+
+                if let Some(movie_id) = movie_id {
+                    return movie_actor
+                        .into_iter()
+                        .map(|actor_id| NewMovieActor { movie_id, actor_id })
+                        .collect()
+                }
+
+                Vec::new()
+            },
+        )
+        .collect();
+
+    let movie_actors = database::insert_movie_actors(
+        &movie_actors,
+        &mut connection,
+    )
+    .await?;
 
     Ok(())
 }
@@ -195,7 +275,7 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
     Ok(movies)
 }
 
-fn get_unique_actors(movies: &[FullMovie]) -> HashSet<&str> {
+fn get_unique_actors(movies: &[FullMovie]) -> Vec<NewActor> {
     movies
         .into_iter()
         .flat_map(
@@ -210,6 +290,13 @@ fn get_unique_actors(movies: &[FullMovie]) -> HashSet<&str> {
                                 .as_str()
                         },
                     )
+            },
+        )
+        .collect::<HashSet<&str>>()
+        .into_iter()
+        .map(
+            |actor_name| NewActor {
+                name: actor_name.to_string(),
             },
         )
         .collect()
@@ -229,7 +316,7 @@ fn get_unique_genres(movies: &[FullMovie]) -> HashSet<&str> {
         .collect()
 }
 
-fn get_unique_directors(movies: &[FullMovie]) -> HashSet<&str> {
+fn get_unique_directors(movies: &[FullMovie]) -> Vec<NewDirector> {
     movies
         .into_iter()
         .flat_map(
@@ -246,6 +333,13 @@ fn get_unique_directors(movies: &[FullMovie]) -> HashSet<&str> {
                         },
                     )
                     .unwrap_or(None)
+            },
+        )
+        .collect::<HashSet<&str>>()
+        .into_iter()
+        .map(
+            |director_name| NewDirector {
+                name: director_name.to_string(),
             },
         )
         .collect()
