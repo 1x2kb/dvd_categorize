@@ -4,7 +4,7 @@ use csv::Reader;
 use database::{director, Actor, Director, FullMovie};
 use dotenvy::dotenv;
 use log::{debug, info};
-use models::{MovieActor, NewActor, NewDirector, NewMovie, NewMovieActor};
+use models::{MovieActor, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovieGenre};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -160,29 +160,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         },
                     );
 
-                let movie_actor = movie
-                    .actors
-                    .iter()
-                    .flat_map(
-                        |actor| {
-                            actors
-                                .binary_search_by(|(_, name)| name.cmp(&actor.name))
-                                .map(
-                                    |found_index| {
-                                        actors
-                                            .get(found_index)
-                                            .map(|(id, _)| *id)
-                                    },
-                                )
-                        },
-                    )
-                    .flatten();
-
                 if let Some(movie_id) = movie_id {
-                    return movie_actor
-                        .into_iter()
-                        .map(|actor_id| NewMovieActor { movie_id, actor_id })
-                        .collect()
+                    return movie
+                        .actors
+                        .iter()
+                        .filter_map(
+                            |actor| {
+                                actors
+                                    .binary_search_by(|(_, name)| name.cmp(&actor.name))
+                                    .ok()
+                                    .and_then(|index| actors.get(index))
+                                    .map(|(actor_id, _)| NewMovieActor {
+                                        movie_id,
+                                        actor_id: *actor_id,
+                                    })
+                            },
+                        )
+                        .collect();
                 }
 
                 Vec::new()
@@ -192,6 +186,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let movie_actors = database::insert_movie_actors(
         &movie_actors,
+        &mut connection,
+    )
+    .await?;
+
+    let movie_genres: Vec<NewMovieGenre> = full_movies
+        .iter()
+        .flat_map(
+            |movie| {
+                let movie_id = movie_inserts
+                    .binary_search_by(|(_, movie_name)| movie_name.cmp(&movie.name))
+                    .ok()
+                    .and_then(
+                        |found_index| {
+                            movie_inserts
+                                .get(found_index)
+                                .map(|(id, _)| *id)
+                        },
+                    );
+
+                if let Some(movie_id) = movie_id {
+                    return movie
+                        .genres
+                        .iter()
+                        .map(
+                            |genre| NewMovieGenre {
+                                movie_id,
+                                genre: genre.clone(),
+                            },
+                        )
+                        .collect();
+                }
+
+                Vec::new()
+            },
+        )
+        .collect();
+
+    let movie_genres = database::insert_movie_genres(
+        &movie_genres,
         &mut connection,
     )
     .await?;

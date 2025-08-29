@@ -1,11 +1,8 @@
 use crate::{get_database_connection, DatabaseError};
-use diesel::{dsl::Set, insert_into, prelude::*};
+use diesel::prelude::*;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use models::{
-    schema::{
-        self,
-        movie_genre::{self},
-    },
+    schema::movie_genre::{self},
     Movie, MovieGenre, NewMovieGenre,
 };
 
@@ -18,6 +15,19 @@ pub async fn get_all_genres() -> Result<Vec<String>, DatabaseError> {
         .select(genre)
         .distinct()
         .load::<String>(&mut conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
+pub async fn insert_movie_genres(
+    movie_genres: &[NewMovieGenre],
+    connection: &mut AsyncPgConnection,
+) -> Result<Vec<MovieGenre>, DatabaseError> {
+    diesel::insert_into(movie_genre::table)
+        .values(movie_genres)
+        .on_conflict((movie_genre::movie_id, movie_genre::genre))
+        .do_nothing()
+        .get_results::<MovieGenre>(connection)
         .await
         .map_err(DatabaseError::from)
 }
