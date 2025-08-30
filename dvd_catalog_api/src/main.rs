@@ -117,6 +117,10 @@ fn init_router(movies: Arc<Vec<FullMovie>>) -> Router {
             get(get_dvd),
         )
         .route(
+            "/csv/preview",
+            post(parse_csv),
+        )
+        .route(
             "/",
             get(hello_world),
         );

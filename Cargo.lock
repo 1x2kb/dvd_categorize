@@ -909,6 +909,7 @@ version = "0.1.0"
 dependencies = [
  "ai_chat",
  "csv",
+ "csv_utils",
  "database",
  "dotenvy",
  "env_logger",
@@ -917,6 +918,15 @@ dependencies = [
  "serde",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "csv_utils"
+version = "0.1.0"
+dependencies = [
+ "csv",
+ "models",
+ "serde",
 ]
 
 [[package]]
@@ -1635,6 +1645,7 @@ dependencies = [
  "ai_chat",
  "axum",
  "axum-macros",
+ "csv_utils",
  "database",
  "dotenvy",
  "env_logger",

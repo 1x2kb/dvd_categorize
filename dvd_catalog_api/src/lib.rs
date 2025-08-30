@@ -1,12 +1,13 @@
 use ai_chat::OllamaClient;
 use axum::{
     extract::{Path, State},
+    http::StatusCode,
     Json,
 };
 use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie, SearchRequest};
 use log::{debug, error, info, warn};
-use models::TextMatchScoring;
+use models::{CsvInput, TextMatchScoring};
 use models::VectorSimilarity;
 use ollama_rs::{error::OllamaError, Ollama};
 use std::{sync::Arc, time::Instant};
@@ -66,6 +67,32 @@ pub async fn chat() -> impl axum::response::IntoResponse {
     (
         axum::http::StatusCode::NOT_FOUND,
         "Chat endpoint temporarily disabled",
+    )
+}
+
+#[instrument]
+#[debug_handler]
+pub async fn parse_csv(Json(value): Json<CsvInput>) -> impl axum::response::IntoResponse {
+    let headers = ["Title", "Description", "Actors", "Genres", "Director"];
+    let csv_with_headers = format!(
+        "{}\n{}",
+        headers.join(","),
+        value.input
+    );
+
+    let movies = csv_utils::parse_csv(csv_with_headers.as_bytes()).unwrap_or_else(
+        |e| {
+            error!(
+                "{}",
+                e
+            );
+            Vec::new()
+        },
+    );
+
+    (
+        StatusCode::OK,
+        Json(movies),
     )
 }
 

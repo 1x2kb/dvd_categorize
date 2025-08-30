@@ -1,0 +1,9 @@
+[package]
+name = "csv_utils"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+csv = "*"
+models = { path = "../models" }
+serde = { version = "1.0.214", features = ["derive"] }
