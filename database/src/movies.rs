@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use models::{schema, NewMovie};

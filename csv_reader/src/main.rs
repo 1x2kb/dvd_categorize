@@ -1,10 +1,10 @@
 use std::{collections::HashSet, error::Error, fs::File, io::Read};
 
 use csv::Reader;
-use database::{director, Actor, Director, FullMovie};
+use database::{Actor, Director, FullMovie};
 use dotenvy::dotenv;
 use log::{debug, info};
-use models::{MovieActor, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovieGenre};
+use models::{NewActor, NewDirector, NewMovie, NewMovieActor, NewMovieGenre};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         full_movies.len()
     );
 
-    let (mut actors, mut genres, mut directors) = (
+    let (mut actors, genres, mut directors) = (
         get_unique_actors(&full_movies),
         get_unique_genres(&full_movies),
         get_unique_directors(&full_movies),
@@ -313,7 +313,7 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
 
 fn get_unique_actors(movies: &[FullMovie]) -> Vec<NewActor> {
     movies
-        .into_iter()
+        .iter()
         .flat_map(
             |movie| {
                 movie
@@ -340,7 +340,7 @@ fn get_unique_actors(movies: &[FullMovie]) -> Vec<NewActor> {
 
 fn get_unique_genres(movies: &[FullMovie]) -> HashSet<&str> {
     movies
-        .into_iter()
+        .iter()
         .flat_map(
             |movie| {
                 movie
@@ -354,7 +354,7 @@ fn get_unique_genres(movies: &[FullMovie]) -> HashSet<&str> {
 
 fn get_unique_directors(movies: &[FullMovie]) -> Vec<NewDirector> {
     movies
-        .into_iter()
+        .iter()
         .flat_map(
             |movie| {
                 movie
