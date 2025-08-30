@@ -173,10 +173,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     .binary_search_by(|(_, name)| name.cmp(&actor.name))
                                     .ok()
                                     .and_then(|index| actors.get(index))
-                                    .map(|(actor_id, _)| NewMovieActor {
-                                        movie_id,
-                                        actor_id: *actor_id,
-                                    })
+                                    .map(
+                                        |(actor_id, _)| NewMovieActor {
+                                            movie_id,
+                                            actor_id: *actor_id,
+                                        },
+                                    )
                             },
                         )
                         .collect();

@@ -1,20 +1,35 @@
 use diesel::prelude::*;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
-use models::{schema::{actor, movie_actor}, Actor, Movie, MovieActor, NewActor, NewMovieActor};
+use models::{
+    schema::{actor, movie_actor},
+    Actor, Movie, MovieActor, NewActor, NewMovieActor,
+};
 
 use crate::DatabaseError;
 
 pub async fn insert_actors(
     actors: &[NewActor],
     connection: &mut AsyncPgConnection,
-) -> Result<Vec<(i32, String)>, DatabaseError> {
+) -> Result<
+    Vec<(
+        i32,
+        String,
+    )>,
+    DatabaseError,
+> {
     diesel::insert_into(actor::table)
         .values(actors)
         .on_conflict(actor::name)
         .do_update()
         .set(actor::id.eq(actor::id))
-        .returning((actor::id, actor::name))
-        .get_results::<(i32, String)>(connection)
+        .returning((
+            actor::id,
+            actor::name,
+        ))
+        .get_results::<(
+            i32,
+            String,
+        )>(connection)
         .await
         .map_err(DatabaseError::from)
 }
@@ -25,7 +40,10 @@ pub async fn insert_movie_actors(
 ) -> Result<Vec<MovieActor>, DatabaseError> {
     diesel::insert_into(movie_actor::table)
         .values(movie_actors)
-        .on_conflict((movie_actor::movie_id, movie_actor::actor_id))
+        .on_conflict((
+            movie_actor::movie_id,
+            movie_actor::actor_id,
+        ))
         .do_nothing()
         .get_results::<MovieActor>(connection)
         .await

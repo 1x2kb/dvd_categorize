@@ -25,7 +25,10 @@ pub async fn insert_movie_genres(
 ) -> Result<Vec<MovieGenre>, DatabaseError> {
     diesel::insert_into(movie_genre::table)
         .values(movie_genres)
-        .on_conflict((movie_genre::movie_id, movie_genre::genre))
+        .on_conflict((
+            movie_genre::movie_id,
+            movie_genre::genre,
+        ))
         .do_nothing()
         .get_results::<MovieGenre>(connection)
         .await
