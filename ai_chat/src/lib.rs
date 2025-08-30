@@ -1,3 +1,5 @@
+pub mod embedding;
+pub mod live_ui;
 mod prompts;
 
 use std::{future::Future, sync::Arc};
@@ -15,7 +17,7 @@ use ollama_rs::{
 use prompts::USER_LIBRARY_PROMPT;
 use tracing::{instrument, Level};
 
-pub mod live_ui;
+pub use embedding::*;
 
 pub trait GenerateMessage {
     fn generate_message(prompt: String) -> impl Future<Output = String>;

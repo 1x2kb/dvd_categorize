@@ -11,4 +11,5 @@
 
 ## Local Development
 - Run `sudo docker-compose up` to build and run the containers. # these are built by binding the local volume so local builds are still possible and even beneficial.
+- Add data from movies.csv, `docker compose --profile tools run --rm csv_reader`
 - Default app is available at localhost:8080
