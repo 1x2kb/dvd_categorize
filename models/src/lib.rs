@@ -157,6 +157,49 @@ pub struct FullMovie {
     pub embedding: Option<Vec<f32>>,
 }
 
+impl FullMovie {
+    #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+    pub fn embedding_str(&self) -> String {
+        let actors: String = self
+            .actors
+            .iter()
+            .map(
+                |actor| {
+                    actor
+                        .name
+                        .as_str()
+                },
+            )
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let genres: String = self
+            .genres
+            .iter()
+            .map(|genre| genre.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+
+        format!(
+            "{}-{} and has genres {} with actors {} and directed by {}",
+            self.name,
+            self.description
+                .as_ref()
+                .unwrap_or(&"".to_string()),
+            genres,
+            actors,
+            self.director
+                .as_ref()
+                .map(
+                    |director| director
+                        .name
+                        .as_str()
+                )
+                .unwrap_or("")
+        )
+    }
+}
+
 impl std::fmt::Debug for FullMovie {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut debug_struct = f.debug_struct("FullMovie");

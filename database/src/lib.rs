@@ -1,3 +1,8 @@
+pub mod actors;
+pub mod directors;
+pub mod genres;
+pub mod movies;
+
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
@@ -8,6 +13,11 @@ use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use log::{debug, error};
 pub use models::{schema::*, *};
 use pgvector::{Vector, VectorExpressionMethods};
+
+pub use actors::*;
+pub use directors::*;
+pub use genres::*;
+pub use movies::*;
 
 #[cfg(feature = "testing")]
 pub trait Random {
@@ -45,49 +55,10 @@ impl Display for DatabaseError {
 }
 
 // TODO: Setup pool in main.rs?
-async fn get_database_connection() -> Result<AsyncPgConnection, DatabaseError> {
+pub async fn get_database_connection() -> Result<AsyncPgConnection, DatabaseError> {
     let database_url =
         env::var("DATABASE_URL").expect("No database information found, cannot connect");
     AsyncPgConnection::establish(&database_url)
-        .await
-        .map_err(DatabaseError::from)
-}
-
-/// Get all unique genres from the database
-pub async fn get_all_genres() -> Result<Vec<String>, DatabaseError> {
-    use crate::schema::movie_genre::dsl::*;
-    let mut conn = get_database_connection().await?;
-
-    movie_genre
-        .select(genre)
-        .distinct()
-        .load::<String>(&mut conn)
-        .await
-        .map_err(DatabaseError::from)
-}
-
-/// Get all unique actor names from the database
-pub async fn get_all_actors() -> Result<Vec<String>, DatabaseError> {
-    use crate::schema::actor::dsl::*;
-    let mut conn = get_database_connection().await?;
-
-    actor
-        .select(name)
-        .distinct()
-        .load::<String>(&mut conn)
-        .await
-        .map_err(DatabaseError::from)
-}
-
-/// Get all unique director names from the database
-pub async fn get_all_directors() -> Result<Vec<String>, DatabaseError> {
-    use crate::schema::director::dsl::*;
-    let mut conn = get_database_connection().await?;
-
-    director
-        .select(name)
-        .distinct()
-        .load::<String>(&mut conn)
         .await
         .map_err(DatabaseError::from)
 }
@@ -401,23 +372,6 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
 
     // TODO: Return results of insert so lookup is unnecessary.
     get_movie(movie_id).await
-}
-
-pub async fn actors_for_movie(movie: &Movie, connection: &mut AsyncPgConnection) -> Vec<Actor> {
-    MovieActor::belonging_to(&movie)
-        .inner_join(schema::actor::table)
-        .select(schema::actor::all_columns)
-        .load::<Actor>(connection)
-        .await
-        .unwrap_or_else(|_| Vec::new())
-}
-
-pub async fn genres_for_movie(movie: &Movie, connection: &mut AsyncPgConnection) -> Vec<String> {
-    MovieGenre::belonging_to(&movie)
-        .select(movie_genre::genre)
-        .load::<String>(connection)
-        .await
-        .unwrap_or_else(|_| Vec::new())
 }
 
 pub async fn search_movies(

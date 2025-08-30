@@ -44,6 +44,7 @@ impl AiChatProvider for OllamaClient {
             "Using temprature {}",
             temperature
         );
+
         let chat_request = ChatMessageRequest::new(
             model_name.to_string(),
             messages,
@@ -62,7 +63,7 @@ impl AiChatProvider for OllamaClient {
 
         info!(
             "Response from AI {}",
-            response
+            &response
                 .message
                 .content
         );

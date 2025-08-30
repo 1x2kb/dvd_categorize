@@ -279,7 +279,7 @@ async fn combined_search(
                 // Only include movies that match at least one criterion
                 if text_score > min_text_score || vector_score > min_vector_score {
                     Some((
-                        movie,  // Only store reference here
+                        movie, // Only store reference here
                         text_score,
                         vector_score,
                     ))
@@ -310,7 +310,7 @@ async fn combined_search(
         sorted
             .into_iter()
             .take(15) // Limit to top 15 results
-            .map(|(movie, _, _)| movie.clone())  // Only clone the movies we keep
+            .map(|(movie, _, _)| movie.clone()) // Only clone the movies we keep
             .collect()
     };
 
