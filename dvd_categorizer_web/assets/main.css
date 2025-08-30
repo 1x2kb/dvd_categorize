@@ -8,7 +8,7 @@ body {
 
 /* Insert Media Component */
 .insert-media-container {
-    max-width: 1200px;
+    max-width: 60vw;
     margin: 0 auto;
     padding: 20px;
     color: white;
@@ -146,7 +146,7 @@ body {
 }
 
 #header {
-    max-width: 1200px;
+    max-width: 62.5vw; /* 1200px / 1920px */
 }
 
 /* Navbar */
