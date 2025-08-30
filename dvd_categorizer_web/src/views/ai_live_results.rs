@@ -37,7 +37,7 @@ async fn send_search_request(query: String) -> Result<Vec<FullMovie>, reqwest::E
 
 #[component]
 pub fn AiLiveResults() -> Element {
-    let mut movies: Signal<Vec<Rc<FullMovie>>> = use_signal(std::vec::Vec::new);
+    let mut movies: Signal<Vec<FullMovie>> = use_signal(std::vec::Vec::new);
     let mut input_value = use_signal(String::new);
     let mut is_loading = use_signal(|| false);
 
@@ -73,7 +73,7 @@ pub fn AiLiveResults() -> Element {
                                     let result = send_search_request(input_value()).await;
                                     match result {
                                         Ok(movie_list) => {
-                                            movies.set(movie_list.into_iter().map(Rc::new).collect());
+                                            movies.set(movie_list);
                                         }
                                         Err(err) => {
                                             log::error!("Failed to send search request {:#?}", err);
@@ -99,7 +99,7 @@ pub fn AiLiveResults() -> Element {
                                 let result = send_search_request(input_value()).await;
                                 match result {
                                     Ok(movie_list) => {
-                                        movies.set(movie_list.into_iter().map(Rc::new).collect());
+                                        movies.set(movie_list);
                                     }
                                     Err(err) => {
                                         log::error!("Failed to send search request {:#?}", err);
@@ -122,12 +122,7 @@ pub fn AiLiveResults() -> Element {
             }
 
             // Movie grid section
-            div {
-                class: "movie-grid movie-grid-cols-3",
-                for movie in movies().iter() {
-                    MovieGrid { movie: Rc::clone(movie) }
-                }
-            }
+            MovieGrid { movie: movies() }
         }
     }
 }
