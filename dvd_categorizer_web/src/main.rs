@@ -8,6 +8,7 @@ pub mod views;
 
 use dotenvy::dotenv;
 use log::error;
+pub use views::insert_media::InsertMedia;
 pub use views::{ai_chat::AiChat, ai_live_results::AiLiveResults, movies_list::MoviesList};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -22,6 +23,8 @@ enum Route {
     AiChat {},
     #[route("/ai/live")]
     AiLiveResults {},
+    #[route("/moives/new")]
+    InsertMedia {},
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
@@ -97,7 +100,6 @@ pub fn Hero() -> Element {
             id: "hero",
             img { src: HEADER_SVG, id: "header" }
             div { id: "links",
-                a { href: "https://dioxuslabs.com/learn/0.6/", "📚 Learn Dioxus" }
                 Link {
                     to: Route::MoviesList {}, "List"
                 }
@@ -106,6 +108,9 @@ pub fn Hero() -> Element {
                 }
                 Link {
                     to: Route::AiLiveResults {}, "Live"
+                }
+                Link {
+                    to: Route::InsertMedia {}, "Insert"
                 }
             }
         }
@@ -138,6 +143,9 @@ fn Navbar() -> Element {
             }
             Link {
                 to: Route::AiLiveResults {}, "Live"
+            }
+            Link {
+                    to: Route::InsertMedia {}, "Insert"
             }
         }
 
