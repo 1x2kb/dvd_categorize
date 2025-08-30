@@ -27,9 +27,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     info!("Starting csv reader");
+
+    #[cfg(debug_assertions)]
     dotenv()
         .ok()
         .expect("Failed to run env reader");
+    #[cfg(debug_assertions)]
     debug!("Loaded env variables");
 
     info!("Opening file");
