@@ -55,8 +55,9 @@ body {
     font-size: 14px;
     resize: vertical;
     overflow-x: auto;
-    white-space: pre;
-    word-wrap: normal;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
 
 .button-group {
