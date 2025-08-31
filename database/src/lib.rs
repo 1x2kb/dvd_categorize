@@ -2,6 +2,7 @@ pub mod actors;
 pub mod directors;
 pub mod genres;
 pub mod movies;
+pub mod full_movies;
 
 use std::collections::HashMap;
 use std::env;
@@ -18,6 +19,7 @@ pub use actors::*;
 pub use directors::*;
 pub use genres::*;
 pub use movies::*;
+pub use full_movies::*;
 
 #[cfg(feature = "testing")]
 pub trait Random {
