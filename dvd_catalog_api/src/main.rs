@@ -41,11 +41,17 @@ async fn main() {
     // Load movies into cache state on startup
     let movies = match database::get_movies().await {
         Ok(movies) => {
-            info!("Successfully loaded {} movies into cache", movies.len());
+            info!(
+                "Successfully loaded {} movies into cache",
+                movies.len()
+            );
             movies
         }
         Err(e) => {
-            error!("Failed to load movies: {}", e);
+            error!(
+                "Failed to load movies: {}",
+                e
+            );
             Vec::new()
         }
     };
@@ -91,8 +97,8 @@ fn get_host() -> String {
 
 fn init_router(movies: Vec<FullMovie>) -> Router {
     // Create state with the provided movies wrapped in Arc<RwLock<>>
-    let state = CacheState { 
-        movies: Arc::new(tokio::sync::RwLock::new(movies)) 
+    let state = CacheState {
+        movies: Arc::new(tokio::sync::RwLock::new(movies)),
     };
 
     // Create a router for endpoints that need CacheState
@@ -107,7 +113,7 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
         )
         .route(
             "/csv/parse",
-            post(parse_csv)
+            post(parse_csv),
         )
         .with_state(state);
 

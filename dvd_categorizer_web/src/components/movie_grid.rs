@@ -8,30 +8,29 @@ pub struct MovieCardProps {
 
 #[component]
 pub fn MovieGrid(props: MovieCardProps) -> Element {
-    
     rsx! {
         div {
             class: "movie-grid movie-grid-cols-3",
             for movie in props.movie.read().iter() {
                 div {
                     class: "movie-card",
-        
+
                     // Movie poster placeholder
                     div {
                         class: "movie-poster",
                         "{movie.name}"
                     }
-        
+
                     // Movie details
                     div {
                         class: "movie-details",
-        
+
                         // Title
                         h3 {
                             class: "movie-title",
                             "{movie.name}"
                         }
-        
+
                         // Description
                         if let Some(description) = &movie.description {
                             p {
@@ -39,7 +38,7 @@ pub fn MovieGrid(props: MovieCardProps) -> Element {
                                 "{description}"
                             }
                         }
-        
+
                         // Actors
                         if !movie.actors.is_empty() {
                             div {
@@ -56,7 +55,7 @@ pub fn MovieGrid(props: MovieCardProps) -> Element {
                                 }
                             }
                         }
-        
+
                         // Director
                         if let Some(director) = &movie.director {
                             div {
@@ -71,7 +70,7 @@ pub fn MovieGrid(props: MovieCardProps) -> Element {
                                 }
                             }
                         }
-        
+
                         // Genres
                         if !movie.genres.is_empty() {
                             div {

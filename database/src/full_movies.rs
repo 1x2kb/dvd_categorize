@@ -4,7 +4,7 @@ use models::{FullMovie, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovie
 
 ///
 /// Adds a Vec of FullMovies in bulk to the database.
-/// 
+///
 /// TODO: Needs refactor
 pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), Box<dyn Error>> {
     let (mut actors, genres, mut directors) = (

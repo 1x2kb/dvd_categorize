@@ -31,7 +31,10 @@ pub async fn hello_world() -> &'static str {
 #[instrument(skip(state))]
 #[debug_handler]
 pub async fn get_dvds(State(state): State<CacheState>) -> Json<Option<Vec<FullMovie>>> {
-    let movies = state.movies.read().await;
+    let movies = state
+        .movies
+        .read()
+        .await;
     if movies.is_empty() {
         Json(None)
     } else {
@@ -101,7 +104,13 @@ use axum::response::IntoResponse;
 pub async fn parse_csv(
     State(cache_state): State<CacheState>,
     Json(value): Json<CsvInput>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<
+    impl IntoResponse,
+    (
+        StatusCode,
+        String,
+    ),
+> {
     let headers = ["Title", "Description", "Actors", "Genres", "Director"];
     let csv_with_headers = format!(
         "{}\n{}",
@@ -112,34 +121,70 @@ pub async fn parse_csv(
     let movies = match csv_utils::parse_csv(csv_with_headers.as_bytes()) {
         Ok(movies) => movies,
         Err(e) => {
-            let error = format!("Failed to parse CSV: {}", e);
-            error!("{}", error);
-            return Err((StatusCode::BAD_REQUEST, error));
+            let error = format!(
+                "Failed to parse CSV: {}",
+                e
+            );
+            error!(
+                "{}",
+                error
+            );
+            return Err((
+                StatusCode::BAD_REQUEST,
+                error,
+            ));
         }
     };
 
     if let Err(e) = database::insert_full_movies(movies).await {
-        let error = format!("Failed to insert movies: {}", e);
-        error!("{}", error);
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
+        let error = format!(
+            "Failed to insert movies: {}",
+            e
+        );
+        error!(
+            "{}",
+            error
+        );
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            error,
+        ));
     }
 
     // Refresh the cache with the latest movies
     match database::get_movies().await {
         Ok(updated_movies) => {
             info!("Movies saved successfully");
-            
+
             // Update the movies in the RwLock
-            let mut movies = cache_state.movies.write().await;
+            let mut movies = cache_state
+                .movies
+                .write()
+                .await;
             *movies = updated_movies;
             let count = movies.len();
-            info!("Successfully refreshed movie cache with {} movies", count);
-            Ok((StatusCode::OK, Json(())))
+            info!(
+                "Successfully refreshed movie cache with {} movies",
+                count
+            );
+            Ok((
+                StatusCode::OK,
+                Json(()),
+            ))
         }
         Err(e) => {
-            let error = format!("Failed to refresh movie cache: {}", e);
-            error!("{}", error);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, error))
+            let error = format!(
+                "Failed to refresh movie cache: {}",
+                e
+            );
+            error!(
+                "{}",
+                error
+            );
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error,
+            ))
         }
     }
 }
@@ -477,13 +522,19 @@ pub async fn get_matching_movies(
 ) -> Json<Option<Vec<FullMovie>>> {
     // Get a clone of the movies from the RwLock
     let movies = {
-        let movies_guard = state.movies.read().await;
+        let movies_guard = state
+            .movies
+            .read()
+            .await;
         (*movies_guard).clone()
     };
-    
+
     // Update the span with the movie count after acquiring the lock
-    tracing::Span::current().record("movie_count", tracing::field::display(movies.len()));
-    
+    tracing::Span::current().record(
+        "movie_count",
+        tracing::field::display(movies.len()),
+    );
+
     let query = search_request
         .query
         .trim();

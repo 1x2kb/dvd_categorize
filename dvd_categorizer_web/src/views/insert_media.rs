@@ -9,7 +9,7 @@ pub fn InsertMedia() -> Element {
     let mut csv_data = use_signal(|| "".to_string());
     let mut dvd_data: Signal<Vec<FullMovie>> = use_signal(std::vec::Vec::new);
     let mut is_previewing: Signal<bool> = use_signal(|| false);
-    
+
     // Helper for pluralization
     let dvd_count = dvd_data().len();
     let movie_word = if dvd_count == 1 { "movie" } else { "movies" };
@@ -71,7 +71,7 @@ pub fn InsertMedia() -> Element {
                         },
                         "Preview"
                     }
-                    
+
                     if is_previewing() {
                         button {
                             class: "button button-danger",
@@ -82,7 +82,7 @@ pub fn InsertMedia() -> Element {
                             },
                             "Clear"
                         }
-                        
+
                         button {
                             class: "button button-success",
                             onclick: move |_| {

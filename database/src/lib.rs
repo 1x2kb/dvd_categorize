@@ -1,8 +1,8 @@
 pub mod actors;
 pub mod directors;
+pub mod full_movies;
 pub mod genres;
 pub mod movies;
-pub mod full_movies;
 
 use std::collections::HashMap;
 use std::env;
@@ -17,9 +17,9 @@ use pgvector::{Vector, VectorExpressionMethods};
 
 pub use actors::*;
 pub use directors::*;
+pub use full_movies::*;
 pub use genres::*;
 pub use movies::*;
-pub use full_movies::*;
 
 #[cfg(feature = "testing")]
 pub trait Random {

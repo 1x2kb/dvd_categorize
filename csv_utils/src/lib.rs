@@ -19,7 +19,6 @@ struct CsvRecord {
     genres: Option<String>,
 }
 
-
 pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> {
     let mut reader = Reader::from_reader(csv_data);
     let mut movies = Vec::new();
@@ -27,13 +26,16 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
 
     for record in reader.deserialize() {
         let csv_record: CsvRecord = record?;
-        let name = csv_record.title.trim().to_string();
-        
+        let name = csv_record
+            .title
+            .trim()
+            .to_string();
+
         // Skip if we've already seen this movie name
         if !seen_names.insert(name.clone()) {
             continue;
         }
-        
+
         let movie = FullMovie {
             id: 0,
             name,
