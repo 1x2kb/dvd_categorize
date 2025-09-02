@@ -108,6 +108,10 @@ fn init_router(movies: Arc<Vec<FullMovie>>) -> Router {
             "/ai/dvd-match",
             post(get_matching_movies),
         )
+        .route(
+            "/csv/parse",
+            post(parse_csv)
+        )
         .with_state(state);
 
     // Create a router for stateless endpoints
@@ -118,7 +122,7 @@ fn init_router(movies: Arc<Vec<FullMovie>>) -> Router {
         )
         .route(
             "/csv/preview",
-            post(parse_csv),
+            post(preview_csv),
         )
         .route(
             "/",

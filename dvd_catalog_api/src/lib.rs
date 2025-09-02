@@ -7,8 +7,8 @@ use axum::{
 use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie, SearchRequest};
 use log::{debug, error, info, warn};
-use models::{CsvInput, TextMatchScoring};
 use models::VectorSimilarity;
+use models::{CsvInput, TextMatchScoring};
 use ollama_rs::{error::OllamaError, Ollama};
 use std::{sync::Arc, time::Instant};
 use tokio_rayon::rayon::prelude::*;
@@ -72,7 +72,7 @@ pub async fn chat() -> impl axum::response::IntoResponse {
 
 #[instrument]
 #[debug_handler]
-pub async fn parse_csv(Json(value): Json<CsvInput>) -> impl axum::response::IntoResponse {
+pub async fn preview_csv(Json(value): Json<CsvInput>) -> impl axum::response::IntoResponse {
     let headers = ["Title", "Description", "Actors", "Genres", "Director"];
     let csv_with_headers = format!(
         "{}\n{}",
@@ -94,6 +94,49 @@ pub async fn parse_csv(Json(value): Json<CsvInput>) -> impl axum::response::Into
         StatusCode::OK,
         Json(movies),
     )
+}
+
+#[instrument]
+#[debug_handler]
+pub async fn parse_csv(cache_state: State<CacheState>, Json(value): Json<CsvInput>) -> impl axum::response::IntoResponse {
+    let headers = ["Title", "Description", "Actors", "Genres", "Director"];
+    let csv_with_headers = format!(
+        "{}\n{}",
+        headers.join(","),
+        value.input
+    );
+
+    let movies = csv_utils::parse_csv(csv_with_headers.as_bytes()).unwrap_or_else(
+        |e| {
+            error!(
+                "{}",
+                e
+            );
+            Vec::new()
+        },
+    );
+
+    let result = database::insert_full_movies(movies).await;
+
+    match result {
+        Ok(_) => {
+            info!("Movies saved successfully");
+            (
+                StatusCode::OK,
+                Json(()),
+            )
+        }
+        Err(e) => {
+            error!(
+                "{}",
+                e
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(()),
+            )
+        }
+    }
 }
 
 /// Generates vector embeddings for a given text question using the Ollama AI service.

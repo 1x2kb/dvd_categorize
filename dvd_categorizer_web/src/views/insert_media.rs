@@ -90,7 +90,37 @@ pub fn InsertMedia() -> Element {
                         button {
                             class: "button button-success",
                             onclick: move |_| {
-                                // TODO: Implement send functionality
+                                spawn(async move {
+                                let window = web_sys::window().unwrap();
+                                let location = window.location();
+                                let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+                                let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+
+                                let client = reqwest::Client::new();
+                                let result = client
+                                    .post(format!("http://{}:{}/csv/parse", hostname, server_port))
+                                    .json(&CsvInput { input: csv_data() })
+                                    .send()
+                                    .await;
+
+                                match result {
+                                    Ok(response) => {
+                                        let response: Result<Vec<FullMovie>, String> = response
+                                            .json::<Vec<FullMovie>>()
+                                            .await
+                                            .map_err(|e| e.to_string());
+
+                                        match response {
+                                            Ok(dvds) => {
+                                                dvd_data.set(dvds);
+                                                is_previewing.set(true);
+                                            },
+                                            Err(e) => error!("Error parsing response: {}", e),
+                                        }
+                                    },
+                                    Err(e) => error!("Request failed: {}", e),
+                                }
+                            });
                             },
                             "Send to Database"
                         }
