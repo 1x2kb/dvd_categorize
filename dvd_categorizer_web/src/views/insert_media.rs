@@ -1,17 +1,13 @@
 use dioxus::prelude::*;
 use log::error;
 use models::{CsvInput, FullMovie};
-use serde::{Deserialize, Serialize};
-use tracing::info;
 
-use crate::components::{
-    display_movie::DisplayMovie, movie_card::MovieCard, movie_grid::MovieGrid,
-};
+use crate::components::movie_grid::MovieGrid;
 
 #[component]
 pub fn InsertMedia() -> Element {
     let mut csv_data = use_signal(|| "".to_string());
-    let mut dvd_data: Signal<Vec<FullMovie>> = use_signal(|| vec![]);
+    let mut dvd_data: Signal<Vec<FullMovie>> = use_signal(std::vec::Vec::new);
     let mut is_previewing: Signal<bool> = use_signal(|| false);
     
     // Helper for pluralization

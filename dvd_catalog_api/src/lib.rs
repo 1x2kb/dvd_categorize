@@ -482,7 +482,7 @@ pub async fn get_matching_movies(
     };
     
     // Update the span with the movie count after acquiring the lock
-    tracing::Span::current().record("movie_count", &tracing::field::display(movies.len()));
+    tracing::Span::current().record("movie_count", tracing::field::display(movies.len()));
     
     let query = search_request
         .query

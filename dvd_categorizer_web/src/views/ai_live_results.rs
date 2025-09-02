@@ -2,7 +2,6 @@ use crate::components::movie_grid::MovieGrid;
 use dioxus::prelude::*;
 use models::{FullMovie, SearchRequest};
 use serde::{Deserialize, Serialize};
-use std::rc::Rc;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct AiAction {

@@ -1,11 +1,8 @@
-use std::{collections::HashSet, error::Error, fs::File, io::Read};
+use std::{error::Error, fs::File};
 
-use csv::Reader;
-use database::{Actor, Director, FullMovie};
+use database::FullMovie;
 use dotenvy::dotenv;
 use log::{debug, error, info};
-use models::{NewActor, NewDirector, NewMovie, NewMovieActor, NewMovieGenre};
-use serde::{Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -35,7 +32,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("File opened");
 
     info!("Parsing csv");
-    let mut full_movies: Vec<FullMovie> = csv_utils::parse_csv(reader)?;
+    let full_movies: Vec<FullMovie> = csv_utils::parse_csv(reader)?;
     info!("Parsed csv");
     debug!(
         "{} movies read in",
