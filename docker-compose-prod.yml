@@ -17,7 +17,6 @@ services:
       - "0.0.0.0:5434:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./postgresql/:/docker-entrypoint-initdb.d/
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app_user -d app_db"]
       interval: 5s
