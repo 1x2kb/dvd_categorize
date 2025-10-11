@@ -13,6 +13,7 @@ pub struct VirtualMovieGridProps {
     pub movies: Arc<Vec<FullMovie>>,
 }
 
+// TODO: AI Coded. REVIEW!!!
 #[component]
 pub fn VirtualMovieGrid(props: VirtualMovieGridProps) -> Element {
     let mut scroll_top = use_signal(|| 0.0);
@@ -77,6 +78,8 @@ pub fn VirtualMovieGrid(props: VirtualMovieGridProps) -> Element {
             
             let mut eval = eval(script);
             
+            // Not an infinite loop... Event listener loop: awaits messages from JavaScript (viewport_height, scroll_top).
+            // Safe: .await suspends (0% CPU), auto-cleanup on unmount, standard Dioxus pattern.
             loop {
                 if let Ok(data) = eval.recv::<Value>().await {
                     if let Some(height) = data.get("viewport_height") {
