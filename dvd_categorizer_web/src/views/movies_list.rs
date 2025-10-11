@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::{
     app_data::AppData,
-    components::movie_grid::MovieGrid,
+    components::virtual_movie_grid::VirtualMovieGrid,
 };
 
 #[component]
@@ -13,7 +13,7 @@ pub fn MoviesList() -> Element {
 
     rsx! {
         if let Some(movie_list) = movies.read().as_ref() {
-            MovieGrid { movies: Arc::clone(movie_list) }
+            VirtualMovieGrid { movies: Arc::clone(movie_list) }
         }
     }
 }

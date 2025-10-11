@@ -1672,6 +1672,7 @@ dependencies = [
  "models",
  "reqwest",
  "serde",
+ "serde_json",
  "tracing",
  "web-sys",
 ]
