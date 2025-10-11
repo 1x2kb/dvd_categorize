@@ -1,13 +1,14 @@
 use dioxus::prelude::*;
 use log::error;
 use models::{CsvInput, FullMovie};
+use std::sync::Arc;
 
 use crate::components::movie_grid::MovieGrid;
 
 #[component]
 pub fn InsertMedia() -> Element {
     let mut csv_data = use_signal(|| "".to_string());
-    let mut dvd_data: Signal<Vec<FullMovie>> = use_signal(std::vec::Vec::new);
+    let mut dvd_data: Signal<Arc<Vec<FullMovie>>> = use_signal(|| Arc::new(Vec::new()));
     let mut is_previewing: Signal<bool> = use_signal(|| false);
 
     // Helper for pluralization
@@ -59,7 +60,7 @@ pub fn InsertMedia() -> Element {
 
                                         match response {
                                             Ok(dvds) => {
-                                                dvd_data.set(dvds);
+                                                dvd_data.set(Arc::new(dvds));
                                                 is_previewing.set(true);
                                             },
                                             Err(e) => error!("Error parsing response: {}", e),
@@ -76,7 +77,7 @@ pub fn InsertMedia() -> Element {
                         button {
                             class: "button button-danger",
                             onclick: move |_| {
-                                dvd_data.set(vec![]);
+                                dvd_data.set(Arc::new(vec![]));
                                 is_previewing.set(false);
                                 csv_data.set(String::new());
                             },
@@ -108,7 +109,7 @@ pub fn InsertMedia() -> Element {
 
                                         match response {
                                             Ok(dvds) => {
-                                                dvd_data.set(dvds);
+                                                dvd_data.set(Arc::new(dvds));
                                                 is_previewing.set(true);
                                             },
                                             Err(e) => error!("Error parsing response: {}", e),
@@ -128,7 +129,7 @@ pub fn InsertMedia() -> Element {
             if !dvd_data().is_empty() {
                 div { class: "preview-section",
                     h3 { class: "preview-title", "Preview ({dvd_count} {movie_word} found)" }
-                    MovieGrid { movie: dvd_data() }
+                    MovieGrid { movies: Arc::clone(&dvd_data()) }
                 }
             }
         }

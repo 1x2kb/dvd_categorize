@@ -1,9 +1,10 @@
 use dioxus::prelude::*;
 use models::FullMovie;
+use std::sync::Arc;
 
 #[derive(Props, Clone, PartialEq)]
 pub struct MovieCardProps {
-    pub movie: ReadOnlySignal<Vec<FullMovie>>,
+    pub movies: Arc<Vec<FullMovie>>,
 }
 
 #[component]
@@ -11,7 +12,7 @@ pub fn MovieGrid(props: MovieCardProps) -> Element {
     rsx! {
         div {
             class: "movie-grid movie-grid-cols-3",
-            for movie in props.movie.read().iter() {
+            for movie in props.movies.iter() {
                 div {
                     class: "movie-card",
 

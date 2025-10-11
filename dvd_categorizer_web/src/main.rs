@@ -1,4 +1,5 @@
 use std::env::var;
+use std::sync::Arc;
 
 use app_data::AppData;
 use dioxus::prelude::*;
@@ -79,7 +80,7 @@ fn App() -> Element {
                     app_data
                         .write()
                         .movies
-                        .set(Some(movies));
+                        .set(Some(Arc::new(movies)));
                 }
             }
         },
