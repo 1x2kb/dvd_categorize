@@ -1,12 +1,13 @@
 use dioxus::prelude::*;
 use dioxus::document::eval;
 use models::FullMovie;
-use serde_json::Value;
 use std::sync::Arc;
+use web_sys::wasm_bindgen::JsCast;
+use web_sys::window;
 
 const ITEM_HEIGHT: f64 = 400.0; // Approximate height of each movie card in pixels
 const ITEMS_PER_ROW: usize = 3; // Number of items per row in the grid
-const BUFFER_ROWS: usize = 2; // Number of extra rows to render above/below viewport
+const BUFFER_ROWS: usize = 4; // Number of extra rows to render above/below viewport for smooth scrolling
 
 #[derive(Props, Clone, PartialEq)]
 pub struct VirtualMovieGridProps {
@@ -45,63 +46,76 @@ pub fn VirtualMovieGrid(props: VirtualMovieGridProps) -> Element {
     let visible_movies: Vec<FullMovie> = movies[start_index..end_index].to_vec();
     let visible_movies_arc = Arc::new(visible_movies);
     
-    // Use effect to setup scroll listener and calculate available height
+    // Initialize container height on mount and handle window resize
     use_effect(move || {
         spawn(async move {
-            let script = r#"
-                const container = document.getElementById('virtual-scroll-container');
-                if (container) {
-                    // Calculate available height: viewport height - navbar - margins
-                    const navbar = document.getElementById('navbar');
-                    const navbarHeight = navbar ? navbar.offsetHeight : 0;
-                    const viewportHeight = window.innerHeight;
-                    const availableHeight = viewportHeight - navbarHeight - 40; // 40px for margins (20px * 2)
-                    
-                    // Set the container height
-                    container.style.height = availableHeight + 'px';
-                    
-                    dioxus.send({ viewport_height: availableHeight });
-                    
-                    container.addEventListener('scroll', () => {
-                        dioxus.send({ scroll_top: container.scrollTop });
-                    });
-                    
-                    // Update height on window resize
-                    window.addEventListener('resize', () => {
-                        const newViewportHeight = window.innerHeight;
-                        const newAvailableHeight = newViewportHeight - navbarHeight - 40;
-                        container.style.height = newAvailableHeight + 'px';
-                        dioxus.send({ viewport_height: newAvailableHeight });
-                    });
+            // Function to calculate and set height
+            let calculate_height = || async move {
+                let script = r#"
+                    const container = document.getElementById('virtual-scroll-container');
+                    if (container) {
+                        // Calculate available height: viewport height - navbar - margins
+                        const navbar = document.getElementById('navbar');
+                        const navbarHeight = navbar ? navbar.offsetHeight : 0;
+                        const viewportHeight = window.innerHeight;
+                        const availableHeight = viewportHeight - navbarHeight - 40; // 40px for margins (20px * 2)
+                        
+                        // Set the container height
+                        container.style.height = availableHeight + 'px';
+                        
+                        return availableHeight;
+                    }
+                    return 800;
+                "#;
+                
+                if let Ok(result) = eval(script).await {
+                    if let Some(height) = result.as_f64() {
+                        viewport_height.set(height);
+                    }
                 }
+            };
+            
+            // Set initial height
+            calculate_height().await;
+            
+            // Add resize listener
+            let resize_script = r#"
+                window.addEventListener('resize', () => {
+                    const container = document.getElementById('virtual-scroll-container');
+                    if (container) {
+                        const navbar = document.getElementById('navbar');
+                        const navbarHeight = navbar ? navbar.offsetHeight : 0;
+                        const viewportHeight = window.innerHeight;
+                        const availableHeight = viewportHeight - navbarHeight - 40;
+                        container.style.height = availableHeight + 'px';
+                    }
+                });
             "#;
             
-            let mut eval = eval(script);
-            
-            // Not an infinite loop... Event listener loop: awaits messages from JavaScript (viewport_height, scroll_top).
-            // Safe: .await suspends (0% CPU), auto-cleanup on unmount, standard Dioxus pattern.
-            loop {
-                if let Ok(data) = eval.recv::<Value>().await {
-                    if let Some(height) = data.get("viewport_height") {
-                        if let Some(h) = height.as_f64() {
-                            viewport_height.set(h);
-                        }
-                    }
-                    if let Some(st) = data.get("scroll_top") {
-                        if let Some(s) = st.as_f64() {
-                            scroll_top.set(s);
-                        }
+            let _ = eval(resize_script).await;
+        });
+    });
+    
+    // Handle scroll events - use web_sys for synchronous updates
+    let handle_scroll = move |_evt: Event<ScrollData>| {
+        if let Some(window) = window() {
+            if let Some(document) = window.document() {
+                if let Some(element) = document.get_element_by_id("virtual-scroll-container") {
+                    if let Some(html_element) = element.dyn_ref::<web_sys::HtmlElement>() {
+                        let scroll_val = html_element.scroll_top() as f64;
+                        scroll_top.set(scroll_val);
                     }
                 }
             }
-        });
-    });
+        }
+    };
     
     rsx! {
         div {
             id: "virtual-scroll-container",
             class: "virtual-scroll-container",
             style: "overflow-y: auto; position: relative;",
+            onscroll: handle_scroll,
             
             // Total height container to maintain scroll area
             div {
