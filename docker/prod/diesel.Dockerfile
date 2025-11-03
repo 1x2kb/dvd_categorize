@@ -1,5 +1,5 @@
 # Multi-stage build for production Diesel migrations
-FROM rust:latest as builder
+FROM rust:bookworm as builder
 
 WORKDIR /app
 
