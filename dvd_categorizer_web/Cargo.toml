@@ -8,7 +8,7 @@ edition = "2021"
 
 [dependencies]
 console_error_panic_hook = "0.1.7"
-dioxus = { version = "0.6.0", features = ["router"] }
+dioxus = { version = "0.7.0", features = ["router"] }
 log.workspace = true
 env_logger.workspace = true
 tracing.workspace = true
