@@ -1,6 +1,6 @@
 [package]
 name = "dvd_categorizer_web"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["1x2kb <natemeyer@protonmail.com>"]
 edition = "2021"
 
@@ -8,13 +8,13 @@ edition = "2021"
 
 [dependencies]
 console_error_panic_hook = "0.1.7"
-dioxus = { version = "0.7.2", features = ["router"] }
+dioxus = { version = "0.7.3", features = ["router"] }
 log.workspace = true
 env_logger.workspace = true
 tracing.workspace = true
 dotenvy.workspace = true
 models = { path = "../models", features = [] }
-reqwest = { version = "0.12.15", features = ["json"] }
+reqwest = { version = "0.12.15", default-features = false, features = ["json"] }
 serde.workspace = true
 serde_json.workspace = true
 wasm-bindgen = "0.2"
