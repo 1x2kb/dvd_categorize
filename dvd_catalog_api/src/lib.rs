@@ -6,8 +6,8 @@ use axum::{
 };
 use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie, SearchRequest};
-use log::{debug, error, info, warn};
-use models::{ScoredMovie, VectorSimilarity};
+use log::{error, info, warn};
+use models::ScoredMovie;
 use models::{CsvInput, TextMatchScoring};
 use ollama_rs::{error::OllamaError, Ollama};
 use std::{sync::Arc, time::Instant};
@@ -395,49 +395,46 @@ async fn combined_search(
     let start_time = Instant::now();
 
     let min_text_score = 0;
-    let min_vector_score = 0.35;
-    // First collect movie references and their scores
+    
+    // Get vector-similar movies from postgres pgvector if we have an embedding
+    let vector_movie_scores: std::collections::HashMap<i32, f32> = if let Some(embedding) = query_embedding.as_ref() {
+        match database::search_movies(embedding.clone(), 50).await {
+            Ok(movies) => {
+                info!("Retrieved {} movies from postgres pgvector", movies.len());
+                // Assign scores based on rank (top result = 1.0, linearly decreasing)
+                movies
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, movie)| {
+                        let score = 1.0 - (idx as f32 / 50.0);
+                        (movie.id, score)
+                    })
+                    .collect()
+            }
+            Err(e) => {
+                warn!("Failed to get vector-similar movies from postgres: {}", e);
+                std::collections::HashMap::new()
+            }
+        }
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    // Calculate text scores for all movies and get vector scores from pgvector results
     let movies_with_scores: Vec<(
         &FullMovie,
         usize,
         f32,
     )> = all_movies
         .iter()
-        .filter_map(
-            |movie| {
-                // Calculate text score (reusing existing logic)
-                let text_score = movie.text_match_score(
-                    &titles, &actors, &genres,
-                );
-
-                let vector_score = query_embedding
-                    .as_ref()
-                    .and_then(
-                        |embedding| {
-                            let score = movie.cosine_similarity(embedding);
-                            if score.is_none() {
-                                debug!(
-                                    "No embedding for movie: {}",
-                                    movie.name
-                                );
-                            }
-                            score
-                        },
-                    )
-                    .unwrap_or(0.0);
-
-                // Only include movies that match at least one criterion
-                if text_score > min_text_score || vector_score > min_vector_score {
-                    Some((
-                        movie, // Only store reference here
-                        text_score,
-                        vector_score,
-                    ))
-                } else {
-                    None
-                }
-            },
-        )
+        .map(|movie| {
+            let text_score = movie.text_match_score(&titles, &actors, &genres);
+            let vector_score = vector_movie_scores.get(&movie.id).copied().unwrap_or(0.0);
+            (movie, text_score, vector_score)
+        })
+        .filter(|(_, text_score, vector_score)| {
+            *text_score > min_text_score || *vector_score > 0.0
+        })
         .collect();
 
     info!(

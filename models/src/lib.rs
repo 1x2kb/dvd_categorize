@@ -194,21 +194,12 @@ impl FullMovie {
             .join(",");
 
         format!(
-            "{}-{} and has genres {} with actors {} and directed by {}",
+            "{} {} {} {} {}",
             self.name,
-            self.description
-                .as_ref()
-                .unwrap_or(&"".to_string()),
+            self.description.as_ref().unwrap_or(&"".to_string()),
             genres,
             actors,
-            self.director
-                .as_ref()
-                .map(
-                    |director| director
-                        .name
-                        .as_str()
-                )
-                .unwrap_or("")
+            self.director.as_ref().map(|d| d.name.as_str()).unwrap_or("")
         )
     }
 }

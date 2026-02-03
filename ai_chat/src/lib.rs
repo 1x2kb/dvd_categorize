@@ -226,9 +226,10 @@ pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::Oll
     );
 
     let request = GenerateEmbeddingsRequest::new(
-        "mxbai-embed-large".to_string(),
+        "all-minilm".to_string(),
         text.into(),
-    );
+    )
+    .options(GenerationOptions::default().num_ctx(8192));
 
     let response = ollama
         .generate_embeddings(request)

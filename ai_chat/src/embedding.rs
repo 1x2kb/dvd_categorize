@@ -1,6 +1,9 @@
 use log::debug;
 use ollama_rs::{
-    generation::embeddings::request::{EmbeddingsInput, GenerateEmbeddingsRequest},
+    generation::{
+        embeddings::request::{EmbeddingsInput, GenerateEmbeddingsRequest},
+        options::GenerationOptions,
+    },
     Ollama,
 };
 use std::error::Error;
@@ -44,7 +47,8 @@ where
     let request = GenerateEmbeddingsRequest::new(
         model.to_string(),
         EmbeddingsInput::Multiple(string_texts),
-    );
+    )
+    .options(GenerationOptions::default().num_ctx(8192));
 
     let response = ollama
         .generate_embeddings(request)
