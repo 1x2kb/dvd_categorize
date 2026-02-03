@@ -80,6 +80,8 @@ pub async fn extract_entities(
     }
 
     // Look for actors and directors
+    let query_words: Vec<&str> = query_lower.split_whitespace().collect();
+    
     for entity in all_actors
         .iter()
         .chain(all_directors.iter())
@@ -99,29 +101,36 @@ pub async fn extract_entities(
             continue;
         }
 
-        // For multi-word names, check if all parts appear in order in the query
+        // For multi-word names (e.g., "Brad Pitt")
         if name_parts.len() > 1 {
-            let mut query_words = query_lower.split_whitespace();
-            let all_parts_found = name_parts
+            // Count how many significant name parts match the query
+            let matching_parts: Vec<&str> = name_parts
                 .iter()
-                .all(
-                    |&part| {
-                        // Skip very short words in the name to avoid false positives
-                        if part.len() <= 2 {
-                            return true;
-                        }
-                        query_words.any(|w| w == part)
-                    },
-                );
-
-            // If all parts found in order, it's a match
-            if all_parts_found
-                && name_parts
+                .filter(|&&part| part.len() > 3 && query_words.iter().any(|&w| w == part))
+                .copied()
+                .collect();
+            
+            // If we have multiple query words that could be a full name,
+            // require all parts to match (e.g., "Adam Sandler" should NOT match "Adam Baldwin")
+            let has_multiple_name_candidates = query_words.iter().filter(|w| w.len() > 3).count() >= 2;
+            
+            if has_multiple_name_candidates {
+                // Full name query: require all significant parts to match
+                let all_significant_parts_match = name_parts
                     .iter()
-                    .all(|p| p.len() > 2)
-            {
-                actors.insert(entity_lower);
-                continue;
+                    .filter(|p| p.len() > 3)
+                    .all(|&part| query_words.iter().any(|&w| w == part));
+                
+                if all_significant_parts_match && !matching_parts.is_empty() {
+                    actors.insert(entity_lower);
+                    continue;
+                }
+            } else {
+                // Partial query (e.g., just "Adam"): match if any significant part matches
+                if !matching_parts.is_empty() {
+                    actors.insert(entity_lower);
+                    continue;
+                }
             }
         }
 
