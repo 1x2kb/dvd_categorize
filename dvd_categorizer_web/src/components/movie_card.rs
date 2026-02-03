@@ -2,7 +2,7 @@ pub use dioxus::prelude::*;
 use models::FullMovie;
 
 #[component]
-pub fn MovieCard(movie: ReadOnlySignal<FullMovie>) -> Element {
+pub fn MovieCard(movie: ReadSignal<FullMovie>) -> Element {
     let actors = movie()
         .actors
         .iter()
