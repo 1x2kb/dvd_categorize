@@ -32,3 +32,16 @@ inherits = "dev"
 
 [profile.android-dev]
 inherits = "dev"
+
+[profile.release]
+debug = 0
+lto = true
+codegen-units = 1
+opt-level = 3
+
+# WASM-specific optimizations for frontend (optimize for size)
+[profile.release.package."*"]
+opt-level = 3
+
+[profile.release.package.dvd_categorizer_web]
+opt-level = "z"
