@@ -344,6 +344,15 @@ impl
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct SearchRequest {
     pub query: String,
+    #[serde(default)]
+    pub disable_enhancement: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SearchResponse {
+    pub results: Vec<ScoredMovie>,
+    pub original_query: String,
+    pub enhanced_query: String,
 }
 
 #[cfg(feature = "testing")]

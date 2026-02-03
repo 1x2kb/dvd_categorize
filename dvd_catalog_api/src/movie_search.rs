@@ -339,11 +339,12 @@ fn keyword_search(
 
 /// Reciprocal Rank Fusion: Combines multiple ranked lists
 /// Formula: RRF_score = sum(1 / (k + rank)) where k=60 is standard
+/// Returns a vector of (movie_id, score) tuples sorted by score descending
 fn reciprocal_rank_fusion(
     keyword_ranks: Vec<i32>,
     vector_ranks: Vec<i32>,
     k: f32,
-) -> Vec<i32> {
+) -> Vec<(i32, f32)> {
     use std::collections::HashMap;
 
     let mut scores: HashMap<i32, f32> = HashMap::new();
@@ -364,20 +365,22 @@ fn reciprocal_rank_fusion(
     let mut ranked: Vec<(i32, f32)> = scores.into_iter().collect();
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    ranked.into_iter().map(|(id, _)| id).collect()
+    ranked
 }
 
 /// Performs hybrid search combining keyword and semantic vector search
+/// Returns (results, enhanced_query) where results is Vec<(movie_id, rfr_score)>
 #[instrument(skip(movies))]
 pub async fn hybrid_search(
     query: &str,
-    movies: &[FullMovie],
+    movies: Arc<Vec<FullMovie>>,
     limit: usize,
-) -> Vec<i32> {
+    disable_enhancement: bool,
+) -> (Vec<(i32, f32)>, String) {
     let start_time = std::time::Instant::now();
     
-    // Extract entities for keyword search
-    let (titles, actors, genres) = extract_entities(query, movies).await;
+    // Extract entities for keyword search (dereference Arc for slice)
+    let (titles, actors, genres) = extract_entities(query, &movies).await;
     
     info!("Entity extraction results - titles: {:?}, actors: {:?}, genres: {:?}", titles, actors, genres);
     
@@ -387,9 +390,9 @@ pub async fn hybrid_search(
         genres,
     };
 
-    // Perform keyword search
+    // Perform keyword search (dereference Arc for slice)
     let keyword_start = std::time::Instant::now();
-    let keyword_results = keyword_search(movies, &criteria, limit * 2);
+    let keyword_results = keyword_search(&movies, &criteria, limit * 2);
     
     info!("Keyword search found {} results in {:.2?}", keyword_results.len(), keyword_start.elapsed());
     
@@ -399,9 +402,15 @@ pub async fn hybrid_search(
         info!("Top keyword matches: {:?}", keyword_results.iter().take(5).collect::<Vec<_>>());
     }
 
-    // Enhance query for better semantic search (only for embedding, not keyword search)
-    let enhanced_query = ai_chat::enhance_query_for_embedding(query).await;
-    info!("Enhanced query for embedding: '{}' -> '{}'", query, enhanced_query);
+    // Enhance query for better semantic search (only if not disabled)
+    let enhanced_query = if disable_enhancement {
+        info!("Query enhancement disabled, using original query");
+        query.to_string()
+    } else {
+        ai_chat::query_enhancement::enhance_query_for_embedding(query).await
+    };
+    
+    info!("Enhanced query: {}", enhanced_query);
 
     // Perform vector search if we can get an embedding
     let vector_start = std::time::Instant::now();
@@ -429,17 +438,29 @@ pub async fn hybrid_search(
         }
     };
 
-    // Fuse results using RRF
+    // Fuse results using RRF - just return IDs and scores
     let final_results = if !keyword_results.is_empty() && !vector_results.is_empty() {
         info!("Fusing keyword and vector results with RRF");
         let fused = reciprocal_rank_fusion(keyword_results, vector_results, 60.0);
         fused.into_iter().take(limit).collect()
     } else if !keyword_results.is_empty() {
         info!("Using keyword-only results");
-        keyword_results.into_iter().take(limit).collect()
+        // Calculate position-based scores (1.0 for rank 0, decreasing)
+        keyword_results
+            .into_iter()
+            .take(limit)
+            .enumerate()
+            .map(|(rank, id)| (id, 1.0 / (60.0 + rank as f32 + 1.0)))
+            .collect()
     } else if !vector_results.is_empty() {
         info!("Using vector-only results");
-        vector_results.into_iter().take(limit).collect()
+        // Calculate position-based scores (1.0 for rank 0, decreasing)
+        vector_results
+            .into_iter()
+            .take(limit)
+            .enumerate()
+            .map(|(rank, id)| (id, 1.0 / (60.0 + rank as f32 + 1.0)))
+            .collect()
     } else {
         info!("No search results found");
         Vec::new()
@@ -451,7 +472,7 @@ pub async fn hybrid_search(
         final_results.len()
     );
 
-    final_results
+    (final_results, enhanced_query)
 }
 
 /// Extracts all unique entities from a list of movies
@@ -547,20 +568,29 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
         action.temperature,
     );
 
-    // Use hybrid search (keyword + vector with RRF fusion)
-    info!("Performing hybrid search for query: {}", question);
-    let movie_ids = hybrid_search(&question, &dvds, 15).await;
+    // Wrap in Arc for cheap cloning
+    let arc_dvds = Arc::new(dvds);
 
-    let full_movies = if !movie_ids.is_empty() {
-        database::get_movies_by_ids(movie_ids)
-            .await
-            .unwrap_or_else(|e| {
-                error!("Failed to fetch movies by IDs: {:#?}", e);
-                dvds
-            })
+    // Use hybrid search (keyword + vector with RRF fusion) - pass Arc::clone
+    // Enable enhancement for AI chat (disable_enhancement = false)
+    info!("Performing hybrid search for query: {}", question);
+    let (movie_results, _enhanced_query) = hybrid_search(&question, Arc::clone(&arc_dvds), 15, false).await;
+
+    let full_movies = if !movie_results.is_empty() {
+        // Create lookup map
+        let movies_map: std::collections::HashMap<i32, &FullMovie> = arc_dvds
+            .iter()
+            .map(|movie| (movie.id, movie))
+            .collect();
+        
+        // Look up movies by ID (clone only for AI processing)
+        movie_results
+            .into_iter()
+            .filter_map(|(id, _score)| movies_map.get(&id).map(|&m| m.clone()))
+            .collect()
     } else {
         info!("No search results, using all movies");
-        dvds
+        Arc::try_unwrap(arc_dvds).unwrap_or_else(|arc| (*arc).clone())
     };
 
     info!(
