@@ -2,7 +2,7 @@ use crate::components::movie_grid::MovieGrid;
 use dioxus::prelude::*;
 use models::{FullMovie, SearchRequest};
 use serde::{Deserialize, Serialize};
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct AiAction {
@@ -11,7 +11,7 @@ pub struct AiAction {
     pub model: Option<String>,
 }
 
-async fn send_search_request(query: String) -> Result<Vec<FullMovie>, reqwest::Error> {
+async fn send_search_request(query: String) -> Result<Arc<Vec<FullMovie>>, reqwest::Error> {
     let window = web_sys::window().unwrap();
     let location = window.location();
     let hostname = location
@@ -24,7 +24,7 @@ async fn send_search_request(query: String) -> Result<Vec<FullMovie>, reqwest::E
     let search_request = SearchRequest { query };
 
     let client = reqwest::Client::new();
-    let response = client
+    let response: Vec<FullMovie> = client
         .post(format!("http://{hostname}:{server_port}/ai/dvd-match"))
         .json(&search_request)
         .send()
@@ -32,12 +32,12 @@ async fn send_search_request(query: String) -> Result<Vec<FullMovie>, reqwest::E
         .json()
         .await?;
 
-    Ok(response)
+    Ok(Arc::new(response))
 }
 
 #[component]
 pub fn AiLiveResults() -> Element {
-    let mut movies: Signal<Vec<Rc<FullMovie>>> = use_signal(std::vec::Vec::new);
+    let mut movies: Signal<Arc<Vec<FullMovie>>> = use_signal(|| Arc::new(Vec::new()));
     let mut input_value = use_signal(String::new);
     let mut is_loading = use_signal(|| false);
 
@@ -68,16 +68,16 @@ pub fn AiLiveResults() -> Element {
                                     }
 
                                     is_loading.set(true);
-                                    movies.set(vec![]);
+                                    movies.set(Arc::new(vec![]));
 
                                     let result = send_search_request(input_value()).await;
                                     match result {
                                         Ok(movie_list) => {
-                                            movies.set(movie_list.into_iter().map(Rc::new).collect());
+                                            movies.set(movie_list);
                                         }
                                         Err(err) => {
                                             log::error!("Failed to send search request {:#?}", err);
-                                            movies.set(vec![]);
+                                            movies.set(Arc::new(vec![]));
                                         }
                                     }
                                     is_loading.set(false);
@@ -94,16 +94,16 @@ pub fn AiLiveResults() -> Element {
                                 }
 
                                 is_loading.set(true);
-                                movies.set(vec![]);
+                                movies.set(Arc::new(vec![]));
 
                                 let result = send_search_request(input_value()).await;
                                 match result {
                                     Ok(movie_list) => {
-                                        movies.set(movie_list.into_iter().map(Rc::new).collect());
+                                        movies.set(movie_list);
                                     }
                                     Err(err) => {
                                         log::error!("Failed to send search request {:#?}", err);
-                                        movies.set(vec![]);
+                                        movies.set(Arc::new(vec![]));
                                     }
                                 }
                                 is_loading.set(false);
@@ -122,12 +122,7 @@ pub fn AiLiveResults() -> Element {
             }
 
             // Movie grid section
-            div {
-                class: "movie-grid movie-grid-cols-3",
-                for movie in movies().iter() {
-                    MovieGrid { movie: Rc::clone(movie) }
-                }
-            }
+            MovieGrid { movies: Arc::clone(&movies()) }
         }
     }
 }

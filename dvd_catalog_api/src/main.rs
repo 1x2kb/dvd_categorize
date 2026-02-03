@@ -56,7 +56,8 @@ async fn main() {
         }
     };
 
-    let app = init_router(Arc::new(movies));
+    // Create the router with the initial movie data
+    let app = init_router(movies);
 
     let connection = get_host();
     info!(
@@ -94,9 +95,11 @@ fn get_host() -> String {
     format!("{host}:{port}")
 }
 
-fn init_router(movies: Arc<Vec<FullMovie>>) -> Router {
-    // Create state with the provided movies
-    let state = CacheState { movies };
+fn init_router(movies: Vec<FullMovie>) -> Router {
+    // Create state with the provided movies wrapped in Arc<RwLock<>>
+    let state = CacheState {
+        movies: Arc::new(tokio::sync::RwLock::new(movies)),
+    };
 
     // Create a router for endpoints that need CacheState
     let stateful_router = Router::new()
@@ -108,6 +111,10 @@ fn init_router(movies: Arc<Vec<FullMovie>>) -> Router {
             "/ai/dvd-match",
             post(get_matching_movies),
         )
+        .route(
+            "/csv/parse",
+            post(parse_csv),
+        )
         .with_state(state);
 
     // Create a router for stateless endpoints
@@ -115,6 +122,10 @@ fn init_router(movies: Arc<Vec<FullMovie>>) -> Router {
         .route(
             "/dvd/{id}",
             get(get_dvd),
+        )
+        .route(
+            "/csv/preview",
+            post(preview_csv),
         )
         .route(
             "/",

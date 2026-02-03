@@ -10,7 +10,7 @@ pub fn DisplayMovie() -> Element {
         div {
             {app_data.read().movies.read().as_ref().map(|movies| rsx! {
                 div {
-                    for movie in movies {
+                    for movie in movies.iter() {
                         MovieCard {
                             key: "{movie.id}",  // Use movie ID instead of index
                             movie: movie.clone()
