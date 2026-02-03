@@ -11,7 +11,6 @@ use models::VectorSimilarity;
 use models::{CsvInput, TextMatchScoring};
 use ollama_rs::{error::OllamaError, Ollama};
 use std::{sync::Arc, time::Instant};
-use tokio_rayon::rayon::prelude::*;
 use tracing::instrument;
 
 // Movie search functionality module
@@ -372,7 +371,6 @@ async fn combined_search(
         f32,
     )> = all_movies
         .iter()
-        .par_bridge()
         .filter_map(
             |movie| {
                 // Calculate text score (reusing existing logic)
@@ -418,7 +416,7 @@ async fn combined_search(
     // Sort by combined score (text matches weighted more heavily) and take top 15
     let mut combined: Vec<FullMovie> = {
         let mut sorted: Vec<_> = movies_with_scores;
-        sorted.par_sort_unstable_by(
+        sorted.sort_unstable_by(
             |(_, score_a, sim_a), (_, score_b, sim_b)| {
                 let combined_a = (*score_a as f32 * 2.0) + sim_a;
                 let combined_b = (*score_b as f32 * 2.0) + sim_b;

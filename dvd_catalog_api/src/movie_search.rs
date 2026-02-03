@@ -7,8 +7,6 @@ use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie};
 use log::{error, info};
 use ollama_rs::Ollama;
-use rayon::prelude::*;
-use tokio_rayon::rayon;
 use tracing::instrument;
 
 use crate::embedding;
