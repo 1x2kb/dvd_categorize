@@ -399,9 +399,13 @@ pub async fn hybrid_search(
         info!("Top keyword matches: {:?}", keyword_results.iter().take(5).collect::<Vec<_>>());
     }
 
+    // Enhance query for better semantic search (only for embedding, not keyword search)
+    let enhanced_query = ai_chat::enhance_query_for_embedding(query).await;
+    info!("Enhanced query for embedding: '{}' -> '{}'", query, enhanced_query);
+
     // Perform vector search if we can get an embedding
     let vector_start = std::time::Instant::now();
-    let vector_results = match embedding(query).await {
+    let vector_results = match embedding(&enhanced_query).await {
         Ok(embedding_vec) => {
             match database::search_movies(embedding_vec, (limit * 2) as i64).await {
                 Ok(movies) => {

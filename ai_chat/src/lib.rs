@@ -1,5 +1,6 @@
 pub mod embedding;
 pub mod live_ui;
+pub mod query_enhancement;
 mod prompts;
 
 use std::{future::Future, sync::Arc};
@@ -18,6 +19,7 @@ use prompts::USER_LIBRARY_PROMPT;
 use tracing::{instrument, Level};
 
 pub use embedding::*;
+pub use query_enhancement::*;
 
 // Re-export the embedding model constant for easy access
 pub use embedding::EMBEDDING_MODEL;
