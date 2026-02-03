@@ -210,26 +210,26 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
             .push(mg.genre);
     }
 
-    // Assemble final results - avoid cloning by using remove() instead of get().cloned()
-    let results = movies_with_directors
+    // Create a lookup map for movies by ID
+    let mut movies_map: HashMap<i32, (Movie, Option<Director>)> = movies_with_directors
         .into_iter()
-        .map(
-            |(movie, director)| FullMovie {
+        .map(|(movie, director)| (movie.id, (movie, director)))
+        .collect();
+
+    // Assemble results in the SAME ORDER as input IDs (preserves vector search ranking)
+    let results: Vec<FullMovie> = ids
+        .into_iter()
+        .filter_map(|id| {
+            movies_map.remove(&id).map(|(movie, director)| FullMovie {
                 id: movie.id,
                 name: movie.name,
                 director,
                 description: movie.description,
-                actors: actors_map
-                    .remove(&movie.id)
-                    .unwrap_or_default(),
-                genres: genres_map
-                    .remove(&movie.id)
-                    .unwrap_or_default(),
-                embedding: movie
-                    .embedding
-                    .map(|v| v.into()),
-            },
-        )
+                actors: actors_map.remove(&movie.id).unwrap_or_default(),
+                genres: genres_map.remove(&movie.id).unwrap_or_default(),
+                embedding: movie.embedding.map(|v| v.into()),
+            })
+        })
         .collect();
 
     Ok(results)
@@ -390,6 +390,8 @@ pub async fn search_movies(
         .limit(limit)
         .load::<i32>(&mut conn)
         .await?;
+
+    debug!("pgvector returned movie IDs in order: {:?}", movie_ids.iter().take(10).collect::<Vec<_>>());
 
     // Use the optimized helper function to get full movie data
     get_movies_by_ids(movie_ids).await

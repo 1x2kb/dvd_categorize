@@ -8,7 +8,7 @@ use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie, SearchRequest};
 use log::{error, info, warn};
 use models::ScoredMovie;
-use models::{CsvInput, TextMatchScoring};
+use models::CsvInput;
 use ollama_rs::{error::OllamaError, Ollama};
 use std::{sync::Arc, time::Instant};
 use tracing::instrument;
@@ -340,168 +340,67 @@ fn _parse_movie_ids_from_response(response: String) -> Result<Vec<i32>, String> 
     Ok(ids)
 }
 
-/// Combines text and vector search results using parallel processing
+/// Combines text and vector search results using Reciprocal Rank Fusion (RRF)
 async fn combined_search(
     query: &str,
     all_movies: Arc<Vec<FullMovie>>,
 ) -> Result<Vec<ScoredMovie>, String> {
-    info!(
-        "Starting combined search for: {}",
-        query
-    );
-
-    // Extract entities from the movie list
-    let (titles, actors, genres) = extract_entities(
-        query,
-        &all_movies,
-    )
-    .await;
-    info!(
-        "Extracted entities for combined search - titles: {:?}, actors: {:?}, genres: {:?}",
-        titles, actors, genres
-    );
-
-    let embedding_start = Instant::now();
-    // Generate query embedding once
-    let query_embedding = match embedding(query).await {
-        Ok(embedding) => Some(embedding),
-        Err(e) => {
-            warn!(
-                "Failed to generate query embedding: {}",
-                e
-            );
-            None
-        }
-    };
-
-    info!(
-        "Query embedding generated: {}",
-        query_embedding.is_some()
-    );
-
-    if let Some(embedding) = &query_embedding {
-        info!(
-            "Query embedding length: {}",
-            embedding.len()
-        );
-    }
-
-    let embedding_duration = embedding_start.elapsed();
-    info!(
-        "Query embedding generated in {:.3}ms",
-        embedding_duration.as_millis()
-    );
-
+    info!("Starting hybrid search with RRF for: {}", query);
     let start_time = Instant::now();
 
-    let min_text_score = 0;
-    
-    // Get vector-similar movies from postgres pgvector if we have an embedding
-    let vector_movie_scores: std::collections::HashMap<i32, f32> = if let Some(embedding) = query_embedding.as_ref() {
-        match database::search_movies(embedding.clone(), 50).await {
-            Ok(movies) => {
-                info!("Retrieved {} movies from postgres pgvector", movies.len());
-                // Assign scores based on rank (top result = 1.0, linearly decreasing)
-                movies
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, movie)| {
-                        let score = 1.0 - (idx as f32 / 50.0);
-                        (movie.id, score)
-                    })
-                    .collect()
-            }
-            Err(e) => {
-                warn!("Failed to get vector-similar movies from postgres: {}", e);
-                std::collections::HashMap::new()
-            }
-        }
-    } else {
-        std::collections::HashMap::new()
-    };
+    // Use the hybrid search function from movie_search module
+    let movie_ids = movie_search::hybrid_search(query, &all_movies, 50).await;
 
-    // Calculate text scores for all movies and get vector scores from pgvector results
-    let movies_with_scores: Vec<(
-        &FullMovie,
-        usize,
-        f32,
-    )> = all_movies
+    if movie_ids.is_empty() {
+        info!("No matching movies found");
+        return Ok(Vec::new());
+    }
+
+    // Create lookup map for movies by ID
+    let movies_map: std::collections::HashMap<i32, &FullMovie> = all_movies
         .iter()
-        .map(|movie| {
-            let text_score = movie.text_match_score(&titles, &actors, &genres);
-            let vector_score = vector_movie_scores.get(&movie.id).copied().unwrap_or(0.0);
-            (movie, text_score, vector_score)
-        })
-        .filter(|(_, text_score, vector_score)| {
-            *text_score > min_text_score || *vector_score > 0.0
+        .map(|movie| (movie.id, movie))
+        .collect();
+
+    // Iterate movie_ids in order to preserve ranking
+    let scored_movies: Vec<ScoredMovie> = movie_ids
+        .iter()
+        .enumerate()
+        .filter_map(|(rank, &id)| {
+            movies_map.get(&id).map(|&movie| {
+                // Convert rank to a score (higher rank = lower score)
+                let vector_score = 1.0 - (rank as f32 / movie_ids.len() as f32);
+                ScoredMovie {
+                    movie: movie.clone(),
+                    text_score: 0, // RRF combines both, so we don't separate them
+                    vector_score,
+                }
+            })
         })
         .collect();
 
-    info!(
-        "Found {} movies with matches in combined search",
-        movies_with_scores.len()
-    );
+    info!("Hybrid search returned {} results", scored_movies.len());
 
-    // Sort by combined score (text matches weighted more heavily)
-    let combined: Vec<ScoredMovie> = {
-        let mut sorted: Vec<_> = movies_with_scores;
-        sorted.sort_unstable_by(
-            |(_, score_a, sim_a), (_, score_b, sim_b)| {
-                let combined_a = (*score_a as f32 * 2.0) + sim_a;
-                let combined_b = (*score_b as f32 * 2.0) + sim_b;
-                combined_b
-                    .partial_cmp(&combined_a)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            },
-        );
-        sorted
-            .into_iter()
-            .map(|(movie, text_score, vector_score)| ScoredMovie {
-                movie: movie.clone(),
-                text_score,
-                vector_score,
-            })
-            .collect()
-    };
-
-    info!(
-        "Total combined results: {}",
-        combined.len()
-    );
-
-    // Log top 5 results for debugging with match scores
-    if !combined.is_empty() {
-        info!(
-            "Top {} search results:",
-            combined
-                .len()
-                .min(5)
-        );
-        for (i, scored_movie) in combined
-            .iter()
-            .take(5)
-            .enumerate()
-        {
+    // Log top 5 results
+    if !scored_movies.is_empty() {
+        info!("Top {} search results:", scored_movies.len().min(5));
+        for (i, scored_movie) in scored_movies.iter().take(5).enumerate() {
             info!(
-                "  {}. {} (ID: {}, text score: {}, vector score: {:.3})",
+                "  {}. {} (ID: {}, RRF score: {:.3})",
                 i + 1,
                 scored_movie.movie.name,
                 scored_movie.movie.id,
-                scored_movie.text_score,
                 scored_movie.vector_score
             );
         }
-    } else {
-        info!("No matching movies found");
     }
 
-    let duration = start_time.elapsed();
     info!(
-        "Completed combined search in {}ms",
-        duration.as_millis()
+        "Completed hybrid search in {}ms",
+        start_time.elapsed().as_millis()
     );
 
-    Ok(combined)
+    Ok(scored_movies)
 }
 
 /// Main endpoint for getting matching movies using combined search

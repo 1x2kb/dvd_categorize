@@ -46,7 +46,7 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
 
     let embeddings = ai_chat::get_embeddings(
         embeddings,
-        "all-minilm",
+        ai_chat::EMBEDDING_MODEL,
     )
     .await?;
 

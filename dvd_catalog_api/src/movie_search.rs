@@ -232,6 +232,224 @@ pub async fn extract_entities(
     )
 }
 
+/// Scores a movie based on keyword matches (title, actors, genres)
+fn score_movie_by_keywords(
+    movie: &FullMovie,
+    criteria: &SearchCriteria,
+) -> f32 {
+    let mut score = 0.0;
+
+    // Title matching (highest weight)
+    for title in &criteria.titles {
+        let movie_title_lower = movie.name.to_lowercase();
+        let title_lower = title.to_lowercase();
+        
+        if movie_title_lower == title_lower {
+            score += 100.0; // Exact match
+        } else if movie_title_lower.contains(&title_lower) {
+            score += 50.0; // Partial substring match
+        } else if title_lower.contains(&movie_title_lower) {
+            score += 30.0; // Query contains movie title
+        } else {
+            // Check if movie title starts with the query (e.g., "RoboCop" starts with "Robot")
+            if movie_title_lower.starts_with(&title_lower) {
+                score += 45.0;
+            } else {
+                // Check word-level matching for compound words
+                // Split on common delimiters and check if any word starts with query
+                let movie_words: Vec<&str> = movie_title_lower
+                    .split(|c: char| !c.is_alphanumeric())
+                    .filter(|w| !w.is_empty())
+                    .collect();
+                
+                for word in movie_words {
+                    if word.starts_with(&title_lower) {
+                        score += 40.0;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Actor matching
+    for actor in &criteria.actors {
+        let actor_lower = actor.to_lowercase();
+        for movie_actor in &movie.actors {
+            let movie_actor_lower = movie_actor.name.to_lowercase();
+            if movie_actor_lower == actor_lower || movie_actor_lower.contains(&actor_lower) {
+                score += 20.0;
+                break;
+            }
+        }
+    }
+
+    // Director matching
+    if let Some(director) = &movie.director {
+        for actor in &criteria.actors { // Actors list includes directors from extraction
+            let actor_lower = actor.to_lowercase();
+            let director_lower = director.name.to_lowercase();
+            if director_lower == actor_lower || director_lower.contains(&actor_lower) {
+                score += 25.0;
+                break;
+            }
+        }
+    }
+
+    // Genre matching
+    for genre in &criteria.genres {
+        let genre_lower = genre.to_lowercase();
+        for movie_genre in &movie.genres {
+            let movie_genre_lower = movie_genre.to_lowercase();
+            if movie_genre_lower == genre_lower {
+                score += 15.0;
+                break;
+            }
+        }
+    }
+
+    score
+}
+
+/// Performs keyword-based search on movies
+fn keyword_search(
+    movies: &[FullMovie],
+    criteria: &SearchCriteria,
+    limit: usize,
+) -> Vec<i32> {
+    let mut scored_movies: Vec<(i32, f32)> = movies
+        .iter()
+        .map(|movie| {
+            let score = score_movie_by_keywords(movie, criteria);
+            (movie.id, score)
+        })
+        .filter(|(_, score)| *score > 0.0)
+        .collect();
+
+    // Sort by score descending
+    scored_movies.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Return top N movie IDs
+    scored_movies
+        .into_iter()
+        .take(limit)
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// Reciprocal Rank Fusion: Combines multiple ranked lists
+/// Formula: RRF_score = sum(1 / (k + rank)) where k=60 is standard
+fn reciprocal_rank_fusion(
+    keyword_ranks: Vec<i32>,
+    vector_ranks: Vec<i32>,
+    k: f32,
+) -> Vec<i32> {
+    use std::collections::HashMap;
+
+    let mut scores: HashMap<i32, f32> = HashMap::new();
+
+    // Add scores from keyword search
+    for (rank, movie_id) in keyword_ranks.iter().enumerate() {
+        let score = 1.0 / (k + rank as f32 + 1.0);
+        *scores.entry(*movie_id).or_insert(0.0) += score;
+    }
+
+    // Add scores from vector search
+    for (rank, movie_id) in vector_ranks.iter().enumerate() {
+        let score = 1.0 / (k + rank as f32 + 1.0);
+        *scores.entry(*movie_id).or_insert(0.0) += score;
+    }
+
+    // Sort by RRF score descending
+    let mut ranked: Vec<(i32, f32)> = scores.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    ranked.into_iter().map(|(id, _)| id).collect()
+}
+
+/// Performs hybrid search combining keyword and semantic vector search
+#[instrument(skip(movies))]
+pub async fn hybrid_search(
+    query: &str,
+    movies: &[FullMovie],
+    limit: usize,
+) -> Vec<i32> {
+    let start_time = std::time::Instant::now();
+    
+    // Extract entities for keyword search
+    let (titles, actors, genres) = extract_entities(query, movies).await;
+    
+    info!("Entity extraction results - titles: {:?}, actors: {:?}, genres: {:?}", titles, actors, genres);
+    
+    let criteria = SearchCriteria {
+        titles,
+        actors,
+        genres,
+    };
+
+    // Perform keyword search
+    let keyword_start = std::time::Instant::now();
+    let keyword_results = keyword_search(movies, &criteria, limit * 2);
+    
+    info!("Keyword search found {} results in {:.2?}", keyword_results.len(), keyword_start.elapsed());
+    
+    if keyword_results.is_empty() {
+        info!("Keyword search returned no results - will rely on vector search only");
+    } else {
+        info!("Top keyword matches: {:?}", keyword_results.iter().take(5).collect::<Vec<_>>());
+    }
+
+    // Perform vector search if we can get an embedding
+    let vector_start = std::time::Instant::now();
+    let vector_results = match embedding(query).await {
+        Ok(embedding_vec) => {
+            match database::search_movies(embedding_vec, (limit * 2) as i64).await {
+                Ok(movies) => {
+                    let ids: Vec<i32> = movies.into_iter().map(|m| m.id).collect();
+                    info!(
+                        "Vector search found {} results in {:.2?}",
+                        ids.len(),
+                        vector_start.elapsed()
+                    );
+                    ids
+                }
+                Err(e) => {
+                    error!("Vector search failed: {:#?}", e);
+                    Vec::new()
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to generate embedding: {:#?}", e);
+            Vec::new()
+        }
+    };
+
+    // Fuse results using RRF
+    let final_results = if !keyword_results.is_empty() && !vector_results.is_empty() {
+        info!("Fusing keyword and vector results with RRF");
+        let fused = reciprocal_rank_fusion(keyword_results, vector_results, 60.0);
+        fused.into_iter().take(limit).collect()
+    } else if !keyword_results.is_empty() {
+        info!("Using keyword-only results");
+        keyword_results.into_iter().take(limit).collect()
+    } else if !vector_results.is_empty() {
+        info!("Using vector-only results");
+        vector_results.into_iter().take(limit).collect()
+    } else {
+        info!("No search results found");
+        Vec::new()
+    };
+
+    info!(
+        "Hybrid search completed in {:.2?}, returning {} results",
+        start_time.elapsed(),
+        final_results.len()
+    );
+
+    final_results
+}
+
 /// Extracts all unique entities from a list of movies
 async fn extract_entities_from_movies(
     movies: &[FullMovie],
@@ -325,44 +543,21 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
         action.temperature,
     );
 
-    let embedding = embedding(&question)
-        .await
-        .ok();
+    // Use hybrid search (keyword + vector with RRF fusion)
+    info!("Performing hybrid search for query: {}", question);
+    let movie_ids = hybrid_search(&question, &dvds, 15).await;
 
-    // Search for movies using the embedding if available
-    let movie_ids = match embedding {
-        Some(embedding_vector) => {
-            info!("Searching for movies using embedding");
-            let search_result = database::search_movies(
-                embedding_vector,
-                15,
-            )
-            .await;
-
-            if let Err(e) = &search_result {
-                error!(
-                    "Failed to search movies: {:#?}",
-                    e
-                );
-            }
-
-            search_result.ok()
-        }
-        None => None,
-    };
-
-    let full_movies = if let Some(movie_embeddings) = movie_ids {
-        // Extract just the movie IDs from the embeddings
-        let movie_ids: Vec<i32> = movie_embeddings
-            .into_iter()
-            .map(|m| m.id)
-            .collect();
+    let full_movies = if !movie_ids.is_empty() {
         database::get_movies_by_ids(movie_ids)
             .await
-            .unwrap_or(dvds)
+            .unwrap_or_else(|e| {
+                error!("Failed to fetch movies by IDs: {:#?}", e);
+                dvds
+            })
     } else {
+        info!("No search results, using all movies");
         dvds
-    }; // For now fall back to all dvds
+    };
 
     info!(
         "Found {} matching movies",

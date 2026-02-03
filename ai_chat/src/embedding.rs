@@ -8,6 +8,10 @@ use ollama_rs::{
 };
 use std::error::Error;
 
+/// Global embedding model to use across the entire application
+/// Change this in ONE place to switch models everywhere
+pub const EMBEDDING_MODEL: &str = "nomic-embed-text";
+
 /// Get embeddings for a collection of text items using Ollama in bulk
 ///
 /// # Arguments
