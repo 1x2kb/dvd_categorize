@@ -7,7 +7,7 @@ use axum::{
 use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie, SearchRequest};
 use log::{debug, error, info, warn};
-use models::VectorSimilarity;
+use models::{ScoredMovie, VectorSimilarity};
 use models::{CsvInput, TextMatchScoring};
 use ollama_rs::{error::OllamaError, Ollama};
 use std::{sync::Arc, time::Instant};
@@ -68,6 +68,38 @@ pub async fn chat() -> impl axum::response::IntoResponse {
         axum::http::StatusCode::NOT_FOUND,
         "Chat endpoint temporarily disabled",
     )
+}
+
+#[instrument]
+#[debug_handler]
+pub async fn export_csv(State(cache_state): State<CacheState>) -> impl axum::response::IntoResponse {
+    let movies = {
+        let movies_guard = cache_state
+            .movies
+            .read()
+            .await;
+        (*movies_guard).clone()
+    };
+
+    match csv_utils::movies_to_csv(&movies) {
+        Ok(csv) => {
+            let headers = "Title,Description,Actors,Genres,Director\n";
+            let csv_with_headers = format!("{}{}", headers, csv);
+            (
+                StatusCode::OK,
+                [("Content-Type", "text/csv"), ("Content-Disposition", "attachment; filename=movies.csv")],
+                csv_with_headers,
+            )
+        }
+        Err(e) => {
+            error!("Failed to export CSV: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                [("Content-Type", "text/plain"), ("Content-Disposition", "")],
+                format!("Failed to export CSV: {}", e),
+            )
+        }
+    }
 }
 
 #[instrument]
@@ -312,7 +344,7 @@ fn _parse_movie_ids_from_response(response: String) -> Result<Vec<i32>, String> 
 async fn combined_search(
     query: &str,
     all_movies: Arc<Vec<FullMovie>>,
-) -> Result<Vec<FullMovie>, String> {
+) -> Result<Vec<ScoredMovie>, String> {
     info!(
         "Starting combined search for: {}",
         query
@@ -363,7 +395,7 @@ async fn combined_search(
     let start_time = Instant::now();
 
     let min_text_score = 0;
-    let min_vector_score = 0.55;
+    let min_vector_score = 0.35;
     // First collect movie references and their scores
     let movies_with_scores: Vec<(
         &FullMovie,
@@ -413,8 +445,8 @@ async fn combined_search(
         movies_with_scores.len()
     );
 
-    // Sort by combined score (text matches weighted more heavily) and take top 15
-    let mut combined: Vec<FullMovie> = {
+    // Sort by combined score (text matches weighted more heavily)
+    let combined: Vec<ScoredMovie> = {
         let mut sorted: Vec<_> = movies_with_scores;
         sorted.sort_unstable_by(
             |(_, score_a, sim_a), (_, score_b, sim_b)| {
@@ -427,41 +459,13 @@ async fn combined_search(
         );
         sorted
             .into_iter()
-            .take(15) // Limit to top 15 results
-            .map(|(movie, _, _)| movie.clone()) // Only clone the movies we keep
+            .map(|(movie, text_score, vector_score)| ScoredMovie {
+                movie: movie.clone(),
+                text_score,
+                vector_score,
+            })
             .collect()
     };
-
-    // If we don't have enough results, include more movies with any matches
-    if combined.len() < 10 {
-        let additional_movies = all_movies
-            .iter()
-            .filter(
-                |m| {
-                    !combined
-                        .iter()
-                        .any(|cm| cm.id == m.id)
-                },
-            )
-            .filter(
-                |movie| {
-                    // Include movies that match any criteria
-                    movie.text_match_score(
-                        &titles, &actors, &genres,
-                    ) > 0
-                        || query_embedding
-                            .as_ref()
-                            .and_then(|e| movie.cosine_similarity(e))
-                            .map(|score| score > 0.5) // Threshold for similarity
-                            .unwrap_or(false)
-                },
-            )
-            .take(10 - combined.len())
-            .cloned()
-            .collect::<Vec<_>>();
-
-        combined.extend(additional_movies);
-    }
 
     info!(
         "Total combined results: {}",
@@ -476,20 +480,18 @@ async fn combined_search(
                 .len()
                 .min(5)
         );
-        for (i, movie) in combined
+        for (i, scored_movie) in combined
             .iter()
             .take(5)
             .enumerate()
         {
-            let score = movie.text_match_score(
-                &titles, &actors, &genres,
-            ) as f32;
             info!(
-                "  {}. {} (ID: {}, match score: {})",
+                "  {}. {} (ID: {}, text score: {}, vector score: {:.3})",
                 i + 1,
-                movie.name,
-                movie.id,
-                score
+                scored_movie.movie.name,
+                scored_movie.movie.id,
+                scored_movie.text_score,
+                scored_movie.vector_score
             );
         }
     } else {
@@ -517,7 +519,7 @@ async fn combined_search(
 pub async fn get_matching_movies(
     State(state): State<CacheState>,
     Json(search_request): Json<SearchRequest>,
-) -> Json<Option<Vec<FullMovie>>> {
+) -> Json<Option<Vec<ScoredMovie>>> {
     // Get a clone of the movies from the RwLock
     let movies = {
         let movies_guard = state

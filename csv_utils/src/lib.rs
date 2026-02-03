@@ -4,6 +4,9 @@ use csv::Reader;
 use models::{Actor, Director, FullMovie};
 use serde::{Deserialize, Serialize};
 
+pub mod export;
+pub use export::movies_to_csv;
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all(serialize = "camelCase"))]
 struct CsvRecord {
@@ -95,6 +98,7 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
                     },
                 )
                 .unwrap_or_default(),
+            #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: None,
         };
         movies.push(movie);
@@ -128,6 +132,7 @@ mod tests {
                 "Adventure".to_string(),
                 "Comedy".to_string(),
             ],
+            #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: None,
         };
 

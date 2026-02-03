@@ -226,7 +226,7 @@ pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::Oll
     );
 
     let request = GenerateEmbeddingsRequest::new(
-        "nomic-embed-text".to_string(),
+        "mxbai-embed-large".to_string(),
         text.into(),
     );
 

@@ -162,6 +162,14 @@ pub struct FullMovie {
     pub embedding: Option<Vec<f32>>,
 }
 
+#[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
+pub struct ScoredMovie {
+    #[serde(flatten)]
+    pub movie: FullMovie,
+    pub text_score: usize,
+    pub vector_score: f32,
+}
+
 impl FullMovie {
     #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
     pub fn embedding_str(&self) -> String {

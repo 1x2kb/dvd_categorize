@@ -1,6 +1,6 @@
 use crate::components::movie_grid::MovieGrid;
 use dioxus::prelude::*;
-use models::{FullMovie, SearchRequest};
+use models::{ScoredMovie, SearchRequest};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -11,7 +11,7 @@ pub struct AiAction {
     pub model: Option<String>,
 }
 
-async fn send_search_request(query: String) -> Result<Arc<Vec<FullMovie>>, reqwest::Error> {
+async fn send_search_request(query: String) -> Result<Arc<Vec<ScoredMovie>>, reqwest::Error> {
     let window = web_sys::window().unwrap();
     let location = window.location();
     let hostname = location
@@ -24,7 +24,7 @@ async fn send_search_request(query: String) -> Result<Arc<Vec<FullMovie>>, reqwe
     let search_request = SearchRequest { query };
 
     let client = reqwest::Client::new();
-    let response: Vec<FullMovie> = client
+    let response: Vec<ScoredMovie> = client
         .post(format!("http://{hostname}:{server_port}/ai/dvd-match"))
         .json(&search_request)
         .send()
@@ -37,7 +37,7 @@ async fn send_search_request(query: String) -> Result<Arc<Vec<FullMovie>>, reqwe
 
 #[component]
 pub fn AiLiveResults() -> Element {
-    let mut movies: Signal<Arc<Vec<FullMovie>>> = use_signal(|| Arc::new(Vec::new()));
+    let mut movies: Signal<Arc<Vec<ScoredMovie>>> = use_signal(|| Arc::new(Vec::new()));
     let mut input_value = use_signal(String::new);
     let mut is_loading = use_signal(|| false);
 

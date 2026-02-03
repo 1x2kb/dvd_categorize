@@ -115,6 +115,10 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
             "/csv/parse",
             post(parse_csv),
         )
+        .route(
+            "/csv/export",
+            get(export_csv),
+        )
         .with_state(state);
 
     // Create a router for stateless endpoints
