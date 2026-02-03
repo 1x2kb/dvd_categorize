@@ -1,3 +1,4 @@
+use diesel::ExpressionMethods;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use models::{schema, NewMovie};
 
@@ -14,7 +15,10 @@ pub async fn insert_movies(
     DatabaseError,
 > {
     diesel::insert_into(schema::movie::table)
-        .values(new_movies) // No & needed, already borrowed
+        .values(new_movies)
+        .on_conflict(schema::movie::name)
+        .do_update()
+        .set(schema::movie::id.eq(schema::movie::id))
         .returning((
             schema::movie::id,
             schema::movie::name,

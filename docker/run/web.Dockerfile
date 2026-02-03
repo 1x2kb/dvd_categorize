@@ -13,7 +13,7 @@ ENV PATH="/home/appuser/.cargo/bin:${PATH}"
 
 RUN rustup default stable
 
-RUN cargo install --locked dioxus-cli
+RUN cargo install --locked dioxus-cli --version 0.7.0
 
 # Configure dx serve with production features
 CMD ["dx", "serve", "-p", "dvd_categorizer_web"]

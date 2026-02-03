@@ -1,5 +1,6 @@
 pub mod actors;
 pub mod directors;
+pub mod full_movies;
 pub mod genres;
 pub mod movies;
 
@@ -16,6 +17,7 @@ use pgvector::{Vector, VectorExpressionMethods};
 
 pub use actors::*;
 pub use directors::*;
+pub use full_movies::*;
 pub use genres::*;
 pub use movies::*;
 

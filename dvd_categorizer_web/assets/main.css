@@ -6,6 +6,113 @@ body {
     margin: 20px;
 }
 
+/* Insert Media Component */
+.insert-media-container {
+    max-width: 60vw;
+    margin: 0 auto;
+    padding: 20px;
+    color: white;
+}
+
+.csv-section {
+    margin-bottom: 20px;
+    background: #1f2937;
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.csv-instructions {
+    margin-bottom: 15px;
+    padding: 10px;
+    background: #111827;
+    border-radius: 6px;
+    font-size: 14px;
+    color: #9ca3af;
+}
+
+.csv-instructions p {
+    margin: 0 0 10px 0;
+    font-weight: bold;
+    color: #e5e7eb;
+}
+
+.csv-instructions p:last-child {
+    margin: 0;
+    font-family: monospace;
+}
+
+.csv-textarea {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-height: 150px;
+    padding: 12px;
+    margin-bottom: 15px;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    background: #111827;
+    color: white;
+    font-size: 14px;
+    resize: vertical;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.button-group {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.button-primary {
+    background: #0891b2;
+}
+
+.button-primary:hover {
+    background: #0e7490;
+}
+
+.button-danger {
+    border: 1px solid #dc2626;
+    background: transparent;
+    color: #dc2626;
+}
+
+.button-danger:hover {
+    background: rgba(220, 38, 38, 0.1);
+}
+
+.button-success {
+    background: #10b981;
+}
+
+.button-success:hover {
+    background: #0d9c6e;
+}
+
+.preview-section {
+    margin-top: 20px;
+}
+
+.preview-title {
+    color: #e5e7eb;
+    margin-bottom: 15px;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
 #hero {
     margin: 0;
     display: flex;
@@ -39,7 +146,7 @@ body {
 }
 
 #header {
-    max-width: 1200px;
+    max-width: 62.5vw; /* 1200px / 1920px */
 }
 
 /* Navbar */

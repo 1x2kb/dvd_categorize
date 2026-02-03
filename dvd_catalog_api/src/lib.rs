@@ -1,13 +1,14 @@
 use ai_chat::OllamaClient;
 use axum::{
     extract::{Path, State},
+    http::StatusCode,
     Json,
 };
 use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie, SearchRequest};
 use log::{debug, error, info, warn};
-use models::TextMatchScoring;
 use models::VectorSimilarity;
+use models::{CsvInput, TextMatchScoring};
 use ollama_rs::{error::OllamaError, Ollama};
 use std::{sync::Arc, time::Instant};
 use tokio_rayon::rayon::prelude::*;
@@ -19,7 +20,7 @@ pub use movie_search::extract_entities;
 
 #[derive(Clone, Debug)]
 pub struct CacheState {
-    pub movies: Arc<Vec<FullMovie>>,
+    pub movies: Arc<tokio::sync::RwLock<Vec<FullMovie>>>,
 }
 
 #[instrument]
@@ -30,13 +31,14 @@ pub async fn hello_world() -> &'static str {
 #[instrument(skip(state))]
 #[debug_handler]
 pub async fn get_dvds(State(state): State<CacheState>) -> Json<Option<Vec<FullMovie>>> {
-    if state
+    let movies = state
         .movies
-        .is_empty()
-    {
+        .read()
+        .await;
+    if movies.is_empty() {
         Json(None)
     } else {
-        Json(Some((*state.movies).clone()))
+        Json(Some((*movies).clone()))
     }
 }
 
@@ -67,6 +69,124 @@ pub async fn chat() -> impl axum::response::IntoResponse {
         axum::http::StatusCode::NOT_FOUND,
         "Chat endpoint temporarily disabled",
     )
+}
+
+#[instrument]
+#[debug_handler]
+pub async fn preview_csv(Json(value): Json<CsvInput>) -> impl axum::response::IntoResponse {
+    let headers = ["Title", "Description", "Actors", "Genres", "Director"];
+    let csv_with_headers = format!(
+        "{}\n{}",
+        headers.join(","),
+        value.input
+    );
+
+    let movies = csv_utils::parse_csv(csv_with_headers.as_bytes()).unwrap_or_else(
+        |e| {
+            error!(
+                "{}",
+                e
+            );
+            Vec::new()
+        },
+    );
+
+    (
+        StatusCode::OK,
+        Json(movies),
+    )
+}
+
+use axum::response::IntoResponse;
+
+#[instrument]
+#[debug_handler]
+pub async fn parse_csv(
+    State(cache_state): State<CacheState>,
+    Json(value): Json<CsvInput>,
+) -> Result<
+    impl IntoResponse,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    let headers = ["Title", "Description", "Actors", "Genres", "Director"];
+    let csv_with_headers = format!(
+        "{}\n{}",
+        headers.join(","),
+        value.input
+    );
+
+    let movies = match csv_utils::parse_csv(csv_with_headers.as_bytes()) {
+        Ok(movies) => movies,
+        Err(e) => {
+            let error = format!(
+                "Failed to parse CSV: {}",
+                e
+            );
+            error!(
+                "{}",
+                error
+            );
+            return Err((
+                StatusCode::BAD_REQUEST,
+                error,
+            ));
+        }
+    };
+
+    if let Err(e) = database::insert_full_movies(movies).await {
+        let error = format!(
+            "Failed to insert movies: {}",
+            e
+        );
+        error!(
+            "{}",
+            error
+        );
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            error,
+        ));
+    }
+
+    // Refresh the cache with the latest movies
+    match database::get_movies().await {
+        Ok(updated_movies) => {
+            info!("Movies saved successfully");
+
+            // Update the movies in the RwLock
+            let mut movies = cache_state
+                .movies
+                .write()
+                .await;
+            *movies = updated_movies;
+            let count = movies.len();
+            info!(
+                "Successfully refreshed movie cache with {} movies",
+                count
+            );
+            Ok((
+                StatusCode::OK,
+                Json(()),
+            ))
+        }
+        Err(e) => {
+            let error = format!(
+                "Failed to refresh movie cache: {}",
+                e
+            );
+            error!(
+                "{}",
+                error
+            );
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error,
+            ))
+        }
+    }
 }
 
 /// Generates vector embeddings for a given text question using the Ollama AI service.
@@ -393,7 +513,6 @@ async fn combined_search(
     fields(
         query = %search_request.query,
         query_len = search_request.query.len(),
-        movie_count = state.movies.len()
     )
 )]
 #[debug_handler]
@@ -401,6 +520,21 @@ pub async fn get_matching_movies(
     State(state): State<CacheState>,
     Json(search_request): Json<SearchRequest>,
 ) -> Json<Option<Vec<FullMovie>>> {
+    // Get a clone of the movies from the RwLock
+    let movies = {
+        let movies_guard = state
+            .movies
+            .read()
+            .await;
+        (*movies_guard).clone()
+    };
+
+    // Update the span with the movie count after acquiring the lock
+    tracing::Span::current().record(
+        "movie_count",
+        tracing::field::display(movies.len()),
+    );
+
     let query = search_request
         .query
         .trim();
@@ -410,7 +544,7 @@ pub async fn get_matching_movies(
 
     match combined_search(
         query,
-        Arc::clone(&state.movies),
+        Arc::new(movies),
     )
     .await
     {
