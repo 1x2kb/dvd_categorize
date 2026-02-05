@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use models::ScoredMovie;
 use std::sync::Arc;
+use chrono::{DateTime, Local, NaiveDateTime};
 
 #[derive(Props, Clone, PartialEq)]
 pub struct MovieCardProps {
@@ -109,6 +110,32 @@ pub fn MovieGrid(props: MovieCardProps) -> Element {
                                         span {
                                             class: "movie-genre-tag movie-genre-more",
                                             "+{scored_movie.movie.genres.len() - 4}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Added On timestamp
+                        if let Some(added_on) = &scored_movie.movie.added_on {
+                            div {
+                                class: "movie-info-row",
+                                style: "margin-top: 8px; font-size: 12px; opacity: 0.8;",
+                                span {
+                                    class: "movie-info-label",
+                                    "Added: "
+                                }
+                                span {
+                                    class: "movie-info-value",
+                                    {
+                                        // Parse the timestamp and format it to local time
+                                        if let Ok(naive_dt) = NaiveDateTime::parse_from_str(added_on, "%Y-%m-%d %H:%M:%S%.f") {
+                                            let utc_dt = DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive_dt, chrono::Utc);
+                                            let local_dt: DateTime<Local> = DateTime::from(utc_dt);
+                                            local_dt.format("%B %d, %Y at %I:%M %p").to_string()
+                                        } else {
+                                            // Fallback to raw string if parsing fails
+                                            added_on.clone()
                                         }
                                     }
                                 }

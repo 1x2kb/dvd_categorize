@@ -47,6 +47,7 @@ mod tests {
             genres: vec!["Sci-Fi".to_string(), "Action".to_string()],
             #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: None,
+            added_on: None,
         };
 
         // Test title match

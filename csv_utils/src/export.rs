@@ -3,7 +3,7 @@ use models::FullMovie;
 use std::error::Error;
 
 /// Converts a list of FullMovie objects to CSV format
-/// Format: Title, Description, Actors, Genres, Director
+/// Format: Title, Description, Actors, Genres, Director, AddedOn
 pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
     let mut writer = Writer::from_writer(vec![]);
 
@@ -23,12 +23,18 @@ pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
             .map(|d| d.name.as_str())
             .unwrap_or("");
 
+        let added_on = movie
+            .added_on
+            .as_deref()
+            .unwrap_or("");
+
         writer.write_record(&[
             &movie.name,
             movie.description.as_deref().unwrap_or(""),
             &actors,
             &genres,
             director,
+            added_on,
         ])?;
     }
 
@@ -64,6 +70,7 @@ mod tests {
                 }),
                 genres: vec!["Action".to_string(), "Drama".to_string()],
                 embedding: None,
+                added_on: None,
             },
         ];
 

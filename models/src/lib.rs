@@ -28,6 +28,9 @@ pub trait Random {
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "postgres")]
+use chrono::NaiveDateTime;
+
 #[cfg(feature = "vector-similarity")]
 pub mod vector_similarity;
 
@@ -102,6 +105,8 @@ pub struct Movie {
     pub description: Option<String>,
     #[cfg(feature = "postgres")]
     pub embedding: Option<Vector>,
+    #[cfg(feature = "postgres")]
+    pub added_on: NaiveDateTime,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::movie, check_for_backend(diesel::pg::Pg)))]
@@ -112,6 +117,8 @@ pub struct NewMovie {
     pub description: Option<String>,
     #[cfg(feature = "postgres")]
     pub embedding: Option<Vector>,
+    #[cfg(feature = "postgres")]
+    pub added_on: Option<NaiveDateTime>,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable, Identifiable, Queryable), diesel(table_name = schema::movie_actor, check_for_backend(diesel::pg::Pg)))]
@@ -160,6 +167,8 @@ pub struct FullMovie {
     #[serde(skip)]
     #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
     pub embedding: Option<Vec<f32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub added_on: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
@@ -336,6 +345,10 @@ impl
             embedding: movie
                 .embedding
                 .map(|v| v.into()),
+            #[cfg(feature = "postgres")]
+            added_on: Some(movie.added_on.to_string()),
+            #[cfg(not(feature = "postgres"))]
+            added_on: None,
         }
     }
 }
@@ -412,6 +425,7 @@ impl Random for FullMovie {
                 .collect(),
             #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: None,
+            added_on: None,
         }
     }
 }
@@ -442,6 +456,7 @@ impl FullMovie {
                 genres: vec!["Sci-Fi".to_string(), "Action".to_string()],
                 #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
                 embedding: None,
+                added_on: None,
             },
             FullMovie {
                 id: 2,
@@ -463,6 +478,7 @@ impl FullMovie {
                 genres: vec!["Sci-Fi".to_string(), "Thriller".to_string()],
                 #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
                 embedding: None,
+                added_on: None,
             },
             FullMovie {
                 id: 3,
@@ -484,6 +500,7 @@ impl FullMovie {
                 genres: vec!["Sci-Fi".to_string(), "Adventure".to_string()],
                 #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
                 embedding: None,
+                added_on: None,
             },
         ]
     }

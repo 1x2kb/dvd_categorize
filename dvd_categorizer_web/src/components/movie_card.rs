@@ -1,5 +1,6 @@
 pub use dioxus::prelude::*;
 use models::FullMovie;
+use chrono::{DateTime, Local, NaiveDateTime};
 
 #[component]
 pub fn MovieCard(movie: ReadSignal<FullMovie>) -> Element {
@@ -59,6 +60,25 @@ pub fn MovieCard(movie: ReadSignal<FullMovie>) -> Element {
                 // Conditional director section
                 if !director_display.is_empty() {
                     p { "{director_display}" }
+                }
+
+                // Added On timestamp
+                if let Some(added_on) = &movie().added_on {
+                    p {
+                        style: "font-size: 0.9em; color: #888; margin-top: 8px;",
+                        "Added: "
+                        {
+                            // Parse the timestamp and format it to local time
+                            if let Ok(naive_dt) = NaiveDateTime::parse_from_str(added_on, "%Y-%m-%d %H:%M:%S%.f") {
+                                let utc_dt = DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive_dt, chrono::Utc);
+                                let local_dt: DateTime<Local> = DateTime::from(utc_dt);
+                                local_dt.format("%B %d, %Y at %I:%M %p").to_string()
+                            } else {
+                                // Fallback to raw string if parsing fails
+                                added_on.clone()
+                            }
+                        }
+                    }
                 }
             }
         }

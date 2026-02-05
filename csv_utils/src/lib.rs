@@ -20,6 +20,8 @@ struct CsvRecord {
     director: Option<String>,
     #[serde(alias = "Genres", alias = "GENRES")]
     genres: Option<String>,
+    #[serde(alias = "AddedOn", alias = "ADDED_ON", alias = "added_on")]
+    added_on: Option<String>,
 }
 
 pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> {
@@ -100,6 +102,7 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
                 .unwrap_or_default(),
             #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: None,
+            added_on: csv_record.added_on,
         };
         movies.push(movie);
     }
@@ -134,6 +137,7 @@ mod tests {
             ],
             #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: None,
+            added_on: None,
         };
 
         let full_movies = parse_csv(csv.as_bytes());
