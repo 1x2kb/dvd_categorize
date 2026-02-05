@@ -48,6 +48,7 @@ mod tests {
             #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: None,
             added_on: None,
+            location: None,
         };
 
         // Test title match

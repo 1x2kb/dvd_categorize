@@ -80,6 +80,14 @@ pub fn MovieCard(movie: ReadSignal<FullMovie>) -> Element {
                         }
                     }
                 }
+
+                // Location
+                if let Some(location) = &movie().location {
+                    p {
+                        style: "font-size: 0.9em; font-weight: 600; color: #0891b2; margin-top: 4px;",
+                        "Location: {location}"
+                    }
+                }
             }
         }
     }

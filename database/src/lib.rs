@@ -229,6 +229,7 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
                 genres: genres_map.remove(&movie.id).unwrap_or_default(),
                 embedding: movie.embedding.map(|v| v.into()),
                 added_on: Some(movie.added_on.to_string()),
+                location: Some(movie.location),
             })
         })
         .collect();
@@ -325,6 +326,7 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
         description: full_movie.description,
         embedding: embedding.map(|v| v.into()),
         added_on: None,
+        location: full_movie.location,
     };
 
     let movie_id = diesel::insert_into(schema::movie::table)

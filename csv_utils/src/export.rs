@@ -8,7 +8,7 @@ pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
     let mut writer = Writer::from_writer(vec![]);
 
     // Write header row
-    writer.write_record(&["Title", "Description", "Actors", "Genres", "Director", "AddedOn"])?;
+    writer.write_record(&["Title", "Description", "Actors", "Genres", "Director", "AddedOn", "Location"])?;
 
     for movie in movies {
         let actors = movie
@@ -31,6 +31,11 @@ pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
             .as_deref()
             .unwrap_or("");
 
+        let location = movie
+            .location
+            .as_deref()
+            .unwrap_or("");
+
         writer.write_record(&[
             &movie.name,
             movie.description.as_deref().unwrap_or(""),
@@ -38,6 +43,7 @@ pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
             &genres,
             director,
             added_on,
+            location,
         ])?;
     }
 
@@ -74,6 +80,7 @@ mod tests {
                 genres: vec!["Action".to_string(), "Drama".to_string()],
                 embedding: None,
                 added_on: None,
+                location: None,
             },
         ];
 

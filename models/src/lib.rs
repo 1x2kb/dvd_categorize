@@ -107,6 +107,7 @@ pub struct Movie {
     pub embedding: Option<Vector>,
     #[cfg(feature = "postgres")]
     pub added_on: NaiveDateTime,
+    pub location: String,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::movie, check_for_backend(diesel::pg::Pg)))]
@@ -119,6 +120,7 @@ pub struct NewMovie {
     pub embedding: Option<Vector>,
     #[cfg(feature = "postgres")]
     pub added_on: Option<NaiveDateTime>,
+    pub location: Option<String>,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable, Identifiable, Queryable), diesel(table_name = schema::movie_actor, check_for_backend(diesel::pg::Pg)))]
@@ -169,6 +171,8 @@ pub struct FullMovie {
     pub embedding: Option<Vec<f32>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub added_on: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
@@ -349,6 +353,7 @@ impl
             added_on: Some(movie.added_on.to_string()),
             #[cfg(not(feature = "postgres"))]
             added_on: None,
+            location: Some(movie.location),
         }
     }
 }
@@ -426,6 +431,7 @@ impl Random for FullMovie {
             #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: None,
             added_on: None,
+            location: None,
         }
     }
 }
@@ -457,6 +463,7 @@ impl FullMovie {
                 #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
                 embedding: None,
                 added_on: None,
+                location: None,
             },
             FullMovie {
                 id: 2,
@@ -479,6 +486,7 @@ impl FullMovie {
                 #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
                 embedding: None,
                 added_on: None,
+                location: None,
             },
             FullMovie {
                 id: 3,
@@ -501,6 +509,7 @@ impl FullMovie {
                 #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
                 embedding: None,
                 added_on: None,
+                location: None,
             },
         ]
     }

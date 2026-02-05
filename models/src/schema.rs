@@ -34,6 +34,8 @@ diesel::table! {
         description -> Nullable<Text>,
         embedding -> Nullable<Vector>,
         added_on -> Timestamp,
+        #[max_length = 100]
+        location -> Varchar,
     }
 }
 
@@ -66,9 +68,4 @@ diesel::joinable!(movie_actor -> movie (movie_id));
 diesel::joinable!(movie_genre -> movie (movie_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    actor,
-    director,
-    movie,
-    movie_actor,
-    movie_genre,
-);
+    actor,director,movie,movie_actor,movie_genre,);

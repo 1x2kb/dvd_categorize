@@ -22,7 +22,7 @@ pub fn InsertMedia() -> Element {
                 // CSV Instructions
                 div { class: "csv-instructions",
                     p { "CSV Format:" }
-                    p { "Title, Description, Actors, Genres, Director, AddedOn" }
+                    p { "Title, Description, Actors, Genres, Director, AddedOn, Location" }
                 }
 
                 // Textarea for CSV Input

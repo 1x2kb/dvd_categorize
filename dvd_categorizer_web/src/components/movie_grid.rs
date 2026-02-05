@@ -141,6 +141,23 @@ pub fn MovieGrid(props: MovieCardProps) -> Element {
                                 }
                             }
                         }
+
+                        // Location
+                        if let Some(location) = &scored_movie.movie.location {
+                            div {
+                                class: "movie-info-row",
+                                style: "margin-top: 4px; font-size: 12px;",
+                                span {
+                                    class: "movie-info-label",
+                                    "Location: "
+                                }
+                                span {
+                                    class: "movie-info-value",
+                                    style: "font-weight: 600; color: #0891b2;",
+                                    "{location}"
+                                }
+                            }
+                        }
                     }
                 }
             }
