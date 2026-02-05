@@ -6,12 +6,11 @@ use axum::{
 };
 use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie, SearchRequest};
-use log::{debug, error, info, warn};
-use models::VectorSimilarity;
-use models::{CsvInput, TextMatchScoring};
+use log::{error, info, warn};
+use models::ScoredMovie;
+use models::CsvInput;
 use ollama_rs::{error::OllamaError, Ollama};
 use std::{sync::Arc, time::Instant};
-use tokio_rayon::rayon::prelude::*;
 use tracing::instrument;
 
 // Movie search functionality module
@@ -69,6 +68,38 @@ pub async fn chat() -> impl axum::response::IntoResponse {
         axum::http::StatusCode::NOT_FOUND,
         "Chat endpoint temporarily disabled",
     )
+}
+
+#[instrument]
+#[debug_handler]
+pub async fn export_csv(State(cache_state): State<CacheState>) -> impl axum::response::IntoResponse {
+    let movies = {
+        let movies_guard = cache_state
+            .movies
+            .read()
+            .await;
+        (*movies_guard).clone()
+    };
+
+    match csv_utils::movies_to_csv(&movies) {
+        Ok(csv) => {
+            let headers = "Title,Description,Actors,Genres,Director\n";
+            let csv_with_headers = format!("{}{}", headers, csv);
+            (
+                StatusCode::OK,
+                [("Content-Type", "text/csv"), ("Content-Disposition", "attachment; filename=movies.csv")],
+                csv_with_headers,
+            )
+        }
+        Err(e) => {
+            error!("Failed to export CSV: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                [("Content-Type", "text/plain"), ("Content-Disposition", "")],
+                format!("Failed to export CSV: {}", e),
+            )
+        }
+    }
 }
 
 #[instrument]
@@ -309,202 +340,67 @@ fn _parse_movie_ids_from_response(response: String) -> Result<Vec<i32>, String> 
     Ok(ids)
 }
 
-/// Combines text and vector search results using parallel processing
+/// Combines text and vector search results using Reciprocal Rank Fusion (RRF)
 async fn combined_search(
     query: &str,
-    all_movies: Arc<Vec<FullMovie>>,
-) -> Result<Vec<FullMovie>, String> {
-    info!(
-        "Starting combined search for: {}",
-        query
-    );
-
-    // Extract entities from the movie list
-    let (titles, actors, genres) = extract_entities(
-        query,
-        &all_movies,
-    )
-    .await;
-    info!(
-        "Extracted entities for combined search - titles: {:?}, actors: {:?}, genres: {:?}",
-        titles, actors, genres
-    );
-
-    let embedding_start = Instant::now();
-    // Generate query embedding once
-    let query_embedding = match embedding(query).await {
-        Ok(embedding) => Some(embedding),
-        Err(e) => {
-            warn!(
-                "Failed to generate query embedding: {}",
-                e
-            );
-            None
-        }
-    };
-
-    info!(
-        "Query embedding generated: {}",
-        query_embedding.is_some()
-    );
-
-    if let Some(embedding) = &query_embedding {
-        info!(
-            "Query embedding length: {}",
-            embedding.len()
-        );
-    }
-
-    let embedding_duration = embedding_start.elapsed();
-    info!(
-        "Query embedding generated in {:.3}ms",
-        embedding_duration.as_millis()
-    );
-
+    all_movies: &Arc<Vec<FullMovie>>,
+    disable_enhancement: bool,
+) -> Result<(Vec<ScoredMovie>, String), String> {
+    info!("Starting hybrid search with RRF for: {}", query);
     let start_time = Instant::now();
 
-    let min_text_score = 0;
-    let min_vector_score = 0.55;
-    // First collect movie references and their scores
-    let movies_with_scores: Vec<(
-        &FullMovie,
-        usize,
-        f32,
-    )> = all_movies
+    // Use the hybrid search function - pass Arc::clone (cheap pointer increment)
+    let (movie_results, enhanced_query) = movie_search::hybrid_search(
+        query, 
+        Arc::clone(all_movies), 
+        50,
+        disable_enhancement
+    ).await;
+
+    if movie_results.is_empty() {
+        info!("No matching movies found");
+        return Ok((Vec::new(), enhanced_query));
+    }
+
+    // Create lookup map from our Arc
+    let movies_map: std::collections::HashMap<i32, &FullMovie> = all_movies
         .iter()
-        .par_bridge()
-        .filter_map(
-            |movie| {
-                // Calculate text score (reusing existing logic)
-                let text_score = movie.text_match_score(
-                    &titles, &actors, &genres,
-                );
-
-                let vector_score = query_embedding
-                    .as_ref()
-                    .and_then(
-                        |embedding| {
-                            let score = movie.cosine_similarity(embedding);
-                            if score.is_none() {
-                                debug!(
-                                    "No embedding for movie: {}",
-                                    movie.name
-                                );
-                            }
-                            score
-                        },
-                    )
-                    .unwrap_or(0.0);
-
-                // Only include movies that match at least one criterion
-                if text_score > min_text_score || vector_score > min_vector_score {
-                    Some((
-                        movie, // Only store reference here
-                        text_score,
-                        vector_score,
-                    ))
-                } else {
-                    None
-                }
-            },
-        )
+        .map(|movie| (movie.id, movie))
         .collect();
 
-    info!(
-        "Found {} movies with matches in combined search",
-        movies_with_scores.len()
-    );
+    // Look up movies by ID and create ScoredMovie (clone for owned response)
+    let scored_movies: Vec<ScoredMovie> = movie_results
+        .into_iter()
+        .filter_map(|(id, rfr_score)| {
+            movies_map.get(&id).map(|&movie| ScoredMovie {
+                movie: movie.clone(),
+                vector_score: rfr_score,
+            })
+        })
+        .collect();
 
-    // Sort by combined score (text matches weighted more heavily) and take top 15
-    let mut combined: Vec<FullMovie> = {
-        let mut sorted: Vec<_> = movies_with_scores;
-        sorted.par_sort_unstable_by(
-            |(_, score_a, sim_a), (_, score_b, sim_b)| {
-                let combined_a = (*score_a as f32 * 2.0) + sim_a;
-                let combined_b = (*score_b as f32 * 2.0) + sim_b;
-                combined_b
-                    .partial_cmp(&combined_a)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            },
-        );
-        sorted
-            .into_iter()
-            .take(15) // Limit to top 15 results
-            .map(|(movie, _, _)| movie.clone()) // Only clone the movies we keep
-            .collect()
-    };
+    info!("Hybrid search returned {} results", scored_movies.len());
 
-    // If we don't have enough results, include more movies with any matches
-    if combined.len() < 10 {
-        let additional_movies = all_movies
-            .iter()
-            .filter(
-                |m| {
-                    !combined
-                        .iter()
-                        .any(|cm| cm.id == m.id)
-                },
-            )
-            .filter(
-                |movie| {
-                    // Include movies that match any criteria
-                    movie.text_match_score(
-                        &titles, &actors, &genres,
-                    ) > 0
-                        || query_embedding
-                            .as_ref()
-                            .and_then(|e| movie.cosine_similarity(e))
-                            .map(|score| score > 0.5) // Threshold for similarity
-                            .unwrap_or(false)
-                },
-            )
-            .take(10 - combined.len())
-            .cloned()
-            .collect::<Vec<_>>();
-
-        combined.extend(additional_movies);
-    }
-
-    info!(
-        "Total combined results: {}",
-        combined.len()
-    );
-
-    // Log top 5 results for debugging with match scores
-    if !combined.is_empty() {
-        info!(
-            "Top {} search results:",
-            combined
-                .len()
-                .min(5)
-        );
-        for (i, movie) in combined
-            .iter()
-            .take(5)
-            .enumerate()
-        {
-            let score = movie.text_match_score(
-                &titles, &actors, &genres,
-            ) as f32;
+    // Log top 5 results
+    if !scored_movies.is_empty() {
+        info!("Top {} search results:", scored_movies.len().min(5));
+        for (i, scored_movie) in scored_movies.iter().take(5).enumerate() {
             info!(
-                "  {}. {} (ID: {}, match score: {})",
+                "  {}. {} (ID: {}, RRF Score: {:.4})",
                 i + 1,
-                movie.name,
-                movie.id,
-                score
+                scored_movie.movie.name,
+                scored_movie.movie.id,
+                scored_movie.vector_score
             );
         }
-    } else {
-        info!("No matching movies found");
     }
 
-    let duration = start_time.elapsed();
     info!(
-        "Completed combined search in {}ms",
-        duration.as_millis()
+        "Hybrid search took {:.2?}",
+        start_time.elapsed()
     );
 
-    Ok(combined)
+    Ok((scored_movies, enhanced_query))
 }
 
 /// Main endpoint for getting matching movies using combined search
@@ -519,15 +415,15 @@ async fn combined_search(
 pub async fn get_matching_movies(
     State(state): State<CacheState>,
     Json(search_request): Json<SearchRequest>,
-) -> Json<Option<Vec<FullMovie>>> {
-    // Get a clone of the movies from the RwLock
-    let movies = {
+) -> Json<Option<models::SearchResponse>> {
+    // Get movies from RwLock and wrap in Arc (single clone of Vec)
+    let movies = Arc::new({
         let movies_guard = state
             .movies
             .read()
             .await;
         (*movies_guard).clone()
-    };
+    });
 
     // Update the span with the movie count after acquiring the lock
     tracing::Span::current().record(
@@ -539,16 +435,25 @@ pub async fn get_matching_movies(
         .query
         .trim();
     if query.is_empty() {
-        return Json(Some(Vec::new()));
+        return Json(Some(models::SearchResponse {
+            results: Vec::new(),
+            original_query: query.to_string(),
+            enhanced_query: query.to_string(),
+        }));
     }
 
     match combined_search(
         query,
-        Arc::new(movies),
+        &movies,
+        search_request.disable_enhancement,
     )
     .await
     {
-        Ok(movies) => Json(Some(movies)),
+        Ok((results, enhanced_query)) => Json(Some(models::SearchResponse {
+            results,
+            original_query: query.to_string(),
+            enhanced_query,
+        })),
         Err(e) => {
             error!(
                 "Search failed: {}",
@@ -557,59 +462,4 @@ pub async fn get_matching_movies(
             Json(None)
         }
     }
-
-    // // Step 2: Get full movie details for candidates
-    // let candidate_movies = match database::get_movies_by_ids(candidate_movie_ids).await {
-    //     Ok(movies) => movies,
-    //     Err(e) => {
-    //         error!("Failed to fetch candidate movies: {:#?}", e);
-    //         return Json(None);
-    //     }
-    // };
-
-    // if candidate_movies.is_empty() {
-    //     info!("No candidate movies found for query: {}", search_request.query);
-    //     return Json(Some(Vec::new()));
-    // }
-
-    // // Step 3: Create Ollama client for AI processing
-    // let ollama_client = match create_ollama_client(search_request.query.clone()) {
-    //     Ok(client) => client,
-    //     Err(e) => {
-    //         error!("Failed to create Ollama client: {}", e);
-    //         return Json(None);
-    //     }
-    // };
-
-    // // Step 4: Use AI to refine the movie selection
-    // let ai_response = match ai_chat::live_ui::get_matching_movies_with_ollama(
-    //     Arc::new(candidate_movies),
-    //     ollama_client,
-    // ).await {
-    //     Ok(response) => response,
-    //     Err(e) => {
-    //         error!("AI processing failed: {}", e);
-    //         return Json(None);
-    //     }
-    // };
-
-    // // Step 5: Parse AI response to get final movie IDs
-    // let final_movie_ids = match parse_movie_ids_from_response(ai_response) {
-    //     Ok(ids) => ids,
-    //     Err(e) => {
-    //         error!("Failed to parse AI response: {}", e);
-    //         return Json(None);
-    //     }
-    // };
-
-    // // Step 6: Get final movie details
-    // let final_movies = match database::get_movies_by_ids(final_movie_ids).await {
-    //     Ok(movies) => Some(movies),
-    //     Err(e) => {
-    //         error!("Failed to fetch final movies: {:#?}", e);
-    //         None
-    //     }
-    // };
-
-    // Json(final_movies)
 }

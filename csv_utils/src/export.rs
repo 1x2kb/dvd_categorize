@@ -1,0 +1,77 @@
+use csv::Writer;
+use models::FullMovie;
+use std::error::Error;
+
+/// Converts a list of FullMovie objects to CSV format
+/// Format: Title, Description, Actors, Genres, Director
+pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
+    let mut writer = Writer::from_writer(vec![]);
+
+    for movie in movies {
+        let actors = movie
+            .actors
+            .iter()
+            .map(|a| a.name.as_str())
+            .collect::<Vec<_>>()
+            .join(" | ");
+
+        let genres = movie.genres.join(" | ");
+
+        let director = movie
+            .director
+            .as_ref()
+            .map(|d| d.name.as_str())
+            .unwrap_or("");
+
+        writer.write_record(&[
+            &movie.name,
+            movie.description.as_deref().unwrap_or(""),
+            &actors,
+            &genres,
+            director,
+        ])?;
+    }
+
+    let csv_bytes = writer.into_inner()?;
+    Ok(String::from_utf8(csv_bytes)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use models::{Actor, Director};
+
+    #[test]
+    fn test_movies_to_csv() {
+        let movies = vec![
+            FullMovie {
+                id: 1,
+                name: "Test Movie".to_string(),
+                description: Some("A test description".to_string()),
+                actors: vec![
+                    Actor {
+                        id: 1,
+                        name: "Actor One".to_string(),
+                    },
+                    Actor {
+                        id: 2,
+                        name: "Actor Two".to_string(),
+                    },
+                ],
+                director: Some(Director {
+                    id: 1,
+                    name: "Test Director".to_string(),
+                }),
+                genres: vec!["Action".to_string(), "Drama".to_string()],
+                embedding: None,
+            },
+        ];
+
+        let csv = movies_to_csv(&movies).unwrap();
+        assert!(csv.contains("Test Movie"));
+        assert!(csv.contains("A test description"));
+        assert!(csv.contains("Actor One | Actor Two"));
+        assert!(csv.contains("Action | Drama"));
+        assert!(csv.contains("Test Director"));
+    }
+}

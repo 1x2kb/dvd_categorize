@@ -26,5 +26,4 @@ dotenvy.workspace = true
 ai_chat = { path = "../ai_chat" }
 redis = "0.28.2"
 ollama-rs.workspace = true
-tokio-rayon = "2.1.0"
 csv_utils = { path = "../csv_utils" }
