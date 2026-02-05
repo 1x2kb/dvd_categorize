@@ -1,5 +1,6 @@
 pub mod embedding;
 pub mod live_ui;
+pub mod query_enhancement;
 mod prompts;
 
 use std::{future::Future, sync::Arc};
@@ -18,6 +19,10 @@ use prompts::USER_LIBRARY_PROMPT;
 use tracing::{instrument, Level};
 
 pub use embedding::*;
+pub use query_enhancement::*;
+
+// Re-export the embedding model constant for easy access
+pub use embedding::EMBEDDING_MODEL;
 
 pub trait GenerateMessage {
     fn generate_message(prompt: String) -> impl Future<Output = String>;
@@ -206,6 +211,8 @@ where
 
 #[instrument(level = Level::INFO)]
 pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::OllamaError> {
+    debug!("Generating embedding for text: {}", text);
+    
     // Use ollama service name for Docker container communication
     let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
     let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
@@ -226,9 +233,10 @@ pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::Oll
     );
 
     let request = GenerateEmbeddingsRequest::new(
-        "nomic-embed-text".to_string(),
+        EMBEDDING_MODEL.to_string(),
         text.into(),
-    );
+    )
+    .options(GenerationOptions::default().num_ctx(8192));
 
     let response = ollama
         .generate_embeddings(request)

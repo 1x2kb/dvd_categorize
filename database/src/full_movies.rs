@@ -41,12 +41,12 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
 
     let embeddings: Vec<String> = full_movies
         .iter()
-        .map(|movie| (movie.embedding_str()))
+        .map(|movie| movie.embedding_str())
         .collect();
 
     let embeddings = ai_chat::get_embeddings(
         embeddings,
-        "nomic-embed-text",
+        ai_chat::EMBEDDING_MODEL,
     )
     .await?;
 

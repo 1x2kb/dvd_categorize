@@ -1,6 +1,6 @@
 use crate::components::movie_grid::MovieGrid;
 use dioxus::prelude::*;
-use models::{FullMovie, SearchRequest};
+use models::{ScoredMovie, SearchRequest};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -11,7 +11,10 @@ pub struct AiAction {
     pub model: Option<String>,
 }
 
-async fn send_search_request(query: String) -> Result<Arc<Vec<FullMovie>>, reqwest::Error> {
+async fn send_search_request(
+    query: String,
+    disable_enhancement: bool,
+) -> Result<models::SearchResponse, reqwest::Error> {
     let window = web_sys::window().unwrap();
     let location = window.location();
     let hostname = location
@@ -21,10 +24,13 @@ async fn send_search_request(query: String) -> Result<Arc<Vec<FullMovie>>, reqwe
     // TODO: This is incorrect! Front-end does not have access to environment variables
     let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
 
-    let search_request = SearchRequest { query };
+    let search_request = SearchRequest {
+        query,
+        disable_enhancement,
+    };
 
     let client = reqwest::Client::new();
-    let response: Vec<FullMovie> = client
+    let response: models::SearchResponse = client
         .post(format!("http://{hostname}:{server_port}/ai/dvd-match"))
         .json(&search_request)
         .send()
@@ -32,14 +38,17 @@ async fn send_search_request(query: String) -> Result<Arc<Vec<FullMovie>>, reqwe
         .json()
         .await?;
 
-    Ok(Arc::new(response))
+    Ok(response)
 }
 
 #[component]
 pub fn AiLiveResults() -> Element {
-    let mut movies: Signal<Arc<Vec<FullMovie>>> = use_signal(|| Arc::new(Vec::new()));
+    let mut movies: Signal<Arc<Vec<ScoredMovie>>> = use_signal(|| Arc::new(Vec::new()));
     let mut input_value = use_signal(String::new);
     let mut is_loading = use_signal(|| false);
+    let mut disable_enhancement = use_signal(|| false);
+    let mut enhanced_query = use_signal(String::new);
+    let mut original_query = use_signal(String::new);
 
     rsx! {
         div {
@@ -70,10 +79,12 @@ pub fn AiLiveResults() -> Element {
                                     is_loading.set(true);
                                     movies.set(Arc::new(vec![]));
 
-                                    let result = send_search_request(input_value()).await;
+                                    let result = send_search_request(input_value(), disable_enhancement()).await;
                                     match result {
-                                        Ok(movie_list) => {
-                                            movies.set(movie_list);
+                                        Ok(response) => {
+                                            movies.set(Arc::new(response.results));
+                                            original_query.set(response.original_query);
+                                            enhanced_query.set(response.enhanced_query);
                                         }
                                         Err(err) => {
                                             log::error!("Failed to send search request {:#?}", err);
@@ -96,10 +107,12 @@ pub fn AiLiveResults() -> Element {
                                 is_loading.set(true);
                                 movies.set(Arc::new(vec![]));
 
-                                let result = send_search_request(input_value()).await;
+                                let result = send_search_request(input_value(), disable_enhancement()).await;
                                 match result {
-                                    Ok(movie_list) => {
-                                        movies.set(movie_list);
+                                    Ok(response) => {
+                                        movies.set(Arc::new(response.results));
+                                        original_query.set(response.original_query);
+                                        enhanced_query.set(response.enhanced_query);
                                     }
                                     Err(err) => {
                                         log::error!("Failed to send search request {:#?}", err);
@@ -116,6 +129,38 @@ pub fn AiLiveResults() -> Element {
                             "Searching..."
                         } else {
                             "Search"
+                        }
+                    }
+                }
+
+                // Checkbox for disabling AI enhancement
+                div {
+                    style: "margin-top: 12px; display: flex; align-items: center; gap: 8px;",
+                    input {
+                        r#type: "checkbox",
+                        id: "disable-enhancement",
+                        checked: disable_enhancement(),
+                        onchange: move |evt| disable_enhancement.set(evt.checked()),
+                        style: "cursor: pointer;",
+                    }
+                    label {
+                        r#for: "disable-enhancement",
+                        style: "color: #9ca3af; font-size: 14px; cursor: pointer; user-select: none;",
+                        "Disable AI query enhancement (use exact search query)"
+                    }
+                }
+
+                // Display enhanced query if different from original
+                if !enhanced_query().is_empty() && enhanced_query() != original_query() {
+                    div {
+                        style: "margin-top: 12px; padding: 10px; background: rgba(8, 145, 178, 0.1); border-left: 3px solid #0891b2; border-radius: 4px;",
+                        div {
+                            style: "color: #0891b2; font-size: 12px; font-weight: 600; margin-bottom: 4px;",
+                            "AI Enhanced Query:"
+                        }
+                        div {
+                            style: "color: #d1d5db; font-size: 14px;",
+                            "{enhanced_query()}"
                         }
                     }
                 }

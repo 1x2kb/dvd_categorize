@@ -3,6 +3,11 @@ name = "csv_utils"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+postgres = ["models/postgres"]
+vector-similarity = ["models/vector-similarity"]
+default = ["postgres", "vector-similarity"]
+
 [dependencies]
 csv = "*"
 models = { path = "../models" }

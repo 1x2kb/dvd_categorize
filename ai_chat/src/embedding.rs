@@ -1,9 +1,16 @@
 use log::debug;
 use ollama_rs::{
-    generation::embeddings::request::{EmbeddingsInput, GenerateEmbeddingsRequest},
+    generation::{
+        embeddings::request::{EmbeddingsInput, GenerateEmbeddingsRequest},
+        options::GenerationOptions,
+    },
     Ollama,
 };
 use std::error::Error;
+
+/// Global embedding model to use across the entire application
+/// Change this in ONE place to switch models everywhere
+pub const EMBEDDING_MODEL: &str = "nomic-embed-text";
 
 /// Get embeddings for a collection of text items using Ollama in bulk
 ///
@@ -44,7 +51,8 @@ where
     let request = GenerateEmbeddingsRequest::new(
         model.to_string(),
         EmbeddingsInput::Multiple(string_texts),
-    );
+    )
+    .options(GenerationOptions::default().num_ctx(8192));
 
     let response = ollama
         .generate_embeddings(request)

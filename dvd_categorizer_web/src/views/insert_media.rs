@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use log::error;
-use models::{CsvInput, FullMovie};
+use models::{CsvInput, FullMovie, ScoredMovie};
 use std::sync::Arc;
 
 use crate::components::movie_grid::MovieGrid;
@@ -35,6 +35,22 @@ pub fn InsertMedia() -> Element {
 
                 // Action Buttons
                 div { class: "button-group",
+                    button {
+                        class: "button button-success",
+                        onclick: move |_| {
+                            spawn(async move {
+                                let window = web_sys::window().unwrap();
+                                let location = window.location();
+                                let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+                                let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+
+                                let url = format!("http://{}:{}/csv/export", hostname, server_port);
+                                window.open_with_url(&url).ok();
+                            });
+                        },
+                        "Export All Movies"
+                    }
+
                     button {
                         class: "button button-primary",
                         onclick: move |_| {
@@ -129,7 +145,18 @@ pub fn InsertMedia() -> Element {
             if !dvd_data().is_empty() {
                 div { class: "preview-section",
                     h3 { class: "preview-title", "Preview ({dvd_count} {movie_word} found)" }
-                    MovieGrid { movies: Arc::clone(&dvd_data()) }
+                    {
+                        // Convert FullMovie to ScoredMovie for display (with 0 score for preview)
+                        let scored_movies: Arc<Vec<ScoredMovie>> = Arc::new(
+                            dvd_data().iter().map(|movie| ScoredMovie {
+                                movie: movie.clone(),
+                                vector_score: 0.0,
+                            }).collect()
+                        );
+                        rsx! {
+                            MovieGrid { movies: scored_movies }
+                        }
+                    }
                 }
             }
         }

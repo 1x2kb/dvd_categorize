@@ -7,8 +7,6 @@ use axum_macros::debug_handler;
 use database::{question::AiAction, FullMovie};
 use log::{error, info};
 use ollama_rs::Ollama;
-use rayon::prelude::*;
-use tokio_rayon::rayon;
 use tracing::instrument;
 
 use crate::embedding;
@@ -80,6 +78,8 @@ pub async fn extract_entities(
     }
 
     // Look for actors and directors
+    let query_words: Vec<&str> = query_lower.split_whitespace().collect();
+    
     for entity in all_actors
         .iter()
         .chain(all_directors.iter())
@@ -99,29 +99,36 @@ pub async fn extract_entities(
             continue;
         }
 
-        // For multi-word names, check if all parts appear in order in the query
+        // For multi-word names (e.g., "Brad Pitt")
         if name_parts.len() > 1 {
-            let mut query_words = query_lower.split_whitespace();
-            let all_parts_found = name_parts
+            // Count how many significant name parts match the query
+            let matching_parts: Vec<&str> = name_parts
                 .iter()
-                .all(
-                    |&part| {
-                        // Skip very short words in the name to avoid false positives
-                        if part.len() <= 2 {
-                            return true;
-                        }
-                        query_words.any(|w| w == part)
-                    },
-                );
-
-            // If all parts found in order, it's a match
-            if all_parts_found
-                && name_parts
+                .filter(|&&part| part.len() > 3 && query_words.iter().any(|&w| w == part))
+                .copied()
+                .collect();
+            
+            // If we have multiple query words that could be a full name,
+            // require all parts to match (e.g., "Adam Sandler" should NOT match "Adam Baldwin")
+            let has_multiple_name_candidates = query_words.iter().filter(|w| w.len() > 3).count() >= 2;
+            
+            if has_multiple_name_candidates {
+                // Full name query: require all significant parts to match
+                let all_significant_parts_match = name_parts
                     .iter()
-                    .all(|p| p.len() > 2)
-            {
-                actors.insert(entity_lower);
-                continue;
+                    .filter(|p| p.len() > 3)
+                    .all(|&part| query_words.iter().any(|&w| w == part));
+                
+                if all_significant_parts_match && !matching_parts.is_empty() {
+                    actors.insert(entity_lower);
+                    continue;
+                }
+            } else {
+                // Partial query (e.g., just "Adam"): match if any significant part matches
+                if !matching_parts.is_empty() {
+                    actors.insert(entity_lower);
+                    continue;
+                }
             }
         }
 
@@ -225,6 +232,265 @@ pub async fn extract_entities(
     )
 }
 
+/// Scores a movie based on keyword matches (title, actors, genres)
+fn score_movie_by_keywords(
+    movie: &FullMovie,
+    criteria: &SearchCriteria,
+) -> f32 {
+    let mut score = 0.0;
+
+    // Title matching (highest weight)
+    for title in &criteria.titles {
+        let movie_title_lower = movie.name.to_lowercase();
+        let title_lower = title.to_lowercase();
+        
+        if movie_title_lower == title_lower {
+            score += 100.0; // Exact match
+        } else if movie_title_lower.contains(&title_lower) {
+            score += 50.0; // Partial substring match
+        } else if title_lower.contains(&movie_title_lower) {
+            score += 30.0; // Query contains movie title
+        } else {
+            // Check if movie title starts with the query (e.g., "RoboCop" starts with "Robot")
+            if movie_title_lower.starts_with(&title_lower) {
+                score += 45.0;
+            } else {
+                // Check word-level matching for compound words
+                // Split on common delimiters and check if any word starts with query
+                let movie_words: Vec<&str> = movie_title_lower
+                    .split(|c: char| !c.is_alphanumeric())
+                    .filter(|w| !w.is_empty())
+                    .collect();
+                
+                for word in movie_words {
+                    if word.starts_with(&title_lower) {
+                        score += 40.0;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Actor matching
+    for actor in &criteria.actors {
+        let actor_lower = actor.to_lowercase();
+        for movie_actor in &movie.actors {
+            let movie_actor_lower = movie_actor.name.to_lowercase();
+            if movie_actor_lower == actor_lower || movie_actor_lower.contains(&actor_lower) {
+                score += 20.0;
+                break;
+            }
+        }
+    }
+
+    // Director matching
+    if let Some(director) = &movie.director {
+        for actor in &criteria.actors { // Actors list includes directors from extraction
+            let actor_lower = actor.to_lowercase();
+            let director_lower = director.name.to_lowercase();
+            if director_lower == actor_lower || director_lower.contains(&actor_lower) {
+                score += 25.0;
+                break;
+            }
+        }
+    }
+
+    // Genre matching
+    for genre in &criteria.genres {
+        let genre_lower = genre.to_lowercase();
+        for movie_genre in &movie.genres {
+            let movie_genre_lower = movie_genre.to_lowercase();
+            if movie_genre_lower == genre_lower {
+                score += 15.0;
+                break;
+            }
+        }
+    }
+
+    score
+}
+
+/// Performs keyword-based search on movies
+/// Returns Vec<(movie_id, keyword_score)> sorted by score descending
+fn keyword_search(
+    movies: &[FullMovie],
+    criteria: &SearchCriteria,
+    limit: usize,
+) -> Vec<(i32, f32)> {
+    let mut scored_movies: Vec<(i32, f32)> = movies
+        .iter()
+        .map(|movie| {
+            let score = score_movie_by_keywords(movie, criteria);
+            (movie.id, score)
+        })
+        .filter(|(_, score)| *score > 0.0)
+        .collect();
+
+    // Sort by score descending
+    scored_movies.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Return top N with scores
+    scored_movies
+        .into_iter()
+        .take(limit)
+        .collect()
+}
+
+/// Reciprocal Rank Fusion: Combines multiple ranked lists
+/// Formula: RRF_score = sum(1 / (k + rank)) where k=60 is standard
+/// Exact title matches (keyword_score >= 100) get massive boost to ensure they rank first
+/// Returns a vector of (movie_id, score) tuples sorted by score descending
+fn reciprocal_rank_fusion(
+    keyword_results: Vec<(i32, f32)>,
+    vector_ranks: Vec<i32>,
+    k: f32,
+) -> Vec<(i32, f32)> {
+    use std::collections::HashMap;
+
+    let mut scores: HashMap<i32, f32> = HashMap::new();
+
+    // Add scores from keyword search with exact match detection
+    for (rank, (movie_id, keyword_score)) in keyword_results.iter().enumerate() {
+        let mut rfr_score = 1.0 / (k + rank as f32 + 1.0);
+        
+        // BOOST: Exact title matches (score >= 100) get 10x multiplier
+        if *keyword_score >= 100.0 {
+            rfr_score *= 10.0;
+            info!("Exact title match detected for movie ID {}, boosting score", movie_id);
+        }
+        
+        *scores.entry(*movie_id).or_insert(0.0) += rfr_score;
+    }
+
+    // Add scores from vector search
+    for (rank, movie_id) in vector_ranks.iter().enumerate() {
+        let score = 1.0 / (k + rank as f32 + 1.0);
+        *scores.entry(*movie_id).or_insert(0.0) += score;
+    }
+
+    // Sort by RRF score descending
+    let mut ranked: Vec<(i32, f32)> = scores.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    ranked
+}
+
+/// Performs hybrid search combining keyword and semantic vector search
+/// Returns (results, enhanced_query) where results is Vec<(movie_id, rfr_score)>
+#[instrument(skip(movies))]
+pub async fn hybrid_search(
+    query: &str,
+    movies: Arc<Vec<FullMovie>>,
+    limit: usize,
+    disable_enhancement: bool,
+) -> (Vec<(i32, f32)>, String) {
+    let start_time = std::time::Instant::now();
+    
+    // Extract entities for keyword search (dereference Arc for slice)
+    let (titles, actors, genres) = extract_entities(query, &movies).await;
+    
+    info!("Entity extraction results - titles: {:?}, actors: {:?}, genres: {:?}", titles, actors, genres);
+    
+    let criteria = SearchCriteria {
+        titles,
+        actors,
+        genres,
+    };
+
+    // Perform keyword search (dereference Arc for slice)
+    let keyword_start = std::time::Instant::now();
+    let keyword_results = keyword_search(&movies, &criteria, limit * 2);
+    
+    info!("Keyword search found {} results in {:.2?}", keyword_results.len(), keyword_start.elapsed());
+    
+    if keyword_results.is_empty() {
+        info!("Keyword search returned no results - will rely on vector search only");
+    } else {
+        info!("Top keyword matches (ID, score): {:?}", keyword_results.iter().take(5).collect::<Vec<_>>());
+    }
+
+    // Enhance query for better semantic search (only if not disabled)
+    let enhanced_query = if disable_enhancement {
+        info!("Query enhancement disabled, using original query");
+        query.to_string()
+    } else {
+        ai_chat::query_enhancement::enhance_query_for_embedding(query).await
+    };
+    
+    info!("Enhanced query: {}", enhanced_query);
+
+    // Perform vector search if we can get an embedding
+    let vector_start = std::time::Instant::now();
+    let vector_results = match embedding(&enhanced_query).await {
+        Ok(embedding_vec) => {
+            match database::search_movies(embedding_vec, (limit * 2) as i64).await {
+                Ok(movies) => {
+                    let ids: Vec<i32> = movies.into_iter().map(|m| m.id).collect();
+                    info!(
+                        "Vector search found {} results in {:.2?}",
+                        ids.len(),
+                        vector_start.elapsed()
+                    );
+                    ids
+                }
+                Err(e) => {
+                    error!("Vector search failed: {:#?}", e);
+                    Vec::new()
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to generate embedding: {:#?}", e);
+            Vec::new()
+        }
+    };
+
+    // Fuse results using RRF - just return IDs and scores
+    let final_results = if !keyword_results.is_empty() && !vector_results.is_empty() {
+        info!("Fusing keyword and vector results with RRF");
+        let fused = reciprocal_rank_fusion(keyword_results, vector_results, 60.0);
+        fused.into_iter().take(limit).collect()
+    } else if !keyword_results.is_empty() {
+        info!("Using keyword-only results");
+        // Calculate position-based scores (1.0 for rank 0, decreasing)
+        // Keep keyword scores for exact match boosting
+        keyword_results
+            .into_iter()
+            .take(limit)
+            .enumerate()
+            .map(|(rank, (id, keyword_score))| {
+                let mut score = 1.0 / (60.0 + rank as f32 + 1.0);
+                // Boost exact matches even in keyword-only mode
+                if keyword_score >= 100.0 {
+                    score *= 10.0;
+                }
+                (id, score)
+            })
+            .collect()
+    } else if !vector_results.is_empty() {
+        info!("Using vector-only results");
+        // Calculate position-based scores (1.0 for rank 0, decreasing)
+        vector_results
+            .into_iter()
+            .take(limit)
+            .enumerate()
+            .map(|(rank, id)| (id, 1.0 / (60.0 + rank as f32 + 1.0)))
+            .collect()
+    } else {
+        info!("No search results found");
+        Vec::new()
+    };
+
+    info!(
+        "Hybrid search completed in {:.2?}, returning {} results",
+        start_time.elapsed(),
+        final_results.len()
+    );
+
+    (final_results, enhanced_query)
+}
+
 /// Extracts all unique entities from a list of movies
 async fn extract_entities_from_movies(
     movies: &[FullMovie],
@@ -318,44 +584,30 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
         action.temperature,
     );
 
-    let embedding = embedding(&question)
-        .await
-        .ok();
+    // Wrap in Arc for cheap cloning
+    let arc_dvds = Arc::new(dvds);
 
-    // Search for movies using the embedding if available
-    let movie_ids = match embedding {
-        Some(embedding_vector) => {
-            info!("Searching for movies using embedding");
-            let search_result = database::search_movies(
-                embedding_vector,
-                15,
-            )
-            .await;
+    // Use hybrid search (keyword + vector with RRF fusion) - pass Arc::clone
+    // Enable enhancement for AI chat (disable_enhancement = false)
+    info!("Performing hybrid search for query: {}", question);
+    let (movie_results, _enhanced_query) = hybrid_search(&question, Arc::clone(&arc_dvds), 15, false).await;
 
-            if let Err(e) = &search_result {
-                error!(
-                    "Failed to search movies: {:#?}",
-                    e
-                );
-            }
-
-            search_result.ok()
-        }
-        None => None,
-    };
-
-    let full_movies = if let Some(movie_embeddings) = movie_ids {
-        // Extract just the movie IDs from the embeddings
-        let movie_ids: Vec<i32> = movie_embeddings
-            .into_iter()
-            .map(|m| m.id)
+    let full_movies = if !movie_results.is_empty() {
+        // Create lookup map
+        let movies_map: std::collections::HashMap<i32, &FullMovie> = arc_dvds
+            .iter()
+            .map(|movie| (movie.id, movie))
             .collect();
-        database::get_movies_by_ids(movie_ids)
-            .await
-            .unwrap_or(dvds)
+        
+        // Look up movies by ID (clone only for AI processing)
+        movie_results
+            .into_iter()
+            .filter_map(|(id, _score)| movies_map.get(&id).map(|&m| m.clone()))
+            .collect()
     } else {
-        dvds
-    }; // For now fall back to all dvds
+        info!("No search results, using all movies");
+        Arc::try_unwrap(arc_dvds).unwrap_or_else(|arc| (*arc).clone())
+    };
 
     info!(
         "Found {} matching movies",
