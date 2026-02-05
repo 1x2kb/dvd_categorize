@@ -70,7 +70,7 @@ pub async fn chat() -> impl axum::response::IntoResponse {
     )
 }
 
-#[instrument]
+#[instrument(skip(cache_state), fields(movie_count))]
 #[debug_handler]
 pub async fn export_csv(State(cache_state): State<CacheState>) -> impl axum::response::IntoResponse {
     let movies = {
@@ -81,8 +81,19 @@ pub async fn export_csv(State(cache_state): State<CacheState>) -> impl axum::res
         (*movies_guard).clone()
     };
 
+    let movie_count = movies.len();
+    tracing::Span::current().record("movie_count", movie_count);
+    
+    info!("Starting CSV export for {} movies", movie_count);
+
     match csv_utils::movies_to_csv(&movies) {
         Ok(csv) => {
+            let csv_size = csv.len();
+            info!(
+                "CSV export successful: {} movies exported, {} bytes",
+                movie_count,
+                csv_size
+            );
             (
                 StatusCode::OK,
                 [("Content-Type", "text/csv"), ("Content-Disposition", "attachment; filename=movies.csv")],
@@ -90,7 +101,7 @@ pub async fn export_csv(State(cache_state): State<CacheState>) -> impl axum::res
             )
         }
         Err(e) => {
-            error!("Failed to export CSV: {}", e);
+            error!("Failed to export CSV for {} movies: {}", movie_count, e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 [("Content-Type", "text/plain"), ("Content-Disposition", "")],
