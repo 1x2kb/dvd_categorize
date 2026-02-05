@@ -146,11 +146,10 @@ pub fn InsertMedia() -> Element {
                 div { class: "preview-section",
                     h3 { class: "preview-title", "Preview ({dvd_count} {movie_word} found)" }
                     {
-                        // Convert FullMovie to ScoredMovie for display (with 0 scores for preview)
+                        // Convert FullMovie to ScoredMovie for display (with 0 score for preview)
                         let scored_movies: Arc<Vec<ScoredMovie>> = Arc::new(
                             dvd_data().iter().map(|movie| ScoredMovie {
                                 movie: movie.clone(),
-                                text_score: 0,
                                 vector_score: 0.0,
                             }).collect()
                         );

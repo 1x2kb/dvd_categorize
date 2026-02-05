@@ -39,12 +39,7 @@ pub fn MovieGrid(props: MovieCardProps) -> Element {
                             span {
                                 class: "movie-info-label",
                                 style: "background: rgba(8, 145, 178, 0.2); padding: 2px 8px; border-radius: 4px; font-size: 12px;",
-                                "Text: {scored_movie.text_score}"
-                            }
-                            span {
-                                class: "movie-info-label",
-                                style: "background: rgba(14, 116, 144, 0.2); padding: 2px 8px; border-radius: 4px; font-size: 12px;",
-                                "Vector: {scored_movie.vector_score:.4}"
+                                "RRF Score: {scored_movie.vector_score:.4}"
                             }
                         }
 

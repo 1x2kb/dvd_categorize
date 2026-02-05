@@ -312,11 +312,12 @@ fn score_movie_by_keywords(
 }
 
 /// Performs keyword-based search on movies
+/// Returns Vec<(movie_id, keyword_score)> sorted by score descending
 fn keyword_search(
     movies: &[FullMovie],
     criteria: &SearchCriteria,
     limit: usize,
-) -> Vec<i32> {
+) -> Vec<(i32, f32)> {
     let mut scored_movies: Vec<(i32, f32)> = movies
         .iter()
         .map(|movie| {
@@ -329,19 +330,19 @@ fn keyword_search(
     // Sort by score descending
     scored_movies.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Return top N movie IDs
+    // Return top N with scores
     scored_movies
         .into_iter()
         .take(limit)
-        .map(|(id, _)| id)
         .collect()
 }
 
 /// Reciprocal Rank Fusion: Combines multiple ranked lists
 /// Formula: RRF_score = sum(1 / (k + rank)) where k=60 is standard
+/// Exact title matches (keyword_score >= 100) get massive boost to ensure they rank first
 /// Returns a vector of (movie_id, score) tuples sorted by score descending
 fn reciprocal_rank_fusion(
-    keyword_ranks: Vec<i32>,
+    keyword_results: Vec<(i32, f32)>,
     vector_ranks: Vec<i32>,
     k: f32,
 ) -> Vec<(i32, f32)> {
@@ -349,10 +350,17 @@ fn reciprocal_rank_fusion(
 
     let mut scores: HashMap<i32, f32> = HashMap::new();
 
-    // Add scores from keyword search
-    for (rank, movie_id) in keyword_ranks.iter().enumerate() {
-        let score = 1.0 / (k + rank as f32 + 1.0);
-        *scores.entry(*movie_id).or_insert(0.0) += score;
+    // Add scores from keyword search with exact match detection
+    for (rank, (movie_id, keyword_score)) in keyword_results.iter().enumerate() {
+        let mut rfr_score = 1.0 / (k + rank as f32 + 1.0);
+        
+        // BOOST: Exact title matches (score >= 100) get 10x multiplier
+        if *keyword_score >= 100.0 {
+            rfr_score *= 10.0;
+            info!("Exact title match detected for movie ID {}, boosting score", movie_id);
+        }
+        
+        *scores.entry(*movie_id).or_insert(0.0) += rfr_score;
     }
 
     // Add scores from vector search
@@ -399,7 +407,7 @@ pub async fn hybrid_search(
     if keyword_results.is_empty() {
         info!("Keyword search returned no results - will rely on vector search only");
     } else {
-        info!("Top keyword matches: {:?}", keyword_results.iter().take(5).collect::<Vec<_>>());
+        info!("Top keyword matches (ID, score): {:?}", keyword_results.iter().take(5).collect::<Vec<_>>());
     }
 
     // Enhance query for better semantic search (only if not disabled)
@@ -446,11 +454,19 @@ pub async fn hybrid_search(
     } else if !keyword_results.is_empty() {
         info!("Using keyword-only results");
         // Calculate position-based scores (1.0 for rank 0, decreasing)
+        // Keep keyword scores for exact match boosting
         keyword_results
             .into_iter()
             .take(limit)
             .enumerate()
-            .map(|(rank, id)| (id, 1.0 / (60.0 + rank as f32 + 1.0)))
+            .map(|(rank, (id, keyword_score))| {
+                let mut score = 1.0 / (60.0 + rank as f32 + 1.0);
+                // Boost exact matches even in keyword-only mode
+                if keyword_score >= 100.0 {
+                    score *= 10.0;
+                }
+                (id, score)
+            })
             .collect()
     } else if !vector_results.is_empty() {
         info!("Using vector-only results");

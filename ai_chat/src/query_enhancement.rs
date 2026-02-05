@@ -39,8 +39,9 @@ Rules:
 - Keep it concise (1-2 sentences max)
 - Focus on the theme, genre, or content
 - Use movie-related context
-- Do NOT add movies titles, actor names, or specific examples
-- Return ONLY the enhanced query, nothing else
+- Do NOT add movies titles, actor names, or specific examples. You MUST include titles or actors if the user typed them.
+- IMPORTANT! Return ONLY the enhanced query, nothing else. Do not provide a reason why you are returning this query. Return ONLY the query. This is crucial!
+- Do not include notes or explanations.
 
 Examples:
 User: "Robot"
@@ -53,7 +54,11 @@ User: "love story"
 You: romantic movies about love relationships and romance
 
 User: "funny"
-You: comedy films with humor and comedic elements"#;
+You: comedy films with humor and comedic elements
+
+User: "Brad Pitt"
+You: movies including Brad Pitt as staring or signifigant supporting role.
+"#;
 
     let user_message = format!("User: \"{}\"\nYou:", query);
     
@@ -67,8 +72,43 @@ You: comedy films with humor and comedic elements"#;
     
     match ollama.send_chat_messages(request).await {
         Ok(response) => {
-            let enhanced = response.message.content.trim().to_string();
-            debug!("Enhanced query: {} -> {}", query, enhanced);
+            let original_enhanced = response.message.content.trim().to_string();
+            let mut enhanced = original_enhanced.clone();
+            let mut was_cleaned = false;
+            
+            // 1. Keep only the first line (remove everything after newline)
+            if let Some(first_line) = enhanced.lines().next() {
+                if enhanced.lines().count() > 1 {
+                    debug!("Removed content after first line");
+                    was_cleaned = true;
+                }
+                enhanced = first_line.trim().to_string();
+            }
+            
+            // 2. Remove everything after opening parenthesis (including the parenthesis)
+            if let Some(start) = enhanced.find('(') {
+                let removed = &enhanced[start..];
+                debug!("Stripped content after parenthesis: {}", removed);
+                enhanced = enhanced[..start].trim().to_string();
+                was_cleaned = true;
+            }
+            
+            // 3. Remove common explanation prefixes
+            let prefixes = ["Note:", "Explanation:", "Justification:", "Reasoning:", "Because:", "This is"];
+            for prefix in &prefixes {
+                if enhanced.starts_with(prefix) {
+                    debug!("Stripped '{}' prefix from enhanced query", prefix);
+                    enhanced = enhanced[prefix.len()..].trim().to_string();
+                    was_cleaned = true;
+                }
+            }
+            
+            if was_cleaned {
+                debug!("Cleaned enhanced query: {} -> {}", original_enhanced, enhanced);
+            } else {
+                debug!("Enhanced query: {} -> {}", query, enhanced);
+            }
+            
             enhanced
         }
         Err(e) => {

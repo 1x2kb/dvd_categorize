@@ -166,7 +166,6 @@ pub struct FullMovie {
 pub struct ScoredMovie {
     #[serde(flatten)]
     pub movie: FullMovie,
-    pub text_score: usize,
     pub vector_score: f32,
 }
 

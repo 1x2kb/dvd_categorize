@@ -374,7 +374,6 @@ async fn combined_search(
         .filter_map(|(id, rfr_score)| {
             movies_map.get(&id).map(|&movie| ScoredMovie {
                 movie: movie.clone(),
-                text_score: 0, // RRF combines both, so we don't separate them
                 vector_score: rfr_score,
             })
         })
@@ -387,11 +386,10 @@ async fn combined_search(
         info!("Top {} search results:", scored_movies.len().min(5));
         for (i, scored_movie) in scored_movies.iter().take(5).enumerate() {
             info!(
-                "  {}. {} (ID: {}, Text: {}, Vector: {:.4})",
+                "  {}. {} (ID: {}, RRF Score: {:.4})",
                 i + 1,
                 scored_movie.movie.name,
                 scored_movie.movie.id,
-                scored_movie.text_score,
                 scored_movie.vector_score
             );
         }
