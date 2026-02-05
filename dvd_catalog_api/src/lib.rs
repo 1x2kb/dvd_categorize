@@ -83,12 +83,10 @@ pub async fn export_csv(State(cache_state): State<CacheState>) -> impl axum::res
 
     match csv_utils::movies_to_csv(&movies) {
         Ok(csv) => {
-            let headers = "Title,Description,Actors,Genres,Director\n";
-            let csv_with_headers = format!("{}{}", headers, csv);
             (
                 StatusCode::OK,
                 [("Content-Type", "text/csv"), ("Content-Disposition", "attachment; filename=movies.csv")],
-                csv_with_headers,
+                csv,
             )
         }
         Err(e) => {

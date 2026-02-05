@@ -7,6 +7,9 @@ use std::error::Error;
 pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
     let mut writer = Writer::from_writer(vec![]);
 
+    // Write header row
+    writer.write_record(&["Title", "Description", "Actors", "Genres", "Director", "AddedOn"])?;
+
     for movie in movies {
         let actors = movie
             .actors
