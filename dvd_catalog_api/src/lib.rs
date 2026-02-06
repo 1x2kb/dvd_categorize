@@ -142,14 +142,7 @@ pub async fn export_csv(
 #[instrument]
 #[debug_handler]
 pub async fn preview_csv(Json(value): Json<CsvInput>) -> impl axum::response::IntoResponse {
-    let headers = ["Title", "Description", "Actors", "Genres", "Director"];
-    let csv_with_headers = format!(
-        "{}\n{}",
-        headers.join(","),
-        value.input
-    );
-
-    let movies = csv_utils::parse_csv(csv_with_headers.as_bytes()).unwrap_or_else(
+    let movies = csv_utils::parse_csv(value.input.as_bytes()).unwrap_or_else(
         |e| {
             error!(
                 "Failed to parse CSV: {}",
@@ -177,14 +170,7 @@ pub async fn parse_csv(
         String,
     ),
 > {
-    let headers = ["Title", "Description", "Actors", "Genres", "Director"];
-    let csv_with_headers = format!(
-        "{}\n{}",
-        headers.join(","),
-        value.input
-    );
-
-    let movies = match csv_utils::parse_csv(csv_with_headers.as_bytes()) {
+    let movies = match csv_utils::parse_csv(value.input.as_bytes()) {
         Ok(movies) => movies,
         Err(e) => {
             let error = format!(

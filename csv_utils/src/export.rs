@@ -118,4 +118,5 @@ mod tests {
         assert!(csv.contains("Action | Drama"));
         assert!(csv.contains("Test Director"));
     }
+
 }
