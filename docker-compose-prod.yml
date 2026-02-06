@@ -110,6 +110,9 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres-prod:5432/app_db
+      RUST_LOG: "info,csv_reader=debug,database=debug,ai_chat=debug,models=debug,csv_utils=debug"
+      OLLAMA_HOST: ollama-prod
+      OLLAMA_PORT: "11434"
     volumes:
       - ./movies.csv:/app/movies.csv:ro
     restart: "no"

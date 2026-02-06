@@ -18,6 +18,7 @@ RUN apt-get update && \
         ca-certificates \
         libssl3 \
         libpq5 \
+        tini \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -31,4 +32,5 @@ RUN chown appuser:appuser /usr/local/bin/csv_reader
 
 USER appuser
 
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["csv_reader"]
