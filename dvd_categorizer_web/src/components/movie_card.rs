@@ -1,6 +1,6 @@
+use chrono::{DateTime, Local, NaiveDateTime};
 pub use dioxus::prelude::*;
 use models::FullMovie;
-use chrono::{DateTime, Local, NaiveDateTime};
 
 #[component]
 pub fn MovieCard(movie: ReadSignal<FullMovie>) -> Element {

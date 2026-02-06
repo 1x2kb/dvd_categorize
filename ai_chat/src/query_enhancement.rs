@@ -4,34 +4,51 @@ use ollama_rs::{
     Ollama,
 };
 
+use crate::{DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_PORT, DEFAULT_SMALL_MODEL};
+
 /// Enhances a user query for better semantic search by expanding it into a more descriptive phrase
-/// 
+///
 /// # Arguments
 /// * `query` - The original user query
-/// 
+///
 /// # Returns
 /// An enhanced query string suitable for embedding, or the original query if enhancement fails
 pub async fn enhance_query_for_embedding(query: &str) -> String {
-    debug!("Enhancing query for embedding: {}", query);
-    
+    debug!(
+        "Enhancing query for embedding: {}",
+        query
+    );
+
     // Skip enhancement for already descriptive queries (3+ words)
-    if query.split_whitespace().count() >= 3 {
+    if query
+        .split_whitespace()
+        .count()
+        >= 3
+    {
         debug!("Query already descriptive, skipping enhancement");
         return query.to_string();
     }
-    
-    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
-    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
-    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
-    
+
+    let ollama_host =
+        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
+    let ollama_port =
+        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
+    let ollama_url = format!(
+        "http://{}:{}",
+        ollama_host, ollama_port
+    );
+
     let ollama = match ollama_url.parse() {
         Ok(url) => Ollama::from_url(url),
         Err(e) => {
-            error!("Failed to parse Ollama URL: {}", e);
+            error!(
+                "Failed to parse Ollama URL: {}",
+                e
+            );
             return query.to_string();
         }
     };
-    
+
     let system_prompt = r#"You are a query enhancement assistant for movie search. 
 Your job is to take a short user query and expand it into a descriptive phrase that will work better for semantic search.
 
@@ -60,59 +77,104 @@ User: "Brad Pitt"
 You: movies including Brad Pitt as staring or signifigant supporting role.
 "#;
 
-    let user_message = format!("User: \"{}\"\nYou:", query);
-    
+    let user_message = format!(
+        "User: \"{}\"\nYou:",
+        query
+    );
+
     let request = ChatMessageRequest::new(
-        "phi3.5".to_string(),
+        DEFAULT_SMALL_MODEL.to_string(),
         vec![
             ChatMessage::system(system_prompt.to_string()),
             ChatMessage::user(user_message),
         ],
     );
-    
-    match ollama.send_chat_messages(request).await {
+
+    match ollama
+        .send_chat_messages(request)
+        .await
+    {
         Ok(response) => {
-            let original_enhanced = response.message.content.trim().to_string();
+            let original_enhanced = response
+                .message
+                .content
+                .trim()
+                .to_string();
             let mut enhanced = original_enhanced.clone();
             let mut was_cleaned = false;
-            
+
             // 1. Keep only the first line (remove everything after newline)
-            if let Some(first_line) = enhanced.lines().next() {
-                if enhanced.lines().count() > 1 {
+            if let Some(first_line) = enhanced
+                .lines()
+                .next()
+            {
+                if enhanced
+                    .lines()
+                    .count()
+                    > 1
+                {
                     debug!("Removed content after first line");
                     was_cleaned = true;
                 }
-                enhanced = first_line.trim().to_string();
+                enhanced = first_line
+                    .trim()
+                    .to_string();
             }
-            
+
             // 2. Remove everything after opening parenthesis (including the parenthesis)
             if let Some(start) = enhanced.find('(') {
                 let removed = &enhanced[start..];
-                debug!("Stripped content after parenthesis: {}", removed);
-                enhanced = enhanced[..start].trim().to_string();
+                debug!(
+                    "Stripped content after parenthesis: {}",
+                    removed
+                );
+                enhanced = enhanced[..start]
+                    .trim()
+                    .to_string();
                 was_cleaned = true;
             }
-            
+
             // 3. Remove common explanation prefixes
-            let prefixes = ["Note:", "Explanation:", "Justification:", "Reasoning:", "Because:", "This is"];
+            let prefixes = [
+                "Note:",
+                "Explanation:",
+                "Justification:",
+                "Reasoning:",
+                "Because:",
+                "This is",
+            ];
             for prefix in &prefixes {
                 if enhanced.starts_with(prefix) {
-                    debug!("Stripped '{}' prefix from enhanced query", prefix);
-                    enhanced = enhanced[prefix.len()..].trim().to_string();
+                    debug!(
+                        "Stripped '{}' prefix from enhanced query",
+                        prefix
+                    );
+                    enhanced = enhanced[prefix.len()..]
+                        .trim()
+                        .to_string();
                     was_cleaned = true;
                 }
             }
-            
+
             if was_cleaned {
-                debug!("Cleaned enhanced query: {} -> {}", original_enhanced, enhanced);
+                debug!(
+                    "Cleaned enhanced query: {} -> {}",
+                    original_enhanced, enhanced
+                );
             } else {
-                debug!("Enhanced query: {} -> {}", query, enhanced);
+                debug!(
+                    "Enhanced query: {} -> {}",
+                    query, enhanced
+                );
             }
-            
+
             enhanced
         }
         Err(e) => {
-            error!("Failed to enhance query: {}", e);
+            error!(
+                "Failed to enhance query: {}",
+                e
+            );
             query.to_string()
         }
     }

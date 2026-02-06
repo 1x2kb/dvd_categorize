@@ -21,6 +21,9 @@ pub use full_movies::*;
 pub use genres::*;
 pub use movies::*;
 
+/// Type alias for database operation results
+pub type DbResult<T> = Result<T, DatabaseError>;
+
 #[cfg(feature = "testing")]
 pub trait Random {
     fn random() -> Self;
@@ -48,24 +51,45 @@ impl Error for DatabaseError {}
 
 impl Display for DatabaseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{:#?}",
-            self
-        )
+        match self {
+            DatabaseError::ConnectionError(e) => write!(
+                f,
+                "Database connection error: {}",
+                e
+            ),
+            DatabaseError::DieselError(e) => write!(
+                f,
+                "Database query error: {}",
+                e
+            ),
+        }
     }
 }
 
-// TODO: Setup pool in main.rs?
+/// Establishes a connection to the PostgreSQL database.
+///
+/// # Errors
+/// Returns `DatabaseError` if the DATABASE_URL environment variable is not set
+/// or if the connection cannot be established.
+///
+/// # Panics
+/// Panics if the DATABASE_URL environment variable is not set.
 pub async fn get_database_connection() -> Result<AsyncPgConnection, DatabaseError> {
     let database_url =
-        env::var("DATABASE_URL").expect("No database information found, cannot connect");
+        env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
     AsyncPgConnection::establish(&database_url)
         .await
         .map_err(DatabaseError::from)
 }
 
-pub async fn get_movies() -> Result<Vec<FullMovie>, DatabaseError> {
+/// Retrieves all movies from the database with their associated data.
+///
+/// # Returns
+/// A vector of `FullMovie` objects containing movies with their actors, directors, and genres.
+///
+/// # Errors
+/// Returns `DatabaseError` if the database connection fails or the query fails.
+pub async fn get_movies() -> DbResult<Vec<FullMovie>> {
     let mut connection = get_database_connection().await?;
 
     let movies = schema::movie::table
@@ -88,13 +112,13 @@ pub async fn get_movies() -> Result<Vec<FullMovie>, DatabaseError> {
             .select(schema::actor::all_columns)
             .load::<Actor>(&mut connection)
             .await
-            .unwrap_or_else(|_| Vec::new());
+            .unwrap_or_default();
 
         let genres = MovieGenre::belonging_to(&movie)
             .select(movie_genre::genre)
             .load::<String>(&mut connection)
             .await
-            .unwrap_or_else(|_| Vec::new());
+            .unwrap_or_default();
 
         full_movies.push(
             FullMovie::from((
@@ -110,7 +134,17 @@ pub async fn get_movies() -> Result<Vec<FullMovie>, DatabaseError> {
     Ok(full_movies)
 }
 
-pub async fn get_movie(id: i32) -> Result<FullMovie, DatabaseError> {
+/// Retrieves a single movie by its ID.
+///
+/// # Arguments
+/// * `id` - The unique identifier of the movie
+///
+/// # Returns
+/// A `FullMovie` object with all associated data.
+///
+/// # Errors
+/// Returns `DatabaseError` if the movie is not found or database query fails.
+pub async fn get_movie(id: i32) -> DbResult<FullMovie> {
     let mut connection = get_database_connection().await?;
 
     let (movie, director) = schema::movie::table
@@ -145,7 +179,20 @@ pub async fn get_movie(id: i32) -> Result<FullMovie, DatabaseError> {
     )
 }
 
-pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, DatabaseError> {
+/// Retrieves multiple movies by their IDs in the order specified.
+///
+/// This function preserves the order of the input IDs, which is important for
+/// maintaining vector search rankings.
+///
+/// # Arguments
+/// * `ids` - Vector of movie IDs to retrieve
+///
+/// # Returns
+/// A vector of `FullMovie` objects in the same order as the input IDs.
+///
+/// # Errors
+/// Returns `DatabaseError` if the database connection or query fails.
+pub async fn get_movies_by_ids(ids: Vec<i32>) -> DbResult<Vec<FullMovie>> {
     let mut connection = get_database_connection().await?;
 
     // Early return for empty input
@@ -211,33 +258,81 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> Result<Vec<FullMovie>, Database
     }
 
     // Create a lookup map for movies by ID
-    let mut movies_map: HashMap<i32, (Movie, Option<Director>)> = movies_with_directors
+    let mut movies_map: HashMap<
+        i32,
+        (
+            Movie,
+            Option<Director>,
+        ),
+    > = movies_with_directors
         .into_iter()
-        .map(|(movie, director)| (movie.id, (movie, director)))
+        .map(
+            |(movie, director)| {
+                (
+                    movie.id,
+                    (
+                        movie, director,
+                    ),
+                )
+            },
+        )
         .collect();
 
     // Assemble results in the SAME ORDER as input IDs (preserves vector search ranking)
     let results: Vec<FullMovie> = ids
         .into_iter()
-        .filter_map(|id| {
-            movies_map.remove(&id).map(|(movie, director)| FullMovie {
-                id: movie.id,
-                name: movie.name,
-                director,
-                description: movie.description,
-                actors: actors_map.remove(&movie.id).unwrap_or_default(),
-                genres: genres_map.remove(&movie.id).unwrap_or_default(),
-                embedding: movie.embedding.map(|v| v.into()),
-                added_on: Some(movie.added_on.to_string()),
-                location: Some(movie.location),
-            })
-        })
+        .filter_map(
+            |id| {
+                movies_map
+                    .remove(&id)
+                    .map(
+                        |(movie, director)| FullMovie {
+                            id: movie.id,
+                            name: movie.name,
+                            director,
+                            description: movie.description,
+                            actors: actors_map
+                                .remove(&movie.id)
+                                .unwrap_or_default(),
+                            genres: genres_map
+                                .remove(&movie.id)
+                                .unwrap_or_default(),
+                            embedding: movie
+                                .embedding
+                                .map(|v| v.into()),
+                            added_on: Some(
+                                movie
+                                    .added_on
+                                    .to_string(),
+                            ),
+                            location: Some(movie.location),
+                        },
+                    )
+            },
+        )
         .collect();
 
     Ok(results)
 }
 
-pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, DatabaseError> {
+/// Inserts a new movie into the database with all associated data.
+///
+/// This function:
+/// - Generates embeddings for the movie using AI
+/// - Inserts the director (if present)
+/// - Inserts actors
+/// - Creates many-to-many relationships
+/// - Inserts genre associations
+///
+/// # Arguments
+/// * `full_movie` - The movie data to insert
+///
+/// # Returns
+/// The inserted movie with its assigned database ID.
+///
+/// # Errors
+/// Returns `DatabaseError` if insertion fails or embedding generation fails.
+pub async fn insert_full_movie(full_movie: FullMovie) -> DbResult<FullMovie> {
     let mut conn = get_database_connection().await?;
 
     let actors: String = full_movie
@@ -341,7 +436,7 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
         .map(|actor| NewActor { name: actor.name })
         .collect();
 
-    let actors = diesel::insert_into(schema::actor::table)
+    let actor_ids = diesel::insert_into(schema::actor::table)
         .values(&actors)
         .on_conflict(schema::actor::name)
         .do_update()
@@ -350,12 +445,12 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
         .get_results::<i32>(&mut conn)
         .await?;
 
-    let new_actor_movies: Vec<NewMovieActor> = actors
+    let new_actor_movies: Vec<NewMovieActor> = actor_ids
         .into_iter()
         .map(|actor_id| NewMovieActor { movie_id, actor_id })
         .collect();
 
-    let _ = diesel::insert_into(schema::movie_actor::table)
+    diesel::insert_into(schema::movie_actor::table)
         .values(&new_actor_movies)
         .execute(&mut conn)
         .await?;
@@ -370,20 +465,30 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> Result<FullMovie, Datab
             .map(|genre| NewMovieGenre { movie_id, genre })
             .collect();
 
-        let _ = diesel::insert_into(schema::movie_genre::table)
+        diesel::insert_into(schema::movie_genre::table)
             .values(&movie_genres)
             .execute(&mut conn)
-            .await;
+            .await?;
     }
 
-    // TODO: Return results of insert so lookup is unnecessary.
     get_movie(movie_id).await
 }
 
-pub async fn search_movies(
-    embedding: Vec<f32>,
-    limit: i64,
-) -> Result<Vec<FullMovie>, DatabaseError> {
+/// Performs vector similarity search to find movies similar to the given embedding.
+///
+/// Uses PostgreSQL's pgvector extension to find movies with similar embeddings
+/// based on cosine distance.
+///
+/// # Arguments
+/// * `embedding` - The query embedding vector
+/// * `limit` - Maximum number of results to return
+///
+/// # Returns
+/// A vector of movies ordered by similarity (most similar first).
+///
+/// # Errors
+/// Returns `DatabaseError` if the database query fails.
+pub async fn search_movies(embedding: Vec<f32>, limit: i64) -> DbResult<Vec<FullMovie>> {
     let mut conn = get_database_connection().await?;
 
     // Get the IDs of the most similar movies
@@ -395,7 +500,13 @@ pub async fn search_movies(
         .load::<i32>(&mut conn)
         .await?;
 
-    debug!("pgvector returned movie IDs in order: {:?}", movie_ids.iter().take(10).collect::<Vec<_>>());
+    debug!(
+        "pgvector returned movie IDs in order: {:?}",
+        movie_ids
+            .iter()
+            .take(10)
+            .collect::<Vec<_>>()
+    );
 
     // Use the optimized helper function to get full movie data
     get_movies_by_ids(movie_ids).await
