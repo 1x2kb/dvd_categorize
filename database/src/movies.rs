@@ -33,12 +33,12 @@ pub async fn update_movie_location(
     new_location: String,
 ) -> Result<(), DatabaseError> {
     let mut connection = crate::get_database_connection().await?;
-    
+
     diesel::update(schema::movie::table.find(movie_id))
         .set(schema::movie::location.eq(new_location))
         .execute(&mut connection)
         .await
         .map_err(DatabaseError::from)?;
-    
+
     Ok(())
 }

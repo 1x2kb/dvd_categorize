@@ -1,5 +1,5 @@
-use dioxus::prelude::*;
 use dioxus::document::eval;
+use dioxus::prelude::*;
 use models::FullMovie;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
@@ -20,39 +20,41 @@ pub struct VirtualMovieGridProps {
 pub fn VirtualMovieGrid(props: VirtualMovieGridProps) -> Element {
     let mut scroll_top = use_signal(|| 0.0);
     let mut viewport_height = use_signal(|| 800.0); // Default viewport height
-    
+
     let movies = &props.movies;
     let total_items = movies.len();
-    
+
     // Calculate total number of rows
     let total_rows = (total_items + ITEMS_PER_ROW - 1) / ITEMS_PER_ROW;
     let total_height = total_rows as f64 * ITEM_HEIGHT;
-    
+
     // Calculate which rows should be visible
     let scroll_pos = scroll_top();
     let viewport_h = viewport_height();
-    
+
     let start_row = ((scroll_pos / ITEM_HEIGHT).floor() as usize).saturating_sub(BUFFER_ROWS);
     let visible_rows = ((viewport_h / ITEM_HEIGHT).ceil() as usize) + (BUFFER_ROWS * 2);
     let end_row = (start_row + visible_rows).min(total_rows);
-    
+
     // Calculate which items to render
     let start_index = start_row * ITEMS_PER_ROW;
     let end_index = (end_row * ITEMS_PER_ROW).min(total_items);
-    
+
     // Height of the spacer before visible items
     let offset_y = start_row as f64 * ITEM_HEIGHT;
-    
+
     // Get the visible slice of movies
     let visible_movies: Vec<FullMovie> = movies[start_index..end_index].to_vec();
     let visible_movies_arc = Arc::new(visible_movies);
-    
+
     // Initialize container height on mount and handle window resize
-    use_effect(move || {
-        spawn(async move {
-            // Function to calculate and set height
-            let calculate_height = || async move {
-                let script = r#"
+    use_effect(
+        move || {
+            spawn(
+                async move {
+                    // Function to calculate and set height
+                    let calculate_height = || async move {
+                        let script = r#"
                     const container = document.getElementById('virtual-scroll-container');
                     if (container) {
                         // Calculate available height: viewport height - navbar - margins
@@ -68,100 +70,145 @@ pub fn VirtualMovieGrid(props: VirtualMovieGridProps) -> Element {
                     }
                     return 800;
                 "#;
-                
-                if let Ok(result) = eval(script).await {
-                    if let Some(height) = result.as_f64() {
-                        viewport_height.set(height);
-                    }
-                }
-            };
-            
-            // Set initial height
-            calculate_height().await;
-            
-            // Add resize listener using web_sys for proper state updates
-            if let Some(win) = window() {
-                // Create synchronous resize handler to ensure immediate updates
-                let closure = Closure::wrap(Box::new(move || {
-                    if let Some(resize_window) = window() {
-                        if let Some(document) = resize_window.document() {
-                            if let Some(container) = document.get_element_by_id("virtual-scroll-container") {
-                                if let Some(html_container) = container.dyn_ref::<web_sys::HtmlElement>() {
-                                    // Get navbar height
-                                    let navbar_height = document
-                                        .get_element_by_id("navbar")
-                                        .and_then(|nav| nav.dyn_ref::<web_sys::HtmlElement>().map(|e| e.offset_height()))
-                                        .unwrap_or(0);
-                                    
-                                    // Calculate new height
-                                    let viewport_height_val = resize_window.inner_height().ok()
-                                        .and_then(|h| h.as_f64())
-                                        .unwrap_or(800.0);
-                                    let available_height = viewport_height_val - navbar_height as f64 - 40.0;
-                                    
-                                    // Update CSS immediately
-                                    let height_style = format!("{}px", available_height);
-                                    let _ = html_container.style().set_property("height", &height_style);
-                                    
-                                    // Update Rust state immediately
-                                    viewport_height.set(available_height);
-                                }
+
+                        if let Ok(result) = eval(script).await {
+                            if let Some(height) = result.as_f64() {
+                                viewport_height.set(height);
                             }
                         }
+                    };
+
+                    // Set initial height
+                    calculate_height().await;
+
+                    // Add resize listener using web_sys for proper state updates
+                    if let Some(win) = window() {
+                        // Create synchronous resize handler to ensure immediate updates
+                        let closure = Closure::wrap(
+                            Box::new(
+                                move || {
+                                    if let Some(resize_window) = window() {
+                                        if let Some(document) = resize_window.document() {
+                                            if let Some(container) = document
+                                                .get_element_by_id("virtual-scroll-container")
+                                            {
+                                                if let Some(html_container) =
+                                                    container.dyn_ref::<web_sys::HtmlElement>()
+                                                {
+                                                    // Get navbar height
+                                                    let navbar_height = document
+                                                        .get_element_by_id("navbar")
+                                                        .and_then(
+                                                            |nav| {
+                                                                nav.dyn_ref::<web_sys::HtmlElement>(
+                                                                )
+                                                                .map(|e| e.offset_height())
+                                                            },
+                                                        )
+                                                        .unwrap_or(0);
+
+                                                    // Calculate new height
+                                                    let viewport_height_val = resize_window
+                                                        .inner_height()
+                                                        .ok()
+                                                        .and_then(|h| h.as_f64())
+                                                        .unwrap_or(800.0);
+                                                    let available_height = viewport_height_val
+                                                        - navbar_height as f64
+                                                        - 40.0;
+
+                                                    // Update CSS immediately
+                                                    let height_style = format!(
+                                                        "{}px",
+                                                        available_height
+                                                    );
+                                                    let _ = html_container
+                                                        .style()
+                                                        .set_property(
+                                                            "height",
+                                                            &height_style,
+                                                        );
+
+                                                    // Update Rust state immediately
+                                                    viewport_height.set(available_height);
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                            ) as Box<dyn FnMut()>,
+                        );
+
+                        let _ = win.add_event_listener_with_callback(
+                            "resize",
+                            closure
+                                .as_ref()
+                                .unchecked_ref(),
+                        );
+                        closure.forget(); // Keep the closure alive for the component lifetime
                     }
-                }) as Box<dyn FnMut()>);
-                
-                let _ = win.add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref());
-                closure.forget(); // Keep the closure alive for the component lifetime
-            }
-        });
-    });
-    
+                },
+            );
+        },
+    );
+
     // Throttle scroll updates using requestAnimationFrame
     let mut scroll_pending = use_signal(|| false);
-    
+
     let handle_scroll = move |_evt: Event<ScrollData>| {
         // Only schedule an update if one isn't already pending
         if !scroll_pending() {
             scroll_pending.set(true);
-            
+
             if let Some(win) = window() {
-                let closure = Closure::once(Box::new(move || {
-                    // Update scroll position on next animation frame
-                    if let Some(window) = window() {
-                        if let Some(document) = window.document() {
-                            if let Some(element) = document.get_element_by_id("virtual-scroll-container") {
-                                if let Some(html_element) = element.dyn_ref::<web_sys::HtmlElement>() {
-                                    let scroll_val = html_element.scroll_top() as f64;
-                                    scroll_top.set(scroll_val);
+                let closure = Closure::once(
+                    Box::new(
+                        move || {
+                            // Update scroll position on next animation frame
+                            if let Some(window) = window() {
+                                if let Some(document) = window.document() {
+                                    if let Some(element) =
+                                        document.get_element_by_id("virtual-scroll-container")
+                                    {
+                                        if let Some(html_element) =
+                                            element.dyn_ref::<web_sys::HtmlElement>()
+                                        {
+                                            let scroll_val = html_element.scroll_top() as f64;
+                                            scroll_top.set(scroll_val);
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    }
-                    scroll_pending.set(false);
-                }) as Box<dyn FnOnce()>);
-                
-                let _ = win.request_animation_frame(closure.as_ref().unchecked_ref());
+                            scroll_pending.set(false);
+                        },
+                    ) as Box<dyn FnOnce()>,
+                );
+
+                let _ = win.request_animation_frame(
+                    closure
+                        .as_ref()
+                        .unchecked_ref(),
+                );
                 closure.forget();
             }
         }
     };
-    
+
     rsx! {
         div {
             id: "virtual-scroll-container",
             class: "virtual-scroll-container",
             style: "overflow-y: auto; position: relative;",
             onscroll: handle_scroll,
-            
+
             // Total height container to maintain scroll area
             div {
                 style: "height: {total_height}px; position: relative;",
-                
+
                 // Offset container for visible items
                 div {
                     style: "position: absolute; top: {offset_y}px; left: 0; right: 0;",
-                    
+
                     // Render visible movies using the same grid structure as MovieGrid
                     div {
                         class: "movie-grid movie-grid-cols-3",

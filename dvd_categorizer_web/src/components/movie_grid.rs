@@ -1,28 +1,42 @@
+use chrono::{DateTime, Local, NaiveDateTime};
 use dioxus::prelude::*;
 use models::{ScoredMovie, UpdateLocationRequest};
 use std::sync::Arc;
-use chrono::{DateTime, Local, NaiveDateTime};
 
 async fn update_location_on_server(movie_id: i32, location: String) -> Result<(), String> {
     let window = web_sys::window().ok_or("No window")?;
-    let hostname = window.location().hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+    let hostname = window
+        .location()
+        .hostname()
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
     let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
-    
-    let request = UpdateLocationRequest {
-        movie_id,
-        location,
-    };
-    
+
+    let request = UpdateLocationRequest { movie_id, location };
+
     let client = reqwest::Client::new();
     client
         .post(format!("http://{hostname}:{server_port}/movie/location"))
         .json(&request)
         .send()
         .await
-        .map_err(|e| format!("Request failed: {}", e))?
+        .map_err(
+            |e| {
+                format!(
+                    "Request failed: {}",
+                    e
+                )
+            },
+        )?
         .error_for_status()
-        .map_err(|e| format!("Server error: {}", e))?;
-    
+        .map_err(
+            |e| {
+                format!(
+                    "Server error: {}",
+                    e
+                )
+            },
+        )?;
+
     Ok(())
 }
 
@@ -37,10 +51,21 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
     let mut location_input = use_signal(String::new);
     let mut is_saving = use_signal(|| false);
     let mut save_error = use_signal(|| None::<String>);
-    
-    let movie_id = props.scored_movie.movie.id;
-    let location_opt = use_memo(move || props.scored_movie.movie.location.clone());
-    
+
+    let movie_id = props
+        .scored_movie
+        .movie
+        .id;
+    let location_opt = use_memo(
+        move || {
+            props
+                .scored_movie
+                .movie
+                .location
+                .clone()
+        },
+    );
+
     rsx! {
         div {
             class: "movie-card",
@@ -175,7 +200,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                     div {
                         class: "movie-info-row",
                         style: "margin-top: 8px; font-size: 12px;",
-                        
+
                         if editing() {
                             // Edit mode
                             div {
@@ -197,7 +222,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                                         spawn(async move {
                                             is_saving.set(true);
                                             save_error.set(None);
-                                            
+
                                             match update_location_on_server(movie_id, new_location).await {
                                                 Ok(_) => {
                                                     log::info!("Successfully updated location for movie {}", movie_id);
@@ -208,7 +233,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                                                     save_error.set(Some(e));
                                                 }
                                             }
-                                            
+
                                             is_saving.set(false);
                                         });
                                     },
@@ -230,7 +255,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                                     "Cancel"
                                 }
                             }
-                            
+
                             // Show error if present
                             if let Some(error) = save_error() {
                                 div {

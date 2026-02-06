@@ -1,3 +1,4 @@
+use crate::{DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_PORT};
 use log::debug;
 use ollama_rs::{
     generation::{
@@ -23,8 +24,10 @@ where
     T: Into<String>,
 {
     // Use ollama service name for Docker container communication
-    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
-    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
+    let ollama_host =
+        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
+    let ollama_port =
+        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
 
     let ollama_url = format!(
         "http://{}:{}",

@@ -7,24 +7,25 @@ use models::{FullMovie, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovie
 ///
 /// TODO: Needs refactor
 pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), Box<dyn Error>> {
-    let (mut actors, genres, mut directors) = (
+    let (mut actors, _genres, mut directors) = (
         get_unique_actors(&full_movies),
         get_unique_genres(&full_movies),
         get_unique_directors(&full_movies),
     );
 
+    // Sort results for binary search
     actors.sort_by(
         |a, b| {
             a.name
                 .cmp(&b.name)
         },
-    ); // Sort results for binary search.
+    );
     directors.sort_by(
         |a, b| {
             a.name
                 .cmp(&b.name)
         },
-    ); // Sort results for binary search
+    );
 
     let mut connection = crate::get_database_connection().await?;
     let actors = crate::insert_actors(
@@ -32,7 +33,6 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
         &mut connection,
     )
     .await?;
-
     let directors = crate::insert_directors(
         &directors,
         &mut connection,
@@ -43,7 +43,6 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
         .iter()
         .map(|movie| movie.embedding_str())
         .collect();
-
     let embeddings = ai_chat::get_embeddings(
         embeddings,
         ai_chat::EMBEDDING_MODEL,
@@ -83,7 +82,9 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
                     .clone(),
                 embedding: Some(embedding.into()),
                 added_on: None,
-                location: movie.location.clone(),
+                location: movie
+                    .location
+                    .clone(),
             },
         )
         .collect();
@@ -141,7 +142,7 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
         )
         .collect();
 
-    let movie_actors = crate::insert_movie_actors(
+    let _movie_actors = crate::insert_movie_actors(
         &movie_actors,
         &mut connection,
     )
@@ -180,7 +181,7 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
         )
         .collect();
 
-    let movie_genres: Vec<models::MovieGenre> = crate::insert_movie_genres(
+    let _movie_genres: Vec<models::MovieGenre> = crate::insert_movie_genres(
         &movie_genres,
         &mut connection,
     )
@@ -233,20 +234,17 @@ fn get_unique_genres(movies: &[FullMovie]) -> HashSet<&str> {
 fn get_unique_directors(movies: &[FullMovie]) -> Vec<NewDirector> {
     movies
         .iter()
-        .flat_map(
+        .filter_map(
             |movie| {
                 movie
                     .director
                     .as_ref()
                     .map(
                         |d| {
-                            Some(
-                                d.name
-                                    .as_str(),
-                            )
+                            d.name
+                                .as_str()
                         },
                     )
-                    .unwrap_or(None)
             },
         )
         .collect::<HashSet<&str>>()
