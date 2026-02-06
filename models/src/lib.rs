@@ -208,10 +208,19 @@ impl FullMovie {
         format!(
             "{} {} {} {} {}",
             self.name,
-            self.description.as_ref().unwrap_or(&"".to_string()),
+            self.description
+                .as_ref()
+                .unwrap_or(&"".to_string()),
             genres,
             actors,
-            self.director.as_ref().map(|d| d.name.as_str()).unwrap_or("")
+            self.director
+                .as_ref()
+                .map(
+                    |d| d
+                        .name
+                        .as_str()
+                )
+                .unwrap_or("")
         )
     }
 }
@@ -350,7 +359,11 @@ impl
                 .embedding
                 .map(|v| v.into()),
             #[cfg(feature = "postgres")]
-            added_on: Some(movie.added_on.to_string()),
+            added_on: Some(
+                movie
+                    .added_on
+                    .to_string(),
+            ),
             #[cfg(not(feature = "postgres"))]
             added_on: None,
             location: Some(movie.location),

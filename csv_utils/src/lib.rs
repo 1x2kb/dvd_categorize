@@ -105,7 +105,14 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
             #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: None,
             added_on: csv_record.added_on,
-            location: csv_record.location.map(|l| l.trim().to_string()),
+            location: csv_record
+                .location
+                .map(
+                    |l| {
+                        l.trim()
+                            .to_string()
+                    },
+                ),
         };
         movies.push(movie);
     }
