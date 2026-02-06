@@ -21,8 +21,11 @@ pub fn InsertMedia() -> Element {
             div { class: "csv-section",
                 // CSV Instructions
                 div { class: "csv-instructions",
-                    p { "CSV Format:" }
-                    p { "Title, Description, Actors, Genres, Director, AddedOn, Location" }
+                    p { strong { "CSV Format (header row required):" } }
+                    p { code { "Title,Description,Actors,Genres,Director,AddedOn,Location" } }
+                    p { class: "csv-note", 
+                        "⚠️ Header row must be included with exactly these 7 column names. Order doesn't matter." 
+                    }
                 }
 
                 // Textarea for CSV Input
