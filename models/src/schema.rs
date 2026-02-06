@@ -33,6 +33,9 @@ diesel::table! {
         director_id -> Nullable<Int4>,
         description -> Nullable<Text>,
         embedding -> Nullable<Vector>,
+        added_on -> Timestamp,
+        #[max_length = 100]
+        location -> Varchar,
     }
 }
 

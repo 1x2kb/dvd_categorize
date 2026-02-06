@@ -387,10 +387,30 @@ pub async fn hybrid_search(
 ) -> (Vec<(i32, f32)>, String) {
     let start_time = std::time::Instant::now();
     
-    // Extract entities for keyword search (dereference Arc for slice)
-    let (titles, actors, genres) = extract_entities(query, &movies).await;
+    // Phase 1: Run entity extraction and query enhancement in parallel
+    let movies_clone = Arc::clone(&movies);
+    let query_owned = query.to_string();
+    let query_for_enhancement = query.to_string();
     
+    let (entity_result, enhanced_query) = tokio::join!(
+        // Entity extraction task
+        async move {
+            extract_entities(&query_owned, &movies_clone).await
+        },
+        // Query enhancement task
+        async move {
+            if disable_enhancement {
+                info!("Query enhancement disabled, using original query");
+                query_for_enhancement
+            } else {
+                ai_chat::query_enhancement::enhance_query_for_embedding(&query_for_enhancement).await
+            }
+        }
+    );
+    
+    let (titles, actors, genres) = entity_result;
     info!("Entity extraction results - titles: {:?}, actors: {:?}, genres: {:?}", titles, actors, genres);
+    info!("Enhanced query: {}", enhanced_query);
     
     let criteria = SearchCriteria {
         titles,
@@ -398,53 +418,54 @@ pub async fn hybrid_search(
         genres,
     };
 
-    // Perform keyword search (dereference Arc for slice)
-    let keyword_start = std::time::Instant::now();
-    let keyword_results = keyword_search(&movies, &criteria, limit * 2);
+    // Phase 2: Run keyword search and vector search in parallel
+    let movies_for_keyword = Arc::clone(&movies);
+    let enhanced_query_clone = enhanced_query.clone();
     
-    info!("Keyword search found {} results in {:.2?}", keyword_results.len(), keyword_start.elapsed());
-    
-    if keyword_results.is_empty() {
-        info!("Keyword search returned no results - will rely on vector search only");
-    } else {
-        info!("Top keyword matches (ID, score): {:?}", keyword_results.iter().take(5).collect::<Vec<_>>());
-    }
-
-    // Enhance query for better semantic search (only if not disabled)
-    let enhanced_query = if disable_enhancement {
-        info!("Query enhancement disabled, using original query");
-        query.to_string()
-    } else {
-        ai_chat::query_enhancement::enhance_query_for_embedding(query).await
-    };
-    
-    info!("Enhanced query: {}", enhanced_query);
-
-    // Perform vector search if we can get an embedding
-    let vector_start = std::time::Instant::now();
-    let vector_results = match embedding(&enhanced_query).await {
-        Ok(embedding_vec) => {
-            match database::search_movies(embedding_vec, (limit * 2) as i64).await {
-                Ok(movies) => {
-                    let ids: Vec<i32> = movies.into_iter().map(|m| m.id).collect();
-                    info!(
-                        "Vector search found {} results in {:.2?}",
-                        ids.len(),
-                        vector_start.elapsed()
-                    );
-                    ids
+    let (keyword_results, vector_results) = tokio::join!(
+        // Keyword search task
+        async move {
+            let keyword_start = std::time::Instant::now();
+            let results = keyword_search(&movies_for_keyword, &criteria, limit * 2);
+            info!("Keyword search found {} results in {:.2?}", results.len(), keyword_start.elapsed());
+            
+            if results.is_empty() {
+                info!("Keyword search returned no results - will rely on vector search only");
+            } else {
+                info!("Top keyword matches (ID, score): {:?}", results.iter().take(5).collect::<Vec<_>>());
+            }
+            
+            results
+        },
+        // Vector search task
+        async move {
+            let vector_start = std::time::Instant::now();
+            let results = match embedding(&enhanced_query_clone).await {
+                Ok(embedding_vec) => {
+                    match database::search_movies(embedding_vec, (limit * 2) as i64).await {
+                        Ok(movies) => {
+                            let ids: Vec<i32> = movies.into_iter().map(|m| m.id).collect();
+                            info!(
+                                "Vector search found {} results in {:.2?}",
+                                ids.len(),
+                                vector_start.elapsed()
+                            );
+                            ids
+                        }
+                        Err(e) => {
+                            error!("Vector search failed: {:#?}", e);
+                            Vec::new()
+                        }
+                    }
                 }
                 Err(e) => {
-                    error!("Vector search failed: {:#?}", e);
+                    error!("Failed to generate embedding: {:#?}", e);
                     Vec::new()
                 }
-            }
+            };
+            results
         }
-        Err(e) => {
-            error!("Failed to generate embedding: {:#?}", e);
-            Vec::new()
-        }
-    };
+    );
 
     // Fuse results using RRF - just return IDs and scores
     let final_results = if !keyword_results.is_empty() && !vector_results.is_empty() {
