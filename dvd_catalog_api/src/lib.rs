@@ -472,3 +472,35 @@ pub async fn get_matching_movies(
         }
     }
 }
+
+/// Update the location of a movie
+#[instrument(skip(state))]
+#[debug_handler]
+pub async fn update_movie_location(
+    State(state): State<CacheState>,
+    Json(request): Json<models::UpdateLocationRequest>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    info!("Updating location for movie ID {} to '{}'", request.movie_id, request.location);
+    
+    // Update the database
+    database::update_movie_location(request.movie_id, request.location)
+        .await
+        .map_err(|e| {
+            error!("Failed to update movie location: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to update movie location: {}", e))
+        })?;
+    
+    // Refresh the cache with updated movies
+    match database::get_movies().await {
+        Ok(updated_movies) => {
+            let mut movies = state.movies.write().await;
+            *movies = updated_movies;
+            info!("Successfully updated movie location and refreshed cache");
+            Ok(Json(()))
+        }
+        Err(e) => {
+            error!("Failed to refresh movie cache after location update: {}", e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Location updated but failed to refresh cache: {}", e)))
+        }
+    }
+}

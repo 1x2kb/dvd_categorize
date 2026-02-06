@@ -372,6 +372,12 @@ pub struct SearchResponse {
     pub enhanced_query: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UpdateLocationRequest {
+    pub movie_id: i32,
+    pub location: String,
+}
+
 #[cfg(feature = "testing")]
 impl Random for Actor {
     fn random() -> Self {
