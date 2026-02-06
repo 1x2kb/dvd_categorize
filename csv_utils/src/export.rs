@@ -9,7 +9,7 @@ pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
 
     // Write header row
     writer.write_record(
-        &[
+        [
             "Title",
             "Description",
             "Actors",
@@ -59,7 +59,7 @@ pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
             .unwrap_or("");
 
         writer.write_record(
-            &[
+            [
                 &movie.name,
                 movie
                     .description
@@ -118,4 +118,5 @@ mod tests {
         assert!(csv.contains("Action | Drama"));
         assert!(csv.contains("Test Director"));
     }
+
 }
