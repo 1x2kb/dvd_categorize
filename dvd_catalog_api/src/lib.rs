@@ -70,7 +70,7 @@ pub async fn chat() -> impl axum::response::IntoResponse {
     )
 }
 
-#[instrument]
+#[instrument(skip(cache_state), fields(movie_count))]
 #[debug_handler]
 pub async fn export_csv(State(cache_state): State<CacheState>) -> impl axum::response::IntoResponse {
     let movies = {
@@ -81,18 +81,27 @@ pub async fn export_csv(State(cache_state): State<CacheState>) -> impl axum::res
         (*movies_guard).clone()
     };
 
+    let movie_count = movies.len();
+    tracing::Span::current().record("movie_count", movie_count);
+    
+    info!("Starting CSV export for {} movies", movie_count);
+
     match csv_utils::movies_to_csv(&movies) {
         Ok(csv) => {
-            let headers = "Title,Description,Actors,Genres,Director\n";
-            let csv_with_headers = format!("{}{}", headers, csv);
+            let csv_size = csv.len();
+            info!(
+                "CSV export successful: {} movies exported, {} bytes",
+                movie_count,
+                csv_size
+            );
             (
                 StatusCode::OK,
                 [("Content-Type", "text/csv"), ("Content-Disposition", "attachment; filename=movies.csv")],
-                csv_with_headers,
+                csv,
             )
         }
         Err(e) => {
-            error!("Failed to export CSV: {}", e);
+            error!("Failed to export CSV for {} movies: {}", movie_count, e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 [("Content-Type", "text/plain"), ("Content-Disposition", "")],
@@ -460,6 +469,38 @@ pub async fn get_matching_movies(
                 e
             );
             Json(None)
+        }
+    }
+}
+
+/// Update the location of a movie
+#[instrument(skip(state))]
+#[debug_handler]
+pub async fn update_movie_location(
+    State(state): State<CacheState>,
+    Json(request): Json<models::UpdateLocationRequest>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    info!("Updating location for movie ID {} to '{}'", request.movie_id, request.location);
+    
+    // Update the database
+    database::update_movie_location(request.movie_id, request.location)
+        .await
+        .map_err(|e| {
+            error!("Failed to update movie location: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to update movie location: {}", e))
+        })?;
+    
+    // Refresh the cache with updated movies
+    match database::get_movies().await {
+        Ok(updated_movies) => {
+            let mut movies = state.movies.write().await;
+            *movies = updated_movies;
+            info!("Successfully updated movie location and refreshed cache");
+            Ok(Json(()))
+        }
+        Err(e) => {
+            error!("Failed to refresh movie cache after location update: {}", e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Location updated but failed to refresh cache: {}", e)))
         }
     }
 }
