@@ -18,6 +18,7 @@ RUN apt-get update && \
         ca-certificates \
         libssl3 \
         libpq5 \
+        tini \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -33,4 +34,5 @@ USER appuser
 
 EXPOSE 3000
 
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["dvd_catalog_api"]
