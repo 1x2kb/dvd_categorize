@@ -136,6 +136,14 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
             post(preview_csv),
         )
         .route(
+            "/ai/pull-model",
+            post(pull_ollama_model),
+        )
+        .route(
+            "/ai/recent",
+            get(get_recent_movies),
+        )
+        .route(
             "/",
             get(hello_world),
         );
