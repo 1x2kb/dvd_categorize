@@ -391,6 +391,17 @@ pub struct UpdateLocationRequest {
     pub location: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PullModelRequest {
+    pub model_name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PullModelResponse {
+    pub success: bool,
+    pub message: String,
+}
+
 #[cfg(feature = "testing")]
 impl Random for Actor {
     fn random() -> Self {
