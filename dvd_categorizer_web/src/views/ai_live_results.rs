@@ -77,12 +77,58 @@ pub fn AiLiveResults() -> Element {
         div {
             class: "ai-live-results-container",
 
-            // Input and button section
+            // Browse actions bar at the top
+            div {
+                class: "browse-actions-bar",
+                style: "margin-bottom: 16px; padding: 12px 16px; background: #1f2937; border-radius: 8px; display: flex; gap: 12px; align-items: center; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);",
+                
+                div {
+                    style: "color: #9ca3af; font-weight: 600; font-size: 14px;",
+                    "Browse:"
+                }
+
+                button {
+                    onclick: move |_| {
+                        spawn(async move {
+                            if is_loading() {
+                                return;
+                            }
+
+                            is_loading.set(true);
+                            movies.set(Arc::new(vec![]));
+                            enhanced_query.set(String::new());
+                            original_query.set(String::new());
+
+                            let result = fetch_recent_movies().await;
+                            match result {
+                                Ok(recent_movies) => {
+                                    movies.set(Arc::new(recent_movies));
+                                }
+                                Err(err) => {
+                                    log::error!("Failed to fetch recent movies {:#?}", err);
+                                    movies.set(Arc::new(vec![]));
+                                }
+                            }
+                            is_loading.set(false);
+                        });
+                    },
+                    disabled: is_loading(),
+                    style: "padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;",
+
+                    if is_loading() {
+                        "Loading..."
+                    } else {
+                        "Recent Movies"
+                    }
+                }
+            }
+
+            // Search section
             div {
                 class: "search-section",
                 style: "margin-bottom: 20px; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);",
 
-                // Tab selector at the top
+                // Search mode tabs
                 div {
                     style: "display: flex; background: #111827; border-bottom: 3px solid #374151;",
                     
@@ -194,57 +240,24 @@ pub fn AiLiveResults() -> Element {
                             "Search"
                         }
                     }
-
-                    button {
-                        onclick: move |_| {
-                            spawn(async move {
-                                if is_loading() {
-                                    return;
-                                }
-
-                                is_loading.set(true);
-                                movies.set(Arc::new(vec![]));
-                                enhanced_query.set(String::new());
-                                original_query.set(String::new());
-
-                                let result = fetch_recent_movies().await;
-                                match result {
-                                    Ok(recent_movies) => {
-                                        movies.set(Arc::new(recent_movies));
-                                    }
-                                    Err(err) => {
-                                        log::error!("Failed to fetch recent movies {:#?}", err);
-                                        movies.set(Arc::new(vec![]));
-                                    }
-                                }
-                                is_loading.set(false);
-                            });
-                        },
-                        disabled: is_loading(),
-                        style: "padding: 12px 24px; background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; min-width: 100px;",
-
-                        if is_loading() {
-                            "Loading..."
-                        } else {
-                            "Recent"
-                        }
-                    }
                 }
 
-                // Checkbox for disabling AI enhancement
-                div {
-                    style: "margin-top: 12px; display: flex; align-items: center; gap: 8px;",
-                    input {
-                        r#type: "checkbox",
-                        id: "disable-enhancement",
-                        checked: disable_enhancement(),
-                        onchange: move |evt| disable_enhancement.set(evt.checked()),
-                        style: "cursor: pointer;",
-                    }
-                    label {
-                        r#for: "disable-enhancement",
-                        style: "color: #9ca3af; font-size: 14px; cursor: pointer; user-select: none;",
-                        "Disable AI query enhancement (use exact search query)"
+                // Checkbox for disabling AI enhancement (only show for Vector/Both modes)
+                if !matches!(search_mode(), models::SearchMode::Text) {
+                    div {
+                        style: "margin-top: 12px; display: flex; align-items: center; gap: 8px;",
+                        input {
+                            r#type: "checkbox",
+                            id: "disable-enhancement",
+                            checked: disable_enhancement(),
+                            onchange: move |evt| disable_enhancement.set(evt.checked()),
+                            style: "cursor: pointer;",
+                        }
+                        label {
+                            r#for: "disable-enhancement",
+                            style: "color: #9ca3af; font-size: 14px; cursor: pointer; user-select: none;",
+                            "Disable AI query enhancement (use exact search query)"
+                        }
                     }
                 }
 
