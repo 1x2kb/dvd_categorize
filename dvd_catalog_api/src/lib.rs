@@ -293,6 +293,7 @@ async fn combined_search(
     query: &str,
     all_movies: &Arc<Vec<FullMovie>>,
     disable_enhancement: bool,
+    search_mode: models::SearchMode,
 ) -> Result<
     (
         Vec<ScoredMovie>,
@@ -301,8 +302,8 @@ async fn combined_search(
     String,
 > {
     info!(
-        "Starting hybrid search with RRF for: {}",
-        query
+        "Starting search (mode: {:?}) for: {}",
+        search_mode, query
     );
     let start_time = Instant::now();
 
@@ -312,6 +313,7 @@ async fn combined_search(
         Arc::clone(all_movies),
         50,
         disable_enhancement,
+        search_mode,
     )
     .await;
 
@@ -440,6 +442,7 @@ pub async fn get_matching_movies(
         query,
         &movies,
         search_request.disable_enhancement,
+        search_request.search_mode,
     )
     .await
     {

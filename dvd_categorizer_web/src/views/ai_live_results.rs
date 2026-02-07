@@ -14,6 +14,7 @@ pub struct AiAction {
 async fn send_search_request(
     query: String,
     disable_enhancement: bool,
+    search_mode: models::SearchMode,
 ) -> Result<models::SearchResponse, reqwest::Error> {
     let window = web_sys::window().unwrap();
     let location = window.location();
@@ -27,6 +28,7 @@ async fn send_search_request(
     let search_request = SearchRequest {
         query,
         disable_enhancement,
+        search_mode,
     };
 
     let client = reqwest::Client::new();
@@ -67,6 +69,7 @@ pub fn AiLiveResults() -> Element {
     let mut input_value = use_signal(String::new);
     let mut is_loading = use_signal(|| false);
     let mut disable_enhancement = use_signal(|| false);
+    let mut search_mode = use_signal(|| models::SearchMode::Both);
     let mut enhanced_query = use_signal(String::new);
     let mut original_query = use_signal(String::new);
 
@@ -77,11 +80,51 @@ pub fn AiLiveResults() -> Element {
             // Input and button section
             div {
                 class: "search-section",
-                style: "margin-bottom: 20px; padding: 20px; background: #1f2937; border-radius: 8px;",
+                style: "margin-bottom: 20px; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);",
+
+                // Tab selector at the top
+                div {
+                    style: "display: flex; background: #111827; border-bottom: 3px solid #374151;",
+                    
+                    button {
+                        onclick: move |_| search_mode.set(models::SearchMode::Text),
+                        style: format!(
+                            "flex: 1; padding: 14px 20px; background: {}; color: {}; border: none; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.2s; border-bottom: 3px solid {}; position: relative;",
+                            if matches!(search_mode(), models::SearchMode::Text) { "#1f2937" } else { "transparent" },
+                            if matches!(search_mode(), models::SearchMode::Text) { "#0891b2" } else { "#6b7280" },
+                            if matches!(search_mode(), models::SearchMode::Text) { "#0891b2" } else { "transparent" }
+                        ),
+                        "Text Search"
+                    }
+
+                    button {
+                        onclick: move |_| search_mode.set(models::SearchMode::Vector),
+                        style: format!(
+                            "flex: 1; padding: 14px 20px; background: {}; color: {}; border: none; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.2s; border-bottom: 3px solid {}; position: relative;",
+                            if matches!(search_mode(), models::SearchMode::Vector) { "#1f2937" } else { "transparent" },
+                            if matches!(search_mode(), models::SearchMode::Vector) { "#0891b2" } else { "#6b7280" },
+                            if matches!(search_mode(), models::SearchMode::Vector) { "#0891b2" } else { "transparent" }
+                        ),
+                        "Vector Search"
+                    }
+
+                    button {
+                        onclick: move |_| search_mode.set(models::SearchMode::Both),
+                        style: format!(
+                            "flex: 1; padding: 14px 20px; background: {}; color: {}; border: none; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.2s; border-bottom: 3px solid {}; position: relative;",
+                            if matches!(search_mode(), models::SearchMode::Both) { "#1f2937" } else { "transparent" },
+                            if matches!(search_mode(), models::SearchMode::Both) { "#0891b2" } else { "#6b7280" },
+                            if matches!(search_mode(), models::SearchMode::Both) { "#0891b2" } else { "transparent" }
+                        ),
+                        "Both (RRF)"
+                    }
+                }
 
                 div {
-                    class: "search-input-group",
-                    style: "display: flex; gap: 10px; align-items: center;",
+                    style: "padding: 20px; background: #1f2937;",
+                    div {
+                        class: "search-input-group",
+                        style: "display: flex; gap: 10px; align-items: center;",
 
                     input {
                         r#type: "text",
@@ -99,7 +142,7 @@ pub fn AiLiveResults() -> Element {
                                     is_loading.set(true);
                                     movies.set(Arc::new(vec![]));
 
-                                    let result = send_search_request(input_value(), disable_enhancement()).await;
+                                    let result = send_search_request(input_value(), disable_enhancement(), search_mode()).await;
                                     match result {
                                         Ok(response) => {
                                             movies.set(Arc::new(response.results));
@@ -127,7 +170,7 @@ pub fn AiLiveResults() -> Element {
                                 is_loading.set(true);
                                 movies.set(Arc::new(vec![]));
 
-                                let result = send_search_request(input_value(), disable_enhancement()).await;
+                                let result = send_search_request(input_value(), disable_enhancement(), search_mode()).await;
                                 match result {
                                     Ok(response) => {
                                         movies.set(Arc::new(response.results));
@@ -219,10 +262,11 @@ pub fn AiLiveResults() -> Element {
                         }
                     }
                 }
+                }
             }
 
             // Movie grid section
-            MovieGrid { movies: Arc::clone(&movies()) }
+            MovieGrid { movies: Arc::clone(&movies()), search_mode: search_mode() }
         }
     }
 }

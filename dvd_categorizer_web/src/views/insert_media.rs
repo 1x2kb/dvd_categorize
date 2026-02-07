@@ -157,7 +157,7 @@ pub fn InsertMedia() -> Element {
                             }).collect()
                         );
                         rsx! {
-                            MovieGrid { movies: scored_movies }
+                            MovieGrid { movies: scored_movies, search_mode: models::SearchMode::Both }
                         }
                     }
                 }
