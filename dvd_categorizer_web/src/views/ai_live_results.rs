@@ -41,6 +41,26 @@ async fn send_search_request(
     Ok(response)
 }
 
+async fn fetch_recent_movies() -> Result<Vec<ScoredMovie>, reqwest::Error> {
+    let window = web_sys::window().unwrap();
+    let location = window.location();
+    let hostname = location
+        .hostname()
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
+
+    let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+
+    let client = reqwest::Client::new();
+    let response: Vec<ScoredMovie> = client
+        .get(format!("http://{hostname}:{server_port}/ai/recent"))
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    Ok(response)
+}
+
 #[component]
 pub fn AiLiveResults() -> Element {
     let mut movies: Signal<Arc<Vec<ScoredMovie>>> = use_signal(|| Arc::new(Vec::new()));
@@ -129,6 +149,41 @@ pub fn AiLiveResults() -> Element {
                             "Searching..."
                         } else {
                             "Search"
+                        }
+                    }
+
+                    button {
+                        onclick: move |_| {
+                            spawn(async move {
+                                if is_loading() {
+                                    return;
+                                }
+
+                                is_loading.set(true);
+                                movies.set(Arc::new(vec![]));
+                                enhanced_query.set(String::new());
+                                original_query.set(String::new());
+
+                                let result = fetch_recent_movies().await;
+                                match result {
+                                    Ok(recent_movies) => {
+                                        movies.set(Arc::new(recent_movies));
+                                    }
+                                    Err(err) => {
+                                        log::error!("Failed to fetch recent movies {:#?}", err);
+                                        movies.set(Arc::new(vec![]));
+                                    }
+                                }
+                                is_loading.set(false);
+                            });
+                        },
+                        disabled: is_loading(),
+                        style: "padding: 12px 24px; background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; min-width: 100px;",
+
+                        if is_loading() {
+                            "Loading..."
+                        } else {
+                            "Recent"
                         }
                     }
                 }

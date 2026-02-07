@@ -196,5 +196,67 @@ fn extract_enclosed_content(s: &str) -> &str {
     s
 }
 
+/// Pulls an Ollama model to make it available for use
+///
+/// # Arguments
+///
+/// * `model_name` - The name of the model to pull (e.g., "llama3.2", "phi3.5")
+///
+/// # Returns
+///
+/// * `Ok(String)` - Success message with model name
+/// * `Err(String)` - Error message if pull fails
+#[instrument(level = Level::INFO)]
+pub async fn pull_model(model_name: &str) -> Result<String, String> {
+    info!(
+        "Attempting to pull Ollama model: {}",
+        model_name
+    );
+
+    let ollama_host =
+        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
+    let ollama_port =
+        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
+
+    let ollama_url = format!(
+        "http://{}:{}",
+        &ollama_host, &ollama_port
+    );
+    debug!(
+        "Connecting to ollama @ {}",
+        &ollama_url
+    );
+
+    let ollama = Ollama::from_url(
+        ollama_url
+            .parse()
+            .unwrap(),
+    );
+
+    match ollama.pull_model(model_name.to_string(), false).await {
+        Ok(_) => {
+            info!(
+                "Successfully pulled model: {}",
+                model_name
+            );
+            Ok(format!(
+                "Successfully pulled model: {}",
+                model_name
+            ))
+        }
+        Err(e) => {
+            let error_msg = format!(
+                "Failed to pull model {}: {:?}",
+                model_name, e
+            );
+            log::error!(
+                "{}",
+                error_msg
+            );
+            Err(error_msg)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {}

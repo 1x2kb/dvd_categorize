@@ -528,3 +528,79 @@ pub async fn update_movie_location(
         }
     }
 }
+
+/// Pull an Ollama model to make it available for use
+#[instrument]
+#[debug_handler]
+pub async fn pull_ollama_model(
+    Json(request): Json<models::PullModelRequest>,
+) -> Result<
+    Json<models::PullModelResponse>,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    info!(
+        "Received request to pull Ollama model: {}",
+        request.model_name
+    );
+
+    match ai_chat::pull_model(&request.model_name).await {
+        Ok(message) => {
+            info!(
+                "Successfully pulled model: {}",
+                request.model_name
+            );
+            Ok(
+                Json(
+                    models::PullModelResponse {
+                        success: true,
+                        message,
+                    },
+                ),
+            )
+        }
+        Err(e) => {
+            error!(
+                "Failed to pull model {}: {}",
+                request.model_name, e
+            );
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                e,
+            ))
+        }
+    }
+}
+
+/// Get recent movies ordered by added_on descending
+#[instrument]
+#[debug_handler]
+pub async fn get_recent_movies() -> Json<Vec<ScoredMovie>> {
+    info!("Getting recent movies");
+
+    match database::get_recent_movies(50).await {
+        Ok(movies) => {
+            info!(
+                "Found {} recent movies",
+                movies.len()
+            );
+            let scored_movies: Vec<ScoredMovie> = movies
+                .into_iter()
+                .map(|movie| ScoredMovie {
+                    movie,
+                    vector_score: 0.0,
+                })
+                .collect();
+            Json(scored_movies)
+        }
+        Err(e) => {
+            error!(
+                "Failed to get recent movies: {}",
+                e
+            );
+            Json(Vec::new())
+        }
+    }
+}

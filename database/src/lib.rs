@@ -511,3 +511,33 @@ pub async fn search_movies(embedding: Vec<f32>, limit: i64) -> DbResult<Vec<Full
     // Use the optimized helper function to get full movie data
     get_movies_by_ids(movie_ids).await
 }
+
+/// Retrieves recent movies ordered by added_on in descending order.
+///
+/// # Arguments
+/// * `limit` - Maximum number of results to return
+///
+/// # Returns
+/// A vector of movies ordered by most recently added first.
+///
+/// # Errors
+/// Returns `DatabaseError` if the database query fails.
+pub async fn get_recent_movies(limit: i64) -> DbResult<Vec<FullMovie>> {
+    let mut conn = get_database_connection().await?;
+
+    // Get the IDs of the most recent movies
+    let movie_ids: Vec<i32> = movie::table
+        .select(movie::id)
+        .order(movie::added_on.desc())
+        .limit(limit)
+        .load::<i32>(&mut conn)
+        .await?;
+
+    debug!(
+        "Found {} recent movies",
+        movie_ids.len()
+    );
+
+    // Use the optimized helper function to get full movie data
+    get_movies_by_ids(movie_ids).await
+}
