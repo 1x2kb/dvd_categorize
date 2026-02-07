@@ -426,92 +426,183 @@ fn reciprocal_rank_fusion(
     ranked
 }
 
-/// Performs hybrid search combining keyword and semantic vector search
-/// Returns (results, enhanced_query) where results is Vec<(movie_id, score)>
-/// Score interpretation depends on search_mode:
-/// - Text: raw keyword score
-/// - Vector: cosine similarity (0-1, higher is better)
-/// - Both: RRF score combining both methods
+/// Performs text-only keyword search without AI enhancement or vector operations
 #[instrument(skip(movies))]
-pub async fn hybrid_search(
+async fn text_only_search(
+    query: &str,
+    movies: &Arc<Vec<FullMovie>>,
+    limit: usize,
+) -> (Vec<(i32, f32)>, String) {
+    let start_time = std::time::Instant::now();
+    info!("Text-only search mode");
+    
+    // Extract entities for keyword matching
+    let (titles, actors, genres) = extract_entities(query, movies).await;
+    info!(
+        "Entity extraction - titles: {:?}, actors: {:?}, genres: {:?}",
+        titles, actors, genres
+    );
+    
+    let criteria = SearchCriteria { titles, actors, genres };
+    
+    // Run keyword search only
+    let keyword_start = std::time::Instant::now();
+    let keyword_results = keyword_search(movies, &criteria, limit * 2);
+    
+    info!(
+        "Text search found {} results in {:.2?}",
+        keyword_results.len(),
+        keyword_start.elapsed()
+    );
+
+    if !keyword_results.is_empty() {
+        info!(
+            "Top matches (ID, score): {:?}",
+            keyword_results.iter().take(5).collect::<Vec<_>>()
+        );
+    }
+
+    // Return raw keyword scores
+    let final_results: Vec<(i32, f32)> = keyword_results
+        .into_iter()
+        .take(limit)
+        .collect();
+
+    info!(
+        "Text search completed in {:.2?}, returning {} results",
+        start_time.elapsed(),
+        final_results.len()
+    );
+
+    (final_results, query.to_string())
+}
+
+/// Performs vector-only search with query enhancement
+#[instrument]
+async fn vector_only_search(
+    query: &str,
+    limit: usize,
+    disable_enhancement: bool,
+) -> (Vec<(i32, f32)>, String) {
+    let start_time = std::time::Instant::now();
+    info!("Vector-only search mode");
+    
+    // Run query enhancement
+    let enhanced_query = if disable_enhancement {
+        info!("Query enhancement disabled, using original query");
+        query.to_string()
+    } else {
+        ai_chat::query_enhancement::enhance_query_for_embedding(query).await
+    };
+    
+    info!("Enhanced query: {}", enhanced_query);
+    
+    // Run vector search only
+    let vector_start = std::time::Instant::now();
+    let vector_results = match embedding(&enhanced_query).await {
+        Ok(embedding_vec) => {
+            match database::search_movies(embedding_vec, (limit * 2) as i64).await {
+                Ok(movies_from_db) => {
+                    let ids: Vec<i32> = movies_from_db.into_iter().map(|m| m.id).collect();
+                    info!(
+                        "Vector search found {} results in {:.2?}",
+                        ids.len(),
+                        vector_start.elapsed()
+                    );
+                    ids
+                }
+                Err(e) => {
+                    error!("Vector search failed: {:#?}", e);
+                    Vec::new()
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to generate embedding: {:#?}", e);
+            Vec::new()
+        }
+    };
+
+    // Return normalized vector scores
+    let final_results: Vec<(i32, f32)> = vector_results
+        .into_iter()
+        .take(limit)
+        .enumerate()
+        .map(|(rank, id)| {
+            let score = 1.0 / (1.0 + rank as f32);
+            (id, score)
+        })
+        .collect();
+
+    info!(
+        "Vector search completed in {:.2?}, returning {} results",
+        start_time.elapsed(),
+        final_results.len()
+    );
+
+    (final_results, enhanced_query)
+}
+
+/// Performs hybrid search combining both keyword and vector search with RRF fusion
+#[instrument(skip(movies))]
+async fn hybrid_both_search(
     query: &str,
     movies: Arc<Vec<FullMovie>>,
     limit: usize,
     disable_enhancement: bool,
-    search_mode: models::SearchMode,
-) -> (
-    Vec<(
-        i32,
-        f32,
-    )>,
-    String,
-) {
+) -> (Vec<(i32, f32)>, String) {
     let start_time = std::time::Instant::now();
+    info!("Hybrid search mode (both text and vector)");
+    
+    let movies_clone = Arc::clone(&movies);
+    let query_owned = query.to_string();
+    let query_for_enhancement = query.to_string();
 
-    // Three completely separate code paths based on search mode
-    match search_mode {
-        models::SearchMode::Text => {
-            // TEXT-ONLY PATH: No enhancement, no vector search
-            info!("Text-only search mode");
-            
-            // Extract entities for keyword matching
-            let (titles, actors, genres) = extract_entities(query, &movies).await;
-            info!(
-                "Entity extraction - titles: {:?}, actors: {:?}, genres: {:?}",
-                titles, actors, genres
-            );
-            
-            let criteria = SearchCriteria { titles, actors, genres };
-            
-            // Run keyword search only
+    // Run entity extraction and query enhancement in parallel
+    let (entity_result, enhanced_query) = tokio::join!(
+        async move { extract_entities(&query_owned, &movies_clone).await },
+        async move {
+            if disable_enhancement {
+                info!("Query enhancement disabled, using original query");
+                query_for_enhancement
+            } else {
+                ai_chat::query_enhancement::enhance_query_for_embedding(&query_for_enhancement).await
+            }
+        }
+    );
+
+    let (titles, actors, genres) = entity_result;
+    info!(
+        "Entity extraction - titles: {:?}, actors: {:?}, genres: {:?}",
+        titles, actors, genres
+    );
+    info!("Enhanced query: {}", enhanced_query);
+
+    let criteria = SearchCriteria { titles, actors, genres };
+    let movies_for_keyword = Arc::clone(&movies);
+    let enhanced_query_clone = enhanced_query.clone();
+
+    // Run keyword and vector search in parallel
+    let (keyword_results, vector_results) = tokio::join!(
+        async move {
             let keyword_start = std::time::Instant::now();
-            let keyword_results = keyword_search(&movies, &criteria, limit * 2);
-            
+            let results = keyword_search(&movies_for_keyword, &criteria, limit * 2);
             info!(
-                "Text search found {} results in {:.2?}",
-                keyword_results.len(),
+                "Keyword search found {} results in {:.2?}",
+                results.len(),
                 keyword_start.elapsed()
             );
-
-            if !keyword_results.is_empty() {
+            if !results.is_empty() {
                 info!(
-                    "Top matches (ID, score): {:?}",
-                    keyword_results.iter().take(5).collect::<Vec<_>>()
+                    "Top keyword matches: {:?}",
+                    results.iter().take(5).collect::<Vec<_>>()
                 );
             }
-
-            // Return raw keyword scores
-            let final_results: Vec<(i32, f32)> = keyword_results
-                .into_iter()
-                .take(limit)
-                .collect();
-
-            info!(
-                "Text search completed in {:.2?}, returning {} results",
-                start_time.elapsed(),
-                final_results.len()
-            );
-
-            (final_results, query.to_string())
-        }
-
-        models::SearchMode::Vector => {
-            // VECTOR-ONLY PATH: Enhancement + vector search, no keyword search
-            info!("Vector-only search mode");
-            
-            // Run query enhancement
-            let enhanced_query = if disable_enhancement {
-                info!("Query enhancement disabled, using original query");
-                query.to_string()
-            } else {
-                ai_chat::query_enhancement::enhance_query_for_embedding(query).await
-            };
-            
-            info!("Enhanced query: {}", enhanced_query);
-            
-            // Run vector search only
+            results
+        },
+        async move {
             let vector_start = std::time::Instant::now();
-            let vector_results = match embedding(&enhanced_query).await {
+            match embedding(&enhanced_query_clone).await {
                 Ok(embedding_vec) => {
                     match database::search_movies(embedding_vec, (limit * 2) as i64).await {
                         Ok(movies_from_db) => {
@@ -533,148 +624,77 @@ pub async fn hybrid_search(
                     error!("Failed to generate embedding: {:#?}", e);
                     Vec::new()
                 }
-            };
-
-            // Return normalized vector scores
-            let final_results: Vec<(i32, f32)> = vector_results
-                .into_iter()
-                .take(limit)
-                .enumerate()
-                .map(|(rank, id)| {
-                    let score = 1.0 / (1.0 + rank as f32);
-                    (id, score)
-                })
-                .collect();
-
-            info!(
-                "Vector search completed in {:.2?}, returning {} results",
-                start_time.elapsed(),
-                final_results.len()
-            );
-
-            (final_results, enhanced_query)
+            }
         }
+    );
 
-        models::SearchMode::Both => {
-            // HYBRID PATH: Run both searches in parallel with RRF fusion
-            info!("Hybrid search mode (both text and vector)");
-            
-            let movies_clone = Arc::clone(&movies);
-            let query_owned = query.to_string();
-            let query_for_enhancement = query.to_string();
-
-            // Run entity extraction and query enhancement in parallel
-            let (entity_result, enhanced_query) = tokio::join!(
-                async move { extract_entities(&query_owned, &movies_clone).await },
-                async move {
-                    if disable_enhancement {
-                        info!("Query enhancement disabled, using original query");
-                        query_for_enhancement
-                    } else {
-                        ai_chat::query_enhancement::enhance_query_for_embedding(&query_for_enhancement).await
-                    }
+    // Fuse results using RRF
+    let final_results: Vec<(i32, f32)> = if !keyword_results.is_empty() && !vector_results.is_empty() {
+        info!("Fusing keyword and vector results with RRF");
+        reciprocal_rank_fusion(keyword_results, vector_results, RRF_K_VALUE)
+            .into_iter()
+            .take(limit)
+            .collect()
+    } else if !keyword_results.is_empty() {
+        info!("Using keyword-only results (vector search failed)");
+        keyword_results
+            .into_iter()
+            .take(limit)
+            .enumerate()
+            .map(|(rank, (id, keyword_score))| {
+                let mut score = 1.0 / (RRF_K_VALUE + rank as f32 + 1.0);
+                if keyword_score >= EXACT_TITLE_MATCH_SCORE {
+                    score *= EXACT_MATCH_BOOST_MULTIPLIER;
                 }
-            );
+                (id, score)
+            })
+            .collect()
+    } else if !vector_results.is_empty() {
+        info!("Using vector-only results (keyword search failed)");
+        vector_results
+            .into_iter()
+            .take(limit)
+            .enumerate()
+            .map(|(rank, id)| (id, 1.0 / (RRF_K_VALUE + rank as f32 + 1.0)))
+            .collect()
+    } else {
+        info!("No search results found");
+        Vec::new()
+    };
 
-            let (titles, actors, genres) = entity_result;
-            info!(
-                "Entity extraction - titles: {:?}, actors: {:?}, genres: {:?}",
-                titles, actors, genres
-            );
-            info!("Enhanced query: {}", enhanced_query);
+    info!(
+        "Hybrid search completed in {:.2?}, returning {} results",
+        start_time.elapsed(),
+        final_results.len()
+    );
 
-            let criteria = SearchCriteria { titles, actors, genres };
-            let movies_for_keyword = Arc::clone(&movies);
-            let enhanced_query_clone = enhanced_query.clone();
+    (final_results, enhanced_query)
+}
 
-            // Run keyword and vector search in parallel
-            let (keyword_results, vector_results) = tokio::join!(
-                async move {
-                    let keyword_start = std::time::Instant::now();
-                    let results = keyword_search(&movies_for_keyword, &criteria, limit * 2);
-                    info!(
-                        "Keyword search found {} results in {:.2?}",
-                        results.len(),
-                        keyword_start.elapsed()
-                    );
-                    if !results.is_empty() {
-                        info!(
-                            "Top keyword matches: {:?}",
-                            results.iter().take(5).collect::<Vec<_>>()
-                        );
-                    }
-                    results
-                },
-                async move {
-                    let vector_start = std::time::Instant::now();
-                    match embedding(&enhanced_query_clone).await {
-                        Ok(embedding_vec) => {
-                            match database::search_movies(embedding_vec, (limit * 2) as i64).await {
-                                Ok(movies_from_db) => {
-                                    let ids: Vec<i32> = movies_from_db.into_iter().map(|m| m.id).collect();
-                                    info!(
-                                        "Vector search found {} results in {:.2?}",
-                                        ids.len(),
-                                        vector_start.elapsed()
-                                    );
-                                    ids
-                                }
-                                Err(e) => {
-                                    error!("Vector search failed: {:#?}", e);
-                                    Vec::new()
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            error!("Failed to generate embedding: {:#?}", e);
-                            Vec::new()
-                        }
-                    }
-                }
-            );
-
-            // Fuse results using RRF
-            let final_results: Vec<(i32, f32)> = if !keyword_results.is_empty() && !vector_results.is_empty() {
-                info!("Fusing keyword and vector results with RRF");
-                reciprocal_rank_fusion(keyword_results, vector_results, RRF_K_VALUE)
-                    .into_iter()
-                    .take(limit)
-                    .collect()
-            } else if !keyword_results.is_empty() {
-                info!("Using keyword-only results (vector search failed)");
-                keyword_results
-                    .into_iter()
-                    .take(limit)
-                    .enumerate()
-                    .map(|(rank, (id, keyword_score))| {
-                        let mut score = 1.0 / (RRF_K_VALUE + rank as f32 + 1.0);
-                        if keyword_score >= EXACT_TITLE_MATCH_SCORE {
-                            score *= EXACT_MATCH_BOOST_MULTIPLIER;
-                        }
-                        (id, score)
-                    })
-                    .collect()
-            } else if !vector_results.is_empty() {
-                info!("Using vector-only results (keyword search failed)");
-                vector_results
-                    .into_iter()
-                    .take(limit)
-                    .enumerate()
-                    .map(|(rank, id)| (id, 1.0 / (RRF_K_VALUE + rank as f32 + 1.0)))
-                    .collect()
-            } else {
-                info!("No search results found");
-                Vec::new()
-            };
-
-            info!(
-                "Hybrid search completed in {:.2?}, returning {} results",
-                start_time.elapsed(),
-                final_results.len()
-            );
-
-            (final_results, enhanced_query)
-        }
+/// Dispatches to the appropriate search function based on search mode
+/// Returns (results, enhanced_query) where results is Vec<(movie_id, score)>
+/// Score interpretation depends on search_mode:
+/// - Text: raw keyword score
+/// - Vector: cosine similarity (0-1, higher is better)
+/// - Both: RRF score combining both methods
+#[instrument(skip(movies))]
+pub async fn hybrid_search(
+    query: &str,
+    movies: Arc<Vec<FullMovie>>,
+    limit: usize,
+    disable_enhancement: bool,
+    search_mode: models::SearchMode,
+) -> (
+    Vec<(
+        i32,
+        f32,
+    )>,
+    String,
+) {
+    match search_mode {
+        models::SearchMode::Text => text_only_search(query, &movies, limit).await,
+        models::SearchMode::Vector => vector_only_search(query, limit, disable_enhancement).await,
+        models::SearchMode::Both => hybrid_both_search(query, movies, limit, disable_enhancement).await,
     }
 }
 
