@@ -99,6 +99,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                                 models::SearchMode::Text => format!("Text Score: {:.2}", props.scored_movie.vector_score),
                                 models::SearchMode::Vector => format!("Vector Score: {:.4}", props.scored_movie.vector_score),
                                 models::SearchMode::Both => format!("RRF Score: {:.4}", props.scored_movie.vector_score),
+                                models::SearchMode::Structured => format!("Relevance: {:.4}", props.scored_movie.vector_score),
                             }
                         }
                     }

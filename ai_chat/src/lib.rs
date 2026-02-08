@@ -2,6 +2,7 @@ pub mod embedding;
 pub mod live_ui;
 mod prompts;
 pub mod query_enhancement;
+pub mod structured_query_parser;
 
 use std::sync::Arc;
 
