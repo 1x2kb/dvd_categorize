@@ -371,11 +371,27 @@ impl
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchMode {
+    Text,
+    Vector,
+    Both,
+}
+
+impl Default for SearchMode {
+    fn default() -> Self {
+        SearchMode::Both
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct SearchRequest {
     pub query: String,
     #[serde(default)]
     pub disable_enhancement: bool,
+    #[serde(default)]
+    pub search_mode: SearchMode,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

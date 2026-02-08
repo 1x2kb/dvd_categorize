@@ -43,6 +43,7 @@ async fn update_location_on_server(movie_id: i32, location: String) -> Result<()
 #[derive(Props, Clone, PartialEq)]
 pub struct SingleMovieCardProps {
     pub scored_movie: ScoredMovie,
+    pub search_mode: models::SearchMode,
 }
 
 #[component]
@@ -93,7 +94,13 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                     span {
                         class: "movie-info-label",
                         style: "background: rgba(8, 145, 178, 0.2); padding: 2px 8px; border-radius: 4px; font-size: 12px;",
-                        "RRF Score: {props.scored_movie.vector_score:.4}"
+                        {
+                            match props.search_mode {
+                                models::SearchMode::Text => format!("Text Score: {:.2}", props.scored_movie.vector_score),
+                                models::SearchMode::Vector => format!("Vector Score: {:.4}", props.scored_movie.vector_score),
+                                models::SearchMode::Both => format!("RRF Score: {:.4}", props.scored_movie.vector_score),
+                            }
+                        }
                     }
                 }
 
@@ -299,6 +306,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
 #[derive(Props, Clone, PartialEq)]
 pub struct MovieGridProps {
     pub movies: Arc<Vec<ScoredMovie>>,
+    pub search_mode: models::SearchMode,
 }
 
 #[component]
@@ -307,7 +315,7 @@ pub fn MovieGrid(props: MovieGridProps) -> Element {
         div {
             class: "movie-grid movie-grid-cols-3",
             for scored_movie in props.movies.iter() {
-                MovieCard { scored_movie: scored_movie.clone() }
+                MovieCard { scored_movie: scored_movie.clone(), search_mode: props.search_mode }
             }
         }
     }
