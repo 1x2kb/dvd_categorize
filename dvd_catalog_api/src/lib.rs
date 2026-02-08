@@ -294,6 +294,7 @@ async fn combined_search(
     all_movies: &Arc<Vec<FullMovie>>,
     disable_enhancement: bool,
     search_mode: models::SearchMode,
+    model: Option<&str>,
 ) -> Result<
     (
         Vec<ScoredMovie>,
@@ -314,6 +315,7 @@ async fn combined_search(
         50,
         disable_enhancement,
         search_mode,
+        model,
     )
     .await;
 
@@ -443,6 +445,7 @@ pub async fn get_matching_movies(
         &movies,
         search_request.disable_enhancement,
         search_request.search_mode,
+        search_request.model.as_deref(),
     )
     .await
     {
@@ -568,6 +571,45 @@ pub async fn pull_ollama_model(
             error!(
                 "Failed to pull model {}: {}",
                 request.model_name, e
+            );
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                e,
+            ))
+        }
+    }
+}
+
+/// List available Ollama models
+#[instrument]
+#[debug_handler]
+pub async fn list_available_models() -> Result<
+    Json<models::AvailableModelsResponse>,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    info!("Listing available Ollama models");
+
+    match ai_chat::list_models().await {
+        Ok(models) => {
+            info!(
+                "Successfully retrieved {} models",
+                models.len()
+            );
+            Ok(
+                Json(
+                    models::AvailableModelsResponse {
+                        models,
+                    },
+                ),
+            )
+        }
+        Err(e) => {
+            error!(
+                "Failed to list models: {}",
+                e
             );
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,

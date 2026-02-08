@@ -196,6 +196,66 @@ fn extract_enclosed_content(s: &str) -> &str {
     s
 }
 
+/// Lists all available Ollama models
+///
+/// # Returns
+///
+/// * `Ok(Vec<models::AvailableModel>)` - List of available models with their names and sizes
+/// * `Err(String)` - Error message if listing fails
+#[instrument(level = Level::INFO)]
+pub async fn list_models() -> Result<Vec<models::AvailableModel>, String> {
+    info!("Fetching available Ollama models");
+
+    let ollama_host =
+        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
+    let ollama_port =
+        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
+
+    let ollama_url = format!(
+        "http://{}:{}",
+        &ollama_host, &ollama_port
+    );
+    debug!(
+        "Connecting to ollama @ {}",
+        &ollama_url
+    );
+
+    let ollama = Ollama::from_url(
+        ollama_url
+            .parse()
+            .unwrap(),
+    );
+
+    match ollama.list_local_models().await {
+        Ok(models_list) => {
+            let available_models: Vec<models::AvailableModel> = models_list
+                .into_iter()
+                .map(|model| models::AvailableModel {
+                    name: model.name,
+                    size: model.size,
+                })
+                .collect();
+            
+            info!(
+                "Found {} available models",
+                available_models.len()
+            );
+            Ok(available_models)
+        }
+        Err(e) => {
+            let error_msg = format!(
+                "Failed to list models: {:?}",
+                e
+            );
+            log::error!(
+                "{}",
+                error_msg
+            );
+            Err(error_msg)
+        }
+    }
+}
+
 /// Pulls an Ollama model to make it available for use
 ///
 /// # Arguments
