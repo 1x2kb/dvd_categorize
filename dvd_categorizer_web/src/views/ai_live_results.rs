@@ -131,39 +131,84 @@ pub fn AiLiveResults() -> Element {
 
                 // Search mode tabs
                 div {
-                    style: "display: flex; background: #111827; border-bottom: 3px solid #374151;",
+                    style: "display: flex; gap: 8px; padding: 16px; background: #1f2937; align-items: center;",
+                    
+                    span {
+                        style: "color: #9ca3af; font-size: 13px; font-weight: 600; margin-right: 4px;",
+                        "Mode:"
+                    }
                     
                     button {
                         onclick: move |_| search_mode.set(models::SearchMode::Text),
                         style: format!(
-                            "flex: 1; padding: 14px 20px; background: {}; color: {}; border: none; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.2s; border-bottom: 3px solid {}; position: relative;",
-                            if matches!(search_mode(), models::SearchMode::Text) { "#1f2937" } else { "transparent" },
-                            if matches!(search_mode(), models::SearchMode::Text) { "#0891b2" } else { "#6b7280" },
-                            if matches!(search_mode(), models::SearchMode::Text) { "#0891b2" } else { "transparent" }
+                            "padding: 8px 16px; background: {}; color: {}; border: {}; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s ease; border-radius: 6px; {}",
+                            if matches!(search_mode(), models::SearchMode::Text) { 
+                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)" 
+                            } else { 
+                                "#111827" 
+                            },
+                            if matches!(search_mode(), models::SearchMode::Text) { "#ffffff" } else { "#9ca3af" },
+                            if matches!(search_mode(), models::SearchMode::Text) {
+                                "2px solid #0891b2"
+                            } else {
+                                "1px solid #374151"
+                            },
+                            if matches!(search_mode(), models::SearchMode::Text) {
+                                "box-shadow: 0 2px 4px rgba(8, 145, 178, 0.3);"
+                            } else {
+                                "box-shadow: none;"
+                            }
                         ),
-                        "Text Search"
-                    }
-
-                    button {
-                        onclick: move |_| search_mode.set(models::SearchMode::Vector),
-                        style: format!(
-                            "flex: 1; padding: 14px 20px; background: {}; color: {}; border: none; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.2s; border-bottom: 3px solid {}; position: relative;",
-                            if matches!(search_mode(), models::SearchMode::Vector) { "#1f2937" } else { "transparent" },
-                            if matches!(search_mode(), models::SearchMode::Vector) { "#0891b2" } else { "#6b7280" },
-                            if matches!(search_mode(), models::SearchMode::Vector) { "#0891b2" } else { "transparent" }
-                        ),
-                        "Vector Search"
+                        onmouseover: move |_| {},
+                        "Text"
                     }
 
                     button {
                         onclick: move |_| search_mode.set(models::SearchMode::Both),
                         style: format!(
-                            "flex: 1; padding: 14px 20px; background: {}; color: {}; border: none; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.2s; border-bottom: 3px solid {}; position: relative;",
-                            if matches!(search_mode(), models::SearchMode::Both) { "#1f2937" } else { "transparent" },
-                            if matches!(search_mode(), models::SearchMode::Both) { "#0891b2" } else { "#6b7280" },
-                            if matches!(search_mode(), models::SearchMode::Both) { "#0891b2" } else { "transparent" }
+                            "padding: 8px 16px; background: {}; color: {}; border: {}; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s ease; border-radius: 6px; {}",
+                            if matches!(search_mode(), models::SearchMode::Both) { 
+                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)" 
+                            } else { 
+                                "#111827" 
+                            },
+                            if matches!(search_mode(), models::SearchMode::Both) { "#ffffff" } else { "#9ca3af" },
+                            if matches!(search_mode(), models::SearchMode::Both) {
+                                "2px solid #0891b2"
+                            } else {
+                                "1px solid #374151"
+                            },
+                            if matches!(search_mode(), models::SearchMode::Both) {
+                                "box-shadow: 0 2px 4px rgba(8, 145, 178, 0.3);"
+                            } else {
+                                "box-shadow: none;"
+                            }
                         ),
-                        "Both (RRF)"
+                        "Both"
+                    }
+
+                    button {
+                        onclick: move |_| search_mode.set(models::SearchMode::Vector),
+                        style: format!(
+                            "padding: 8px 16px; background: {}; color: {}; border: {}; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s ease; border-radius: 6px; {}",
+                            if matches!(search_mode(), models::SearchMode::Vector) { 
+                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)" 
+                            } else { 
+                                "#111827" 
+                            },
+                            if matches!(search_mode(), models::SearchMode::Vector) { "#ffffff" } else { "#9ca3af" },
+                            if matches!(search_mode(), models::SearchMode::Vector) {
+                                "2px solid #0891b2"
+                            } else {
+                                "1px solid #374151"
+                            },
+                            if matches!(search_mode(), models::SearchMode::Vector) {
+                                "box-shadow: 0 2px 4px rgba(8, 145, 178, 0.3);"
+                            } else {
+                                "box-shadow: none;"
+                            }
+                        ),
+                        "Vector"
                     }
                 }
 
