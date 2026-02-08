@@ -76,14 +76,15 @@ pub fn AiLiveResults() -> Element {
     rsx! {
         div {
             class: "ai-live-results-container",
+            style: "max-width: 60vw; margin: 0 auto;",
 
             // Browse actions bar at the top
             div {
                 class: "browse-actions-bar",
-                style: "margin-bottom: 16px; padding: 12px 16px; background: #1f2937; border-radius: 8px; display: flex; gap: 12px; align-items: center; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);",
+                style: "margin-bottom: 12px; padding: 8px 12px; background: #1f2937; border-radius: 6px; display: flex; gap: 10px; align-items: center; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);",
                 
                 div {
-                    style: "color: #9ca3af; font-weight: 600; font-size: 14px;",
+                    style: "color: #9ca3af; font-weight: 600; font-size: 13px;",
                     "Browse:"
                 }
 
@@ -113,7 +114,7 @@ pub fn AiLiveResults() -> Element {
                         });
                     },
                     disabled: is_loading(),
-                    style: "padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;",
+                    style: "padding: 8px 16px; background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; font-size: 13px;",
 
                     if is_loading() {
                         "Loading..."
