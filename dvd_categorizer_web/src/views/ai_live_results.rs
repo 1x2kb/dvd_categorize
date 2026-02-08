@@ -15,6 +15,7 @@ async fn send_search_request(
     query: String,
     disable_enhancement: bool,
     search_mode: models::SearchMode,
+    selected_model: Option<String>,
 ) -> Result<models::SearchResponse, reqwest::Error> {
     let window = web_sys::window().unwrap();
     let location = window.location();
@@ -29,6 +30,7 @@ async fn send_search_request(
         query,
         disable_enhancement,
         search_mode,
+        model: selected_model,
     };
 
     let client = reqwest::Client::new();
@@ -63,6 +65,26 @@ async fn fetch_recent_movies() -> Result<Vec<ScoredMovie>, reqwest::Error> {
     Ok(response)
 }
 
+async fn fetch_available_models() -> Result<models::AvailableModelsResponse, reqwest::Error> {
+    let window = web_sys::window().unwrap();
+    let location = window.location();
+    let hostname = location
+        .hostname()
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
+
+    let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+
+    let client = reqwest::Client::new();
+    let response: models::AvailableModelsResponse = client
+        .get(format!("http://{hostname}:{server_port}/ai/models"))
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    Ok(response)
+}
+
 #[component]
 pub fn AiLiveResults() -> Element {
     let mut movies: Signal<Arc<Vec<ScoredMovie>>> = use_signal(|| Arc::new(Vec::new()));
@@ -72,6 +94,22 @@ pub fn AiLiveResults() -> Element {
     let mut search_mode = use_signal(|| models::SearchMode::Both);
     let mut enhanced_query = use_signal(String::new);
     let mut original_query = use_signal(String::new);
+    let mut selected_model = use_signal(|| None::<String>);
+    let mut available_models = use_signal(|| Vec::<models::AvailableModel>::new());
+
+    // Fetch available models on component mount
+    use_effect(move || {
+        spawn(async move {
+            match fetch_available_models().await {
+                Ok(response) => {
+                    available_models.set(response.models);
+                }
+                Err(err) => {
+                    log::error!("Failed to fetch available models: {:#?}", err);
+                }
+            }
+        });
+    });
 
     rsx! {
         div {
@@ -210,6 +248,40 @@ pub fn AiLiveResults() -> Element {
                         ),
                         "Vector"
                     }
+
+                    // Model selector
+                    div {
+                        style: "margin-left: auto; display: flex; align-items: center; gap: 8px;",
+                        
+                        span {
+                            style: "color: #9ca3af; font-size: 13px; font-weight: 600;",
+                            "Model:"
+                        }
+                        
+                        select {
+                            value: match selected_model() {
+                                Some(ref model) => model.clone(),
+                                None => "default".to_string(),
+                            },
+                            onchange: move |evt| {
+                                let value = evt.value();
+                                if value == "default" {
+                                    selected_model.set(None);
+                                } else {
+                                    selected_model.set(Some(value));
+                                }
+                            },
+                            style: "padding: 8px 12px; background: #111827; color: #d1d5db; border: 1px solid #374151; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;",
+                            
+                            option { value: "default", "Default" }
+                            for model in available_models().iter() {
+                                option { 
+                                    value: "{model.name}",
+                                    "{model.name}"
+                                }
+                            }
+                        }
+                    }
                 }
 
                 div {
@@ -234,7 +306,7 @@ pub fn AiLiveResults() -> Element {
                                     is_loading.set(true);
                                     movies.set(Arc::new(vec![]));
 
-                                    let result = send_search_request(input_value(), disable_enhancement(), search_mode()).await;
+                                    let result = send_search_request(input_value(), disable_enhancement(), search_mode(), selected_model()).await;
                                     match result {
                                         Ok(response) => {
                                             movies.set(Arc::new(response.results));
@@ -262,7 +334,7 @@ pub fn AiLiveResults() -> Element {
                                 is_loading.set(true);
                                 movies.set(Arc::new(vec![]));
 
-                                let result = send_search_request(input_value(), disable_enhancement(), search_mode()).await;
+                                let result = send_search_request(input_value(), disable_enhancement(), search_mode(), selected_model()).await;
                                 match result {
                                     Ok(response) => {
                                         movies.set(Arc::new(response.results));

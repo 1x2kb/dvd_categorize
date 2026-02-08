@@ -140,6 +140,10 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
             post(pull_ollama_model),
         )
         .route(
+            "/ai/models",
+            get(list_available_models),
+        )
+        .route(
             "/ai/recent",
             get(get_recent_movies),
         )
