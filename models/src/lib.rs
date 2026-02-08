@@ -392,6 +392,7 @@ pub struct SearchRequest {
     pub disable_enhancement: bool,
     #[serde(default)]
     pub search_mode: SearchMode,
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -416,6 +417,17 @@ pub struct PullModelRequest {
 pub struct PullModelResponse {
     pub success: bool,
     pub message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AvailableModel {
+    pub name: String,
+    pub size: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AvailableModelsResponse {
+    pub models: Vec<AvailableModel>,
 }
 
 #[cfg(feature = "testing")]

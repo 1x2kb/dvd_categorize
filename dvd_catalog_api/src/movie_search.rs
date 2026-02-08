@@ -483,6 +483,7 @@ async fn vector_only_search(
     query: &str,
     limit: usize,
     disable_enhancement: bool,
+    model: Option<&str>,
 ) -> (Vec<(i32, f32)>, String) {
     let start_time = std::time::Instant::now();
     info!("Vector-only search mode");
@@ -492,7 +493,7 @@ async fn vector_only_search(
         info!("Query enhancement disabled, using original query");
         query.to_string()
     } else {
-        ai_chat::query_enhancement::enhance_query_for_embedding(query).await
+        ai_chat::query_enhancement::enhance_query_for_embedding(query, model).await
     };
     
     info!("Enhanced query: {}", enhanced_query);
@@ -550,6 +551,7 @@ async fn hybrid_both_search(
     movies: Arc<Vec<FullMovie>>,
     limit: usize,
     disable_enhancement: bool,
+    model: Option<&str>,
 ) -> (Vec<(i32, f32)>, String) {
     let start_time = std::time::Instant::now();
     info!("Hybrid search mode (both text and vector)");
@@ -566,7 +568,7 @@ async fn hybrid_both_search(
                 info!("Query enhancement disabled, using original query");
                 query_for_enhancement
             } else {
-                ai_chat::query_enhancement::enhance_query_for_embedding(&query_for_enhancement).await
+                ai_chat::query_enhancement::enhance_query_for_embedding(&query_for_enhancement, model).await
             }
         }
     );
@@ -684,6 +686,7 @@ pub async fn hybrid_search(
     limit: usize,
     disable_enhancement: bool,
     search_mode: models::SearchMode,
+    model: Option<&str>,
 ) -> (
     Vec<(
         i32,
@@ -693,8 +696,8 @@ pub async fn hybrid_search(
 ) {
     match search_mode {
         models::SearchMode::Text => text_only_search(query, &movies, limit).await,
-        models::SearchMode::Vector => vector_only_search(query, limit, disable_enhancement).await,
-        models::SearchMode::Both => hybrid_both_search(query, movies, limit, disable_enhancement).await,
+        models::SearchMode::Vector => vector_only_search(query, limit, disable_enhancement, model).await,
+        models::SearchMode::Both => hybrid_both_search(query, movies, limit, disable_enhancement, model).await,
     }
 }
 
@@ -807,6 +810,7 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
         15,
         false,
         models::SearchMode::Both,
+        None,
     )
     .await;
 

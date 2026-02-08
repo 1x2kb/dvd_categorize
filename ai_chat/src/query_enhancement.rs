@@ -10,10 +10,11 @@ use crate::{DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_PORT, DEFAULT_SMALL_MODEL};
 ///
 /// # Arguments
 /// * `query` - The original user query
+/// * `model` - Optional AI model to use for enhancement. Defaults to DEFAULT_SMALL_MODEL if None
 ///
 /// # Returns
 /// An enhanced query string suitable for embedding, or the original query if enhancement fails
-pub async fn enhance_query_for_embedding(query: &str) -> String {
+pub async fn enhance_query_for_embedding(query: &str, model: Option<&str>) -> String {
     debug!(
         "Enhancing query for embedding: {}",
         query
@@ -82,8 +83,11 @@ You: movies including Brad Pitt as staring or signifigant supporting role.
         query
     );
 
+    let model_name = model.unwrap_or(DEFAULT_SMALL_MODEL);
+    debug!("Using model for query enhancement: {}", model_name);
+    
     let request = ChatMessageRequest::new(
-        DEFAULT_SMALL_MODEL.to_string(),
+        model_name.to_string(),
         vec![
             ChatMessage::system(system_prompt.to_string()),
             ChatMessage::user(user_message),
