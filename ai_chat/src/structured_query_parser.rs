@@ -42,8 +42,12 @@ Parse the user's query and extract:
 - actors: List of actor names mentioned
 - directors: List of director names mentioned
 - genres: List of genres mentioned (e.g., action, comedy, sci-fi, thriller, drama, horror, adventure)
-- title_keywords: Keywords that might be part of a movie title
-- description_keywords: Keywords that describe the movie plot or theme
+- title_keywords: ONLY use for specific movie title references (e.g., "the matrix", "inception")
+- description_keywords: Use for plot themes, subjects, or content (e.g., "nazi", "nazis", "space", "robot", "love story")
+
+CRITICAL: title_keywords should ONLY contain words when the user is searching for a specific movie title. Words describing movie content, themes, or subjects go in description_keywords.
+
+IMPORTANT: For description_keywords, include BOTH singular and plural forms (e.g., "nazi" AND "nazis", "robot" AND "robots"). This increases match likelihood.
 
 IMPORTANT: Return ONLY a valid JSON object with these exact fields. Do not include any explanation, notes, or extra text.
 
@@ -52,27 +56,42 @@ User: "Show me brad pitt action adventure movies"
 Response: {"actors":["brad pitt"],"directors":[],"genres":["action","adventure"],"title_keywords":[],"description_keywords":[]}
 
 Example 2:
+User: "brad pitt movies about nazis"
+Response: {"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazi","nazis"]}
+
+Example 3:
 User: "christopher nolan space movies"
 Response: {"actors":[],"directors":["christopher nolan"],"genres":[],"title_keywords":[],"description_keywords":["space"]}
 
-Example 3:
-User: "funny robot movies"
-Response: {"actors":[],"directors":[],"genres":["comedy"],"title_keywords":[],"description_keywords":["robot","funny"]}
-
 Example 4:
+User: "funny robot movies"
+Response: {"actors":[],"directors":[],"genres":["comedy"],"title_keywords":[],"description_keywords":["robot","robots","funny"]}
+
+Example 5:
 User: "the matrix"
 Response: {"actors":[],"directors":[],"genres":[],"title_keywords":["matrix"],"description_keywords":[]}
 
-Example 5:
-User: "tom hanks comedy"
-Response: {"actors":["tom hanks"],"directors":[],"genres":["comedy"],"title_keywords":[],"description_keywords":[]}
+Example 6:
+User: "movies about time travel"
+Response: {"actors":[],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["time travel"]}
+
+Example 7:
+User: "tom hanks war movies"
+Response: {"actors":["tom hanks"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["war"]}
+
+Example 8:
+User: "inception"
+Response: {"actors":[],"directors":[],"genres":[],"title_keywords":["inception"],"description_keywords":[]}
 
 Rules:
 - Always return valid JSON
 - Use lowercase for all values
 - Keep actor/director names as they appear in the query
 - Map common genre synonyms: funny->comedy, scary->horror, sci-fi/science fiction->sci-fi
-- If unclear whether something is a title keyword or description keyword, prefer description_keywords
+- title_keywords: ONLY for specific movie title searches (rare)
+- description_keywords: For themes, subjects, plot elements, content descriptors (common)
+- When in doubt, use description_keywords NOT title_keywords
+- Phrases like "about X", "X movies", "movies with X" → X goes in description_keywords
 - All arrays can be empty if nothing is found
 "#;
 
@@ -117,14 +136,45 @@ Rules:
     }
 }
 
-/// Extracts JSON from AI response, handling cases where the AI adds extra text
+/// Extracts JSON from AI response, handling cases where the AI adds extra text or markdown code blocks
 fn extract_json_from_response(content: &str) -> String {
-    let content = content.trim();
+    let mut content = content.trim();
 
+    // Remove markdown code blocks if present
+    if content.starts_with("```json") {
+        content = content.strip_prefix("```json").unwrap_or(content).trim();
+    } else if content.starts_with("```") {
+        content = content.strip_prefix("```").unwrap_or(content).trim();
+    }
+
+    if content.ends_with("```") {
+        content = content.strip_suffix("```").unwrap_or(content).trim();
+    }
+
+    // Find the first complete JSON object by tracking brace depth
     if let Some(start) = content.find('{') {
-        if let Some(end) = content.rfind('}') {
-            if start <= end {
-                return content[start..=end].to_string();
+        let mut depth = 0;
+        let mut in_string = false;
+        let mut escape_next = false;
+        
+        for (i, ch) in content[start..].char_indices() {
+            if escape_next {
+                escape_next = false;
+                continue;
+            }
+            
+            match ch {
+                '\\' if in_string => escape_next = true,
+                '"' => in_string = !in_string,
+                '{' if !in_string => depth += 1,
+                '}' if !in_string => {
+                    depth -= 1;
+                    if depth == 0 {
+                        // Found the end of the first complete JSON object
+                        return content[start..=start + i].to_string();
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -139,23 +189,54 @@ mod tests {
     #[test]
     fn test_extract_json_from_response() {
         let cases = vec![
+            // Plain JSON
             (
                 r#"{"actors":["brad pitt"],"directors":[],"genres":["action"],"title_keywords":[],"description_keywords":[]}"#,
                 r#"{"actors":["brad pitt"],"directors":[],"genres":["action"],"title_keywords":[],"description_keywords":[]}"#,
             ),
+            // JSON with prefix text
             (
                 r#"Here is the result: {"actors":[],"directors":[],"genres":[],"title_keywords":[],"description_keywords":[]}"#,
                 r#"{"actors":[],"directors":[],"genres":[],"title_keywords":[],"description_keywords":[]}"#,
             ),
+            // JSON with suffix text
             (
                 r#"{"actors":["tom hanks"],"directors":[],"genres":["comedy"],"title_keywords":[],"description_keywords":[]} - This is a comedy movie"#,
                 r#"{"actors":["tom hanks"],"directors":[],"genres":["comedy"],"title_keywords":[],"description_keywords":[]}"#,
+            ),
+            // Markdown code block with json tag
+            (
+                r#"```json
+{"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazis"]}
+```"#,
+                r#"{"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazis"]}"#,
+            ),
+            // Markdown code block without json tag
+            (
+                r#"```
+{"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazis"]}
+```"#,
+                r#"{"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazis"]}"#,
+            ),
+            // Markdown with extra text after closing backticks
+            (
+                r#"{"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazis"]}
+
+    ```json
+    {
+      "actors": ["brad pitt"],
+      "directors": [],
+      "genres": [],
+      "title_keywords": [],
+      "description_keywords": ["nazis"]
+    }"#,
+                r#"{"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazis"]}"#,
             ),
         ];
 
         for (input, expected) in cases {
             let result = extract_json_from_response(input);
-            assert_eq!(result, expected);
+            assert_eq!(result, expected, "Failed for input: {}", input);
         }
     }
 }
