@@ -3,6 +3,7 @@ pub mod directors;
 pub mod full_movies;
 pub mod genres;
 pub mod movies;
+pub mod structured_search;
 
 use std::collections::HashMap;
 use std::env;
