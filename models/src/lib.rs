@@ -377,12 +377,29 @@ pub enum SearchMode {
     Text,
     Vector,
     Both,
+    Structured,
 }
 
 impl Default for SearchMode {
     fn default() -> Self {
         SearchMode::Both
     }
+}
+
+/// Structured query criteria parsed from natural language
+/// Used for dynamic Diesel query building
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+pub struct StructuredQuery {
+    #[serde(default)]
+    pub actors: Vec<String>,
+    #[serde(default)]
+    pub directors: Vec<String>,
+    #[serde(default)]
+    pub genres: Vec<String>,
+    #[serde(default)]
+    pub title_keywords: Vec<String>,
+    #[serde(default)]
+    pub description_keywords: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

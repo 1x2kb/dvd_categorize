@@ -673,12 +673,66 @@ async fn hybrid_both_search(
     (final_results, enhanced_query)
 }
 
+/// Performs structured query search using AI to parse the query and dynamic Diesel queries
+#[instrument]
+async fn structured_query_search(
+    query: &str,
+    limit: usize,
+    model: Option<&str>,
+) -> (Vec<(i32, f32)>, String) {
+    let start_time = std::time::Instant::now();
+    info!("Structured query search mode");
+
+    match ai_chat::structured_query_parser::parse_query_to_structured(query, model).await {
+        Ok(structured_query) => {
+            info!("Parsed structured query: {:?}", structured_query);
+            
+            let structured_query_str = format!("{:?}", structured_query);
+            
+            match database::get_database_connection().await {
+                Ok(mut conn) => {
+                    match database::structured_search::search_movies_structured(&structured_query, &mut conn).await {
+                        Ok(movies) => {
+                            info!("Structured search found {} movies in {:.2?}", movies.len(), start_time.elapsed());
+                            
+                            let results: Vec<(i32, f32)> = movies
+                                .into_iter()
+                                .take(limit)
+                                .enumerate()
+                                .map(|(rank, movie)| {
+                                    let score = 1.0 / (1.0 + rank as f32);
+                                    (movie.id, score)
+                                })
+                                .collect();
+                            
+                            (results, structured_query_str)
+                        }
+                        Err(e) => {
+                            error!("Structured search database error: {:?}", e);
+                            (Vec::new(), query.to_string())
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to get database connection: {:?}", e);
+                    (Vec::new(), query.to_string())
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to parse query to structured format: {}", e);
+            (Vec::new(), query.to_string())
+        }
+    }
+}
+
 /// Dispatches to the appropriate search function based on search mode
 /// Returns (results, enhanced_query) where results is Vec<(movie_id, score)>
 /// Score interpretation depends on search_mode:
 /// - Text: raw keyword score
 /// - Vector: cosine similarity (0-1, higher is better)
 /// - Both: RRF score combining both methods
+/// - Structured: AI-parsed query with dynamic Diesel queries
 #[instrument(skip(movies))]
 pub async fn hybrid_search(
     query: &str,
@@ -698,6 +752,7 @@ pub async fn hybrid_search(
         models::SearchMode::Text => text_only_search(query, &movies, limit).await,
         models::SearchMode::Vector => vector_only_search(query, limit, disable_enhancement, model).await,
         models::SearchMode::Both => hybrid_both_search(query, movies, limit, disable_enhancement, model).await,
+        models::SearchMode::Structured => structured_query_search(query, limit, model).await,
     }
 }
 

@@ -249,6 +249,30 @@ pub fn AiLiveResults() -> Element {
                         "Vector"
                     }
 
+                    button {
+                        onclick: move |_| search_mode.set(models::SearchMode::Structured),
+                        style: format!(
+                            "padding: 8px 16px; background: {}; color: {}; border: {}; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s ease; border-radius: 6px; {}",
+                            if matches!(search_mode(), models::SearchMode::Structured) { 
+                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)" 
+                            } else { 
+                                "#111827" 
+                            },
+                            if matches!(search_mode(), models::SearchMode::Structured) { "#ffffff" } else { "#9ca3af" },
+                            if matches!(search_mode(), models::SearchMode::Structured) {
+                                "2px solid #0891b2"
+                            } else {
+                                "1px solid #374151"
+                            },
+                            if matches!(search_mode(), models::SearchMode::Structured) {
+                                "box-shadow: 0 2px 4px rgba(8, 145, 178, 0.3);"
+                            } else {
+                                "box-shadow: none;"
+                            }
+                        ),
+                        "Structured"
+                    }
+
                     // Model selector
                     div {
                         style: "margin-left: auto; display: flex; align-items: center; gap: 8px;",
