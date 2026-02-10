@@ -87,7 +87,7 @@ pub fn ModelPull() -> Element {
                                                 },
                                                 Err(e) => {
                                                     error!("Error parsing response: {}", e);
-                                                    status_message.set(Some(format!("Error: Failed to parse response")));
+                                                    status_message.set(Some("Error: Failed to parse response".to_string()));
                                                     is_success.set(false);
                                                 }
                                             }

@@ -149,7 +149,7 @@ impl SearchMoviesStructured for MockMovieRepository {
 
         if !query.directors.is_empty() {
             results.retain(|movie| {
-                movie.director.as_ref().map_or(false, |d| {
+                movie.director.as_ref().is_some_and(|d| {
                     query
                         .directors
                         .iter()

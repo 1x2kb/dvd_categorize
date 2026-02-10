@@ -95,7 +95,7 @@ pub fn AiLiveResults() -> Element {
     let mut enhanced_query = use_signal(String::new);
     let mut original_query = use_signal(String::new);
     let mut selected_model = use_signal(|| None::<String>);
-    let mut available_models = use_signal(|| Vec::<models::AvailableModel>::new());
+    let mut available_models = use_signal(Vec::<models::AvailableModel>::new);
 
     // Fetch available models on component mount
     use_effect(move || {
