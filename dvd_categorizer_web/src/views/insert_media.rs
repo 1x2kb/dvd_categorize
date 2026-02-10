@@ -10,6 +10,7 @@ pub fn InsertMedia() -> Element {
     let mut csv_data = use_signal(|| "".to_string());
     let mut dvd_data: Signal<Arc<Vec<FullMovie>>> = use_signal(|| Arc::new(Vec::new()));
     let mut is_previewing: Signal<bool> = use_signal(|| false);
+    let mut error_message: Signal<Option<String>> = use_signal(|| None);
 
     // Helper for pluralization
     let dvd_count = dvd_data().len();
@@ -23,8 +24,23 @@ pub fn InsertMedia() -> Element {
                 div { class: "csv-instructions",
                     p { strong { "CSV Format (header row required):" } }
                     p { code { "Title,Description,Actors,Genres,Director,AddedOn,Location" } }
-                    p { class: "csv-note", 
-                        "⚠️ Header row must be included with exactly these 7 column names. Order doesn't matter." 
+                    p { class: "csv-note",
+                        "⚠️ Header row must be included with exactly these 7 column names. Order doesn't matter."
+                    }
+                }
+
+                // Error/Success message display
+                if let Some(msg) = error_message() {
+                    div { class: "message",
+                        style: if msg.starts_with("✓") {
+                            "background-color: #efe; border: 1px solid #cfc; padding: 12px; margin: 10px 0; border-radius: 4px; color: #363;"
+                        } else {
+                            "background-color: #fee; border: 1px solid #fcc; padding: 12px; margin: 10px 0; border-radius: 4px; color: #c33;"
+                        },
+                        if !msg.starts_with("✓") {
+                            strong { "Error: " }
+                        }
+                        "{msg}"
                     }
                 }
 
@@ -58,6 +74,7 @@ pub fn InsertMedia() -> Element {
                         class: "button button-primary",
                         onclick: move |_| {
                             spawn(async move {
+                                error_message.set(None);
                                 let window = web_sys::window().unwrap();
                                 let location = window.location();
                                 let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
@@ -72,20 +89,41 @@ pub fn InsertMedia() -> Element {
 
                                 match result {
                                     Ok(response) => {
-                                        let response: Result<Vec<FullMovie>, String> = response
-                                            .json::<Vec<FullMovie>>()
-                                            .await
-                                            .map_err(|e| e.to_string());
-
-                                        match response {
-                                            Ok(dvds) => {
-                                                dvd_data.set(Arc::new(dvds));
-                                                is_previewing.set(true);
-                                            },
-                                            Err(e) => error!("Error parsing response: {}", e),
+                                        let status = response.status();
+                                        if status.is_success() {
+                                            match response.json::<Vec<FullMovie>>().await {
+                                                Ok(dvds) => {
+                                                    let count = dvds.len();
+                                                    let movie_word = if count == 1 { "movie" } else { "movies" };
+                                                    dvd_data.set(Arc::new(dvds));
+                                                    is_previewing.set(true);
+                                                    error_message.set(Some(format!("✓ Successfully loaded {} {} for preview", count, movie_word)));
+                                                },
+                                                Err(e) => {
+                                                    let err_msg = format!("Error parsing response: {}", e);
+                                                    error!("{}", err_msg);
+                                                    error_message.set(Some(err_msg));
+                                                }
+                                            }
+                                        } else {
+                                            match response.text().await {
+                                                Ok(error_text) => {
+                                                    error!("CSV parsing failed: {}", error_text);
+                                                    error_message.set(Some(error_text));
+                                                },
+                                                Err(e) => {
+                                                    let err_msg = format!("Request failed with status {}: {}", status, e);
+                                                    error!("{}", err_msg);
+                                                    error_message.set(Some(err_msg));
+                                                }
+                                            }
                                         }
                                     },
-                                    Err(e) => error!("Request failed: {}", e),
+                                    Err(e) => {
+                                        let err_msg = format!("Request failed: {}", e);
+                                        error!("{}", err_msg);
+                                        error_message.set(Some(err_msg));
+                                    }
                                 }
                             });
                         },
@@ -107,6 +145,7 @@ pub fn InsertMedia() -> Element {
                             class: "button button-success",
                             onclick: move |_| {
                                 spawn(async move {
+                                error_message.set(None);
                                 let window = web_sys::window().unwrap();
                                 let location = window.location();
                                 let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
@@ -121,20 +160,33 @@ pub fn InsertMedia() -> Element {
 
                                 match result {
                                     Ok(response) => {
-                                        let response: Result<Vec<FullMovie>, String> = response
-                                            .json::<Vec<FullMovie>>()
-                                            .await
-                                            .map_err(|e| e.to_string());
-
-                                        match response {
-                                            Ok(dvds) => {
-                                                dvd_data.set(Arc::new(dvds));
-                                                is_previewing.set(true);
-                                            },
-                                            Err(e) => error!("Error parsing response: {}", e),
+                                        let status = response.status();
+                                        if status.is_success() {
+                                            let count = dvd_data().len();
+                                            let movie_word = if count == 1 { "movie" } else { "movies" };
+                                            dvd_data.set(Arc::new(vec![]));
+                                            is_previewing.set(false);
+                                            csv_data.set(String::new());
+                                            error_message.set(Some(format!("✓ Successfully saved {} {} to database!", count, movie_word)));
+                                        } else {
+                                            match response.text().await {
+                                                Ok(error_text) => {
+                                                    error!("CSV parsing/insertion failed: {}", error_text);
+                                                    error_message.set(Some(error_text));
+                                                },
+                                                Err(e) => {
+                                                    let err_msg = format!("Request failed with status {}: {}", status, e);
+                                                    error!("{}", err_msg);
+                                                    error_message.set(Some(err_msg));
+                                                }
+                                            }
                                         }
                                     },
-                                    Err(e) => error!("Request failed: {}", e),
+                                    Err(e) => {
+                                        let err_msg = format!("Request failed: {}", e);
+                                        error!("{}", err_msg);
+                                        error_message.set(Some(err_msg));
+                                    }
                                 }
                             });
                             },

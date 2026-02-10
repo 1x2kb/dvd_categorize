@@ -141,21 +141,41 @@ pub async fn export_csv(
 
 #[instrument]
 #[debug_handler]
-pub async fn preview_csv(Json(value): Json<CsvInput>) -> impl axum::response::IntoResponse {
-    let movies = csv_utils::parse_csv(value.input.as_bytes()).unwrap_or_else(
-        |e| {
-            error!(
+pub async fn preview_csv(
+    Json(value): Json<CsvInput>,
+) -> Result<
+    impl IntoResponse,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    let movies = match csv_utils::parse_csv(
+        value
+            .input
+            .as_bytes(),
+    ) {
+        Ok(movies) => movies,
+        Err(e) => {
+            let error = format!(
                 "Failed to parse CSV: {}",
                 e
             );
-            Vec::new()
-        },
-    );
+            error!(
+                "{}",
+                error
+            );
+            return Err((
+                StatusCode::BAD_REQUEST,
+                error,
+            ));
+        }
+    };
 
-    (
+    Ok((
         StatusCode::OK,
         Json(movies),
-    )
+    ))
 }
 
 #[instrument]
@@ -170,7 +190,11 @@ pub async fn parse_csv(
         String,
     ),
 > {
-    let movies = match csv_utils::parse_csv(value.input.as_bytes()) {
+    let movies = match csv_utils::parse_csv(
+        value
+            .input
+            .as_bytes(),
+    ) {
         Ok(movies) => movies,
         Err(e) => {
             let error = format!(
@@ -445,7 +469,9 @@ pub async fn get_matching_movies(
         &movies,
         search_request.disable_enhancement,
         search_request.search_mode,
-        search_request.model.as_deref(),
+        search_request
+            .model
+            .as_deref(),
     )
     .await
     {
@@ -598,13 +624,7 @@ pub async fn list_available_models() -> Result<
                 "Successfully retrieved {} models",
                 models.len()
             );
-            Ok(
-                Json(
-                    models::AvailableModelsResponse {
-                        models,
-                    },
-                ),
-            )
+            Ok(Json(models::AvailableModelsResponse { models }))
         }
         Err(e) => {
             error!(
@@ -633,10 +653,12 @@ pub async fn get_recent_movies() -> Json<Vec<ScoredMovie>> {
             );
             let scored_movies: Vec<ScoredMovie> = movies
                 .into_iter()
-                .map(|movie| ScoredMovie {
-                    movie,
-                    vector_score: 0.0,
-                })
+                .map(
+                    |movie| ScoredMovie {
+                        movie,
+                        vector_score: 0.0,
+                    },
+                )
                 .collect();
             Json(scored_movies)
         }

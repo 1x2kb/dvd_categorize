@@ -9,7 +9,9 @@ pub fn MoviesList() -> Element {
         .read()
         .movies;
 
-    let movie_list_opt = movies.read().clone();
+    let movie_list_opt = movies
+        .read()
+        .clone();
 
     rsx! {
         if let Some(movie_list) = movie_list_opt.as_ref() {

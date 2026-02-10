@@ -8,17 +8,15 @@ pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
     let mut writer = Writer::from_writer(vec![]);
 
     // Write header row
-    writer.write_record(
-        [
-            "Title",
-            "Description",
-            "Actors",
-            "Genres",
-            "Director",
-            "AddedOn",
-            "Location",
-        ],
-    )?;
+    writer.write_record([
+        "Title",
+        "Description",
+        "Actors",
+        "Genres",
+        "Director",
+        "AddedOn",
+        "Location",
+    ])?;
 
     for movie in movies {
         let actors = movie
@@ -58,20 +56,18 @@ pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
             .as_deref()
             .unwrap_or("");
 
-        writer.write_record(
-            [
-                &movie.name,
-                movie
-                    .description
-                    .as_deref()
-                    .unwrap_or(""),
-                &actors,
-                &genres,
-                director,
-                added_on,
-                location,
-            ],
-        )?;
+        writer.write_record([
+            &movie.name,
+            movie
+                .description
+                .as_deref()
+                .unwrap_or(""),
+            &actors,
+            &genres,
+            director,
+            added_on,
+            location,
+        ])?;
     }
 
     let csv_bytes = writer.into_inner()?;
@@ -118,5 +114,4 @@ mod tests {
         assert!(csv.contains("Action | Drama"));
         assert!(csv.contains("Test Director"));
     }
-
 }
