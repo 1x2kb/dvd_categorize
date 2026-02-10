@@ -84,8 +84,11 @@ You: movies including Brad Pitt as staring or signifigant supporting role.
     );
 
     let model_name = model.unwrap_or(DEFAULT_SMALL_MODEL);
-    debug!("Using model for query enhancement: {}", model_name);
-    
+    debug!(
+        "Using model for query enhancement: {}",
+        model_name
+    );
+
     let request = ChatMessageRequest::new(
         model_name.to_string(),
         vec![

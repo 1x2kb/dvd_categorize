@@ -19,19 +19,31 @@ pub async fn parse_query_to_structured(
     query: &str,
     model: Option<&str>,
 ) -> Result<StructuredQuery, String> {
-    info!("Parsing query to structured format: {}", query);
+    info!(
+        "Parsing query to structured format: {}",
+        query
+    );
 
     let ollama_host =
         std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
     let ollama_port =
         std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
+    let ollama_url = format!(
+        "http://{}:{}",
+        ollama_host, ollama_port
+    );
 
     let ollama = match ollama_url.parse() {
         Ok(url) => Ollama::from_url(url),
         Err(e) => {
-            let error_msg = format!("Failed to parse Ollama URL: {}", e);
-            error!("{}", error_msg);
+            let error_msg = format!(
+                "Failed to parse Ollama URL: {}",
+                e
+            );
+            error!(
+                "{}",
+                error_msg
+            );
             return Err(error_msg);
         }
     };
@@ -95,10 +107,16 @@ Rules:
 - All arrays can be empty if nothing is found
 "#;
 
-    let user_message = format!("User: \"{}\"\nResponse:", query);
+    let user_message = format!(
+        "User: \"{}\"\nResponse:",
+        query
+    );
 
     let model_name = model.unwrap_or(DEFAULT_SMALL_MODEL);
-    debug!("Using model for query parsing: {}", model_name);
+    debug!(
+        "Using model for query parsing: {}",
+        model_name
+    );
 
     let request = ChatMessageRequest::new(
         model_name.to_string(),
@@ -108,29 +126,56 @@ Rules:
         ],
     );
 
-    match ollama.send_chat_messages(request).await {
+    match ollama
+        .send_chat_messages(request)
+        .await
+    {
         Ok(response) => {
-            let content = response.message.content.trim();
-            debug!("Raw AI response: {}", content);
+            let content = response
+                .message
+                .content
+                .trim();
+            debug!(
+                "Raw AI response: {}",
+                content
+            );
 
             let json_content = extract_json_from_response(content);
-            debug!("Extracted JSON: {}", json_content);
+            debug!(
+                "Extracted JSON: {}",
+                json_content
+            );
 
             match serde_json::from_str::<StructuredQuery>(&json_content) {
                 Ok(structured) => {
-                    info!("Successfully parsed query to: {:?}", structured);
+                    info!(
+                        "Successfully parsed query to: {:?}",
+                        structured
+                    );
                     Ok(structured)
                 }
                 Err(e) => {
-                    let error_msg = format!("Failed to parse JSON response: {}. JSON content was: {}", e, json_content);
-                    error!("{}", error_msg);
+                    let error_msg = format!(
+                        "Failed to parse JSON response: {}. JSON content was: {}",
+                        e, json_content
+                    );
+                    error!(
+                        "{}",
+                        error_msg
+                    );
                     Err(error_msg)
                 }
             }
         }
         Err(e) => {
-            let error_msg = format!("Failed to get AI response: {}", e);
-            error!("{}", error_msg);
+            let error_msg = format!(
+                "Failed to get AI response: {}",
+                e
+            );
+            error!(
+                "{}",
+                error_msg
+            );
             Err(error_msg)
         }
     }
@@ -142,13 +187,22 @@ fn extract_json_from_response(content: &str) -> String {
 
     // Remove markdown code blocks if present
     if content.starts_with("```json") {
-        content = content.strip_prefix("```json").unwrap_or(content).trim();
+        content = content
+            .strip_prefix("```json")
+            .unwrap_or(content)
+            .trim();
     } else if content.starts_with("```") {
-        content = content.strip_prefix("```").unwrap_or(content).trim();
+        content = content
+            .strip_prefix("```")
+            .unwrap_or(content)
+            .trim();
     }
 
     if content.ends_with("```") {
-        content = content.strip_suffix("```").unwrap_or(content).trim();
+        content = content
+            .strip_suffix("```")
+            .unwrap_or(content)
+            .trim();
     }
 
     // Find the first complete JSON object by tracking brace depth
@@ -156,13 +210,13 @@ fn extract_json_from_response(content: &str) -> String {
         let mut depth = 0;
         let mut in_string = false;
         let mut escape_next = false;
-        
+
         for (i, ch) in content[start..].char_indices() {
             if escape_next {
                 escape_next = false;
                 continue;
             }
-            
+
             match ch {
                 '\\' if in_string => escape_next = true,
                 '"' => in_string = !in_string,
@@ -236,7 +290,11 @@ mod tests {
 
         for (input, expected) in cases {
             let result = extract_json_from_response(input);
-            assert_eq!(result, expected, "Failed for input: {}", input);
+            assert_eq!(
+                result, expected,
+                "Failed for input: {}",
+                input
+            );
         }
     }
 }

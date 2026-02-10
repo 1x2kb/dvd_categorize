@@ -1,9 +1,13 @@
 pub mod actors;
 pub mod directors;
+pub mod embedding;
 pub mod full_movies;
 pub mod genres;
+pub mod mocks;
 pub mod movies;
+pub mod postgres;
 pub mod structured_search;
+pub mod traits;
 
 use std::collections::HashMap;
 use std::env;
@@ -18,9 +22,13 @@ use pgvector::{Vector, VectorExpressionMethods};
 
 pub use actors::*;
 pub use directors::*;
+pub use embedding::*;
 pub use full_movies::*;
 pub use genres::*;
+pub use mocks::*;
 pub use movies::*;
+pub use postgres::*;
+pub use traits::*;
 
 /// Type alias for database operation results
 pub type DbResult<T> = Result<T, DatabaseError>;

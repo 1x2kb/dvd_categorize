@@ -373,17 +373,13 @@ impl
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum SearchMode {
     Text,
     Vector,
+    #[default]
     Both,
     Structured,
-}
-
-impl Default for SearchMode {
-    fn default() -> Self {
-        SearchMode::Both
-    }
 }
 
 /// Structured query criteria parsed from natural language

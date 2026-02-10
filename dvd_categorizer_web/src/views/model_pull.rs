@@ -13,10 +13,10 @@ pub fn ModelPull() -> Element {
         div { class: "model-pull-container",
             div { class: "model-pull-section",
                 h2 { class: "section-title", "Pull Ollama Model" }
-                
+
                 div { class: "model-instructions",
-                    p { 
-                        "Enter the name of the Ollama model you want to pull. Common models include:" 
+                    p {
+                        "Enter the name of the Ollama model you want to pull. Common models include:"
                     }
                     ul { class: "model-examples",
                         li { code { "llama3.2" } " - Default chat model" }
@@ -28,10 +28,10 @@ pub fn ModelPull() -> Element {
                 }
 
                 div { class: "input-group",
-                    label { 
+                    label {
                         r#for: "model-name",
                         class: "input-label",
-                        "Model Name:" 
+                        "Model Name:"
                     }
                     input {
                         id: "model-name",
@@ -87,7 +87,7 @@ pub fn ModelPull() -> Element {
                                                 },
                                                 Err(e) => {
                                                     error!("Error parsing response: {}", e);
-                                                    status_message.set(Some(format!("Error: Failed to parse response")));
+                                                    status_message.set(Some("Error: Failed to parse response".to_string()));
                                                     is_success.set(false);
                                                 }
                                             }
@@ -130,7 +130,7 @@ pub fn ModelPull() -> Element {
                 }
 
                 if let Some(msg) = status_message() {
-                    div { 
+                    div {
                         class: if is_success() { "status-message status-success" } else { "status-message status-error" },
                         p { "{msg}" }
                     }
@@ -138,10 +138,10 @@ pub fn ModelPull() -> Element {
 
                 div { class: "info-section",
                     h3 { "About Model Pulling" }
-                    p { 
+                    p {
                         "Pulling a model downloads it from the Ollama registry and makes it available for use. "
                         "The first time you pull a model, it may take several minutes depending on the model size "
-                        "and your internet connection." 
+                        "and your internet connection."
                     }
                     p { class: "info-note",
                         "⚠️ Note: Large models can be several gigabytes in size. Ensure you have sufficient disk space "

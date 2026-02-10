@@ -95,21 +95,28 @@ pub fn AiLiveResults() -> Element {
     let mut enhanced_query = use_signal(String::new);
     let mut original_query = use_signal(String::new);
     let mut selected_model = use_signal(|| None::<String>);
-    let mut available_models = use_signal(|| Vec::<models::AvailableModel>::new());
+    let mut available_models = use_signal(Vec::<models::AvailableModel>::new);
 
     // Fetch available models on component mount
-    use_effect(move || {
-        spawn(async move {
-            match fetch_available_models().await {
-                Ok(response) => {
-                    available_models.set(response.models);
-                }
-                Err(err) => {
-                    log::error!("Failed to fetch available models: {:#?}", err);
-                }
-            }
-        });
-    });
+    use_effect(
+        move || {
+            spawn(
+                async move {
+                    match fetch_available_models().await {
+                        Ok(response) => {
+                            available_models.set(response.models);
+                        }
+                        Err(err) => {
+                            log::error!(
+                                "Failed to fetch available models: {:#?}",
+                                err
+                            );
+                        }
+                    }
+                },
+            );
+        },
+    );
 
     rsx! {
         div {
@@ -120,7 +127,7 @@ pub fn AiLiveResults() -> Element {
             div {
                 class: "browse-actions-bar",
                 style: "margin-bottom: 12px; padding: 8px 12px; background: #1f2937; border-radius: 6px; display: flex; gap: 10px; align-items: center; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);",
-                
+
                 div {
                     style: "color: #9ca3af; font-weight: 600; font-size: 13px;",
                     "Browse:"
@@ -170,20 +177,20 @@ pub fn AiLiveResults() -> Element {
                 // Search mode tabs
                 div {
                     style: "display: flex; gap: 8px; padding: 16px; background: #1f2937; align-items: center;",
-                    
+
                     span {
                         style: "color: #9ca3af; font-size: 13px; font-weight: 600; margin-right: 4px;",
                         "Mode:"
                     }
-                    
+
                     button {
                         onclick: move |_| search_mode.set(models::SearchMode::Text),
                         style: format!(
                             "padding: 8px 16px; background: {}; color: {}; border: {}; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s ease; border-radius: 6px; {}",
-                            if matches!(search_mode(), models::SearchMode::Text) { 
-                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)" 
-                            } else { 
-                                "#111827" 
+                            if matches!(search_mode(), models::SearchMode::Text) {
+                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)"
+                            } else {
+                                "#111827"
                             },
                             if matches!(search_mode(), models::SearchMode::Text) { "#ffffff" } else { "#9ca3af" },
                             if matches!(search_mode(), models::SearchMode::Text) {
@@ -205,10 +212,10 @@ pub fn AiLiveResults() -> Element {
                         onclick: move |_| search_mode.set(models::SearchMode::Both),
                         style: format!(
                             "padding: 8px 16px; background: {}; color: {}; border: {}; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s ease; border-radius: 6px; {}",
-                            if matches!(search_mode(), models::SearchMode::Both) { 
-                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)" 
-                            } else { 
-                                "#111827" 
+                            if matches!(search_mode(), models::SearchMode::Both) {
+                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)"
+                            } else {
+                                "#111827"
                             },
                             if matches!(search_mode(), models::SearchMode::Both) { "#ffffff" } else { "#9ca3af" },
                             if matches!(search_mode(), models::SearchMode::Both) {
@@ -229,10 +236,10 @@ pub fn AiLiveResults() -> Element {
                         onclick: move |_| search_mode.set(models::SearchMode::Vector),
                         style: format!(
                             "padding: 8px 16px; background: {}; color: {}; border: {}; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s ease; border-radius: 6px; {}",
-                            if matches!(search_mode(), models::SearchMode::Vector) { 
-                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)" 
-                            } else { 
-                                "#111827" 
+                            if matches!(search_mode(), models::SearchMode::Vector) {
+                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)"
+                            } else {
+                                "#111827"
                             },
                             if matches!(search_mode(), models::SearchMode::Vector) { "#ffffff" } else { "#9ca3af" },
                             if matches!(search_mode(), models::SearchMode::Vector) {
@@ -253,10 +260,10 @@ pub fn AiLiveResults() -> Element {
                         onclick: move |_| search_mode.set(models::SearchMode::Structured),
                         style: format!(
                             "padding: 8px 16px; background: {}; color: {}; border: {}; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s ease; border-radius: 6px; {}",
-                            if matches!(search_mode(), models::SearchMode::Structured) { 
-                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)" 
-                            } else { 
-                                "#111827" 
+                            if matches!(search_mode(), models::SearchMode::Structured) {
+                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)"
+                            } else {
+                                "#111827"
                             },
                             if matches!(search_mode(), models::SearchMode::Structured) { "#ffffff" } else { "#9ca3af" },
                             if matches!(search_mode(), models::SearchMode::Structured) {
@@ -276,12 +283,12 @@ pub fn AiLiveResults() -> Element {
                     // Model selector
                     div {
                         style: "margin-left: auto; display: flex; align-items: center; gap: 8px;",
-                        
+
                         span {
                             style: "color: #9ca3af; font-size: 13px; font-weight: 600;",
                             "Model:"
                         }
-                        
+
                         select {
                             value: match selected_model() {
                                 Some(ref model) => model.clone(),
@@ -296,10 +303,10 @@ pub fn AiLiveResults() -> Element {
                                 }
                             },
                             style: "padding: 8px 12px; background: #111827; color: #d1d5db; border: 1px solid #374151; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;",
-                            
+
                             option { value: "default", "Default" }
                             for model in available_models().iter() {
-                                option { 
+                                option {
                                     value: "{model.name}",
                                     "{model.name}"
                                 }
