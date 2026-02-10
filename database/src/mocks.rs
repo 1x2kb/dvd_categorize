@@ -26,8 +26,13 @@ impl MockMovieRepository {
         let mut repo = Self::new();
         for movie in movies {
             let id = movie.id;
-            repo.movies.insert(id, movie);
-            repo.next_id = repo.next_id.max(id + 1);
+            repo.movies
+                .insert(
+                    id, movie,
+                );
+            repo.next_id = repo
+                .next_id
+                .max(id + 1);
         }
         repo
     }
@@ -38,7 +43,12 @@ impl MockMovieRepository {
 #[async_trait]
 impl GetAllMovies for MockMovieRepository {
     async fn get_all(&mut self) -> Result<Vec<FullMovie>, DatabaseError> {
-        Ok(self.movies.values().cloned().collect())
+        Ok(
+            self.movies
+                .values()
+                .cloned()
+                .collect(),
+        )
     }
 }
 
@@ -55,10 +65,17 @@ impl GetMovieById for MockMovieRepository {
 #[async_trait]
 impl GetMoviesByIds for MockMovieRepository {
     async fn get_by_ids(&mut self, ids: Vec<i32>) -> Result<Vec<FullMovie>, DatabaseError> {
-        Ok(ids
-            .into_iter()
-            .filter_map(|id| self.movies.get(&id).cloned())
-            .collect())
+        Ok(
+            ids.into_iter()
+                .filter_map(
+                    |id| {
+                        self.movies
+                            .get(&id)
+                            .cloned()
+                    },
+                )
+                .collect(),
+        )
     }
 }
 
@@ -68,7 +85,11 @@ impl InsertMovie for MockMovieRepository {
         let id = self.next_id;
         self.next_id += 1;
         full_movie.id = id;
-        self.movies.insert(id, full_movie.clone());
+        self.movies
+            .insert(
+                id,
+                full_movie.clone(),
+            );
         Ok(full_movie)
     }
 }
@@ -78,12 +99,23 @@ impl InsertMovies for MockMovieRepository {
     async fn insert_batch(
         &mut self,
         new_movies: &[NewMovie],
-    ) -> Result<Vec<(i32, String)>, DatabaseError> {
+    ) -> Result<
+        Vec<(
+            i32,
+            String,
+        )>,
+        DatabaseError,
+    > {
         let mut results = Vec::new();
         for new_movie in new_movies {
             let id = self.next_id;
             self.next_id += 1;
-            results.push((id, new_movie.name.clone()));
+            results.push((
+                id,
+                new_movie
+                    .name
+                    .clone(),
+            ));
         }
         Ok(results)
     }
@@ -96,7 +128,10 @@ impl UpdateMovieLocation for MockMovieRepository {
         movie_id: i32,
         new_location: String,
     ) -> Result<(), DatabaseError> {
-        if let Some(movie) = self.movies.get_mut(&movie_id) {
+        if let Some(movie) = self
+            .movies
+            .get_mut(&movie_id)
+        {
             movie.location = Some(new_location);
             Ok(())
         } else {
@@ -112,21 +147,36 @@ impl SearchMoviesByEmbedding for MockMovieRepository {
         _embedding: Vec<f32>,
         limit: i64,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
-        Ok(self
-            .movies
-            .values()
-            .take(limit as usize)
-            .cloned()
-            .collect())
+        Ok(
+            self.movies
+                .values()
+                .take(limit as usize)
+                .cloned()
+                .collect(),
+        )
     }
 }
 
 #[async_trait]
 impl GetRecentMovies for MockMovieRepository {
     async fn get_recent(&mut self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut movies: Vec<_> = self.movies.values().cloned().collect();
-        movies.sort_by(|a, b| b.added_on.cmp(&a.added_on));
-        Ok(movies.into_iter().take(limit as usize).collect())
+        let mut movies: Vec<_> = self
+            .movies
+            .values()
+            .cloned()
+            .collect();
+        movies.sort_by(
+            |a, b| {
+                b.added_on
+                    .cmp(&a.added_on)
+            },
+        );
+        Ok(
+            movies
+                .into_iter()
+                .take(limit as usize)
+                .collect(),
+        )
     }
 }
 
@@ -136,49 +186,111 @@ impl SearchMoviesStructured for MockMovieRepository {
         &mut self,
         query: &StructuredQuery,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut results: Vec<FullMovie> = self.movies.values().cloned().collect();
+        let mut results: Vec<FullMovie> = self
+            .movies
+            .values()
+            .cloned()
+            .collect();
 
-        if !query.title_keywords.is_empty() {
-            results.retain(|movie| {
-                query
-                    .title_keywords
-                    .iter()
-                    .all(|kw| movie.name.to_lowercase().contains(&kw.to_lowercase()))
-            });
-        }
-
-        if !query.directors.is_empty() {
-            results.retain(|movie| {
-                movie.director.as_ref().is_some_and(|d| {
+        if !query
+            .title_keywords
+            .is_empty()
+        {
+            results.retain(
+                |movie| {
                     query
-                        .directors
+                        .title_keywords
                         .iter()
-                        .any(|dir| d.name.to_lowercase().contains(&dir.to_lowercase()))
-                })
-            });
+                        .all(
+                            |kw| {
+                                movie
+                                    .name
+                                    .to_lowercase()
+                                    .contains(&kw.to_lowercase())
+                            },
+                        )
+                },
+            );
         }
 
-        if !query.actors.is_empty() {
-            results.retain(|movie| {
-                query.actors.iter().any(|actor_name| {
-                    movie.actors.iter().any(|a| {
-                        a.name
-                            .to_lowercase()
-                            .contains(&actor_name.to_lowercase())
-                    })
-                })
-            });
-        }
-
-        if !query.genres.is_empty() {
-            results.retain(|movie| {
-                query.genres.iter().any(|genre_name| {
+        if !query
+            .directors
+            .is_empty()
+        {
+            results.retain(
+                |movie| {
                     movie
+                        .director
+                        .as_ref()
+                        .is_some_and(
+                            |d| {
+                                query
+                                    .directors
+                                    .iter()
+                                    .any(
+                                        |dir| {
+                                            d.name
+                                                .to_lowercase()
+                                                .contains(&dir.to_lowercase())
+                                        },
+                                    )
+                            },
+                        )
+                },
+            );
+        }
+
+        if !query
+            .actors
+            .is_empty()
+        {
+            results.retain(
+                |movie| {
+                    query
+                        .actors
+                        .iter()
+                        .any(
+                            |actor_name| {
+                                movie
+                                    .actors
+                                    .iter()
+                                    .any(
+                                        |a| {
+                                            a.name
+                                                .to_lowercase()
+                                                .contains(&actor_name.to_lowercase())
+                                        },
+                                    )
+                            },
+                        )
+                },
+            );
+        }
+
+        if !query
+            .genres
+            .is_empty()
+        {
+            results.retain(
+                |movie| {
+                    query
                         .genres
                         .iter()
-                        .any(|g| g.to_lowercase().contains(&genre_name.to_lowercase()))
-                })
-            });
+                        .any(
+                            |genre_name| {
+                                movie
+                                    .genres
+                                    .iter()
+                                    .any(
+                                        |g| {
+                                            g.to_lowercase()
+                                                .contains(&genre_name.to_lowercase())
+                                        },
+                                    )
+                            },
+                        )
+                },
+            );
         }
 
         Ok(results)
@@ -187,7 +299,13 @@ impl SearchMoviesStructured for MockMovieRepository {
 
 #[derive(Default)]
 pub struct MockActorRepository {
-    pub actors: HashMap<i32, (i32, String)>,
+    pub actors: HashMap<
+        i32,
+        (
+            i32,
+            String,
+        ),
+    >,
     pub next_id: i32,
 }
 
@@ -207,13 +325,33 @@ impl InsertActors for MockActorRepository {
     async fn insert_batch(
         &mut self,
         actors: &[NewActor],
-    ) -> Result<Vec<(i32, String)>, DatabaseError> {
+    ) -> Result<
+        Vec<(
+            i32,
+            String,
+        )>,
+        DatabaseError,
+    > {
         let mut results = Vec::new();
         for actor in actors {
             let id = self.next_id;
             self.next_id += 1;
-            self.actors.insert(id, (id, actor.name.clone()));
-            results.push((id, actor.name.clone()));
+            self.actors
+                .insert(
+                    id,
+                    (
+                        id,
+                        actor
+                            .name
+                            .clone(),
+                    ),
+                );
+            results.push((
+                id,
+                actor
+                    .name
+                    .clone(),
+            ));
         }
         Ok(results)
     }
@@ -225,7 +363,6 @@ impl GetActorsForMovie for MockActorRepository {
         Ok(Vec::new())
     }
 }
-
 
 #[async_trait]
 impl InsertMovieActorAssociations for MockActorRepository {
@@ -239,7 +376,13 @@ impl InsertMovieActorAssociations for MockActorRepository {
 
 #[derive(Default)]
 pub struct MockDirectorRepository {
-    pub directors: HashMap<i32, (i32, String)>,
+    pub directors: HashMap<
+        i32,
+        (
+            i32,
+            String,
+        ),
+    >,
     pub next_id: i32,
 }
 
@@ -259,13 +402,33 @@ impl InsertDirectors for MockDirectorRepository {
     async fn insert_batch(
         &mut self,
         directors: &[NewDirector],
-    ) -> Result<Vec<(i32, String)>, DatabaseError> {
+    ) -> Result<
+        Vec<(
+            i32,
+            String,
+        )>,
+        DatabaseError,
+    > {
         let mut results = Vec::new();
         for director in directors {
             let id = self.next_id;
             self.next_id += 1;
-            self.directors.insert(id, (id, director.name.clone()));
-            results.push((id, director.name.clone()));
+            self.directors
+                .insert(
+                    id,
+                    (
+                        id,
+                        director
+                            .name
+                            .clone(),
+                    ),
+                );
+            results.push((
+                id,
+                director
+                    .name
+                    .clone(),
+            ));
         }
         Ok(results)
     }
@@ -291,7 +454,10 @@ impl MockGenreRepository {
 #[async_trait]
 impl GetAllGenres for MockGenreRepository {
     async fn get_all(&mut self) -> Result<Vec<String>, DatabaseError> {
-        Ok(self.genres.clone())
+        Ok(
+            self.genres
+                .clone(),
+        )
     }
 }
 
@@ -301,7 +467,6 @@ impl GetGenresForMovie for MockGenreRepository {
         Ok(Vec::new())
     }
 }
-
 
 #[async_trait]
 impl InsertMovieGenreAssociations for MockGenreRepository {
@@ -325,7 +490,10 @@ impl MockEmbeddingProvider {
     }
 
     pub fn with_embedding(mut self, text: String, embedding: Vec<f32>) -> Self {
-        self.embeddings.insert(text, embedding);
+        self.embeddings
+            .insert(
+                text, embedding,
+            );
         self
     }
 }
@@ -341,11 +509,12 @@ impl Default for MockEmbeddingProvider {
 #[async_trait]
 impl GenerateEmbedding for MockEmbeddingProvider {
     async fn generate_embedding(&self, text: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-        Ok(self
-            .embeddings
-            .get(text)
-            .cloned()
-            .unwrap_or_else(|| vec![0.0; 384]))
+        Ok(
+            self.embeddings
+                .get(text)
+                .cloned()
+                .unwrap_or_else(|| vec![0.0; 384]),
+        )
     }
 }
 
@@ -355,15 +524,19 @@ impl GenerateEmbeddings for MockEmbeddingProvider {
         &self,
         texts: Vec<String>,
     ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
-        Ok(texts
-            .iter()
-            .map(|text| {
-                self.embeddings
-                    .get(text)
-                    .cloned()
-                    .unwrap_or_else(|| vec![0.0; 384])
-            })
-            .collect())
+        Ok(
+            texts
+                .iter()
+                .map(
+                    |text| {
+                        self.embeddings
+                            .get(text)
+                            .cloned()
+                            .unwrap_or_else(|| vec![0.0; 384])
+                    },
+                )
+                .collect(),
+        )
     }
 }
 
@@ -386,26 +559,61 @@ mod tests {
             location: None,
         };
 
-        let inserted = repo.insert(movie).await.unwrap();
-        assert_eq!(inserted.id, 1);
-        assert_eq!(inserted.name, "Test Movie");
+        let inserted = repo
+            .insert(movie)
+            .await
+            .unwrap();
+        assert_eq!(
+            inserted.id,
+            1
+        );
+        assert_eq!(
+            inserted.name,
+            "Test Movie"
+        );
 
-        let retrieved = repo.get_by_id(1).await.unwrap();
-        assert_eq!(retrieved.name, "Test Movie");
+        let retrieved = repo
+            .get_by_id(1)
+            .await
+            .unwrap();
+        assert_eq!(
+            retrieved.name,
+            "Test Movie"
+        );
 
-        let all = repo.get_all().await.unwrap();
-        assert_eq!(all.len(), 1);
+        let all = repo
+            .get_all()
+            .await
+            .unwrap();
+        assert_eq!(
+            all.len(),
+            1
+        );
     }
 
     #[tokio::test]
     async fn test_mock_embedding_provider() {
-        let provider = MockEmbeddingProvider::new()
-            .with_embedding("test".to_string(), vec![1.0, 2.0, 3.0]);
+        let provider = MockEmbeddingProvider::new().with_embedding(
+            "test".to_string(),
+            vec![1.0, 2.0, 3.0],
+        );
 
-        let embedding = provider.generate_embedding("test").await.unwrap();
-        assert_eq!(embedding, vec![1.0, 2.0, 3.0]);
+        let embedding = provider
+            .generate_embedding("test")
+            .await
+            .unwrap();
+        assert_eq!(
+            embedding,
+            vec![1.0, 2.0, 3.0]
+        );
 
-        let default_embedding = provider.generate_embedding("unknown").await.unwrap();
-        assert_eq!(default_embedding.len(), 384);
+        let default_embedding = provider
+            .generate_embedding("unknown")
+            .await
+            .unwrap();
+        assert_eq!(
+            default_embedding.len(),
+            384
+        );
     }
 }

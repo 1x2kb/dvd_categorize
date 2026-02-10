@@ -33,8 +33,14 @@ impl GetAllMovies for PostgresMovieRepository {
     async fn get_all(&mut self) -> Result<Vec<FullMovie>, DatabaseError> {
         let movies = schema::movie::table
             .left_join(schema::director::table)
-            .select((schema::movie::all_columns, schema::director::all_columns.nullable()))
-            .load::<(Movie, Option<Director>)>(&mut self.connection)
+            .select((
+                schema::movie::all_columns,
+                schema::director::all_columns.nullable(),
+            ))
+            .load::<(
+                Movie,
+                Option<Director>,
+            )>(&mut self.connection)
             .await
             .map_err(DatabaseError::from)?;
 
@@ -53,13 +59,19 @@ impl GetAllMovies for PostgresMovieRepository {
                 .await
                 .unwrap_or_default();
 
-            full_movies.push(FullMovie::from((movie, director, actors, genres)));
+            full_movies.push(
+                FullMovie::from((
+                    movie, director, actors, genres,
+                )),
+            );
         }
 
-        debug!("Found {} results", full_movies.len());
+        debug!(
+            "Found {} results",
+            full_movies.len()
+        );
         Ok(full_movies)
     }
-
 }
 
 #[async_trait]
@@ -68,17 +80,34 @@ impl GetMovieById for PostgresMovieRepository {
         let (movie, director) = schema::movie::table
             .find(id)
             .left_join(schema::director::table)
-            .select((schema::movie::all_columns, schema::director::all_columns.nullable()))
-            .first::<(Movie, Option<Director>)>(&mut self.connection)
+            .select((
+                schema::movie::all_columns,
+                schema::director::all_columns.nullable(),
+            ))
+            .first::<(
+                Movie,
+                Option<Director>,
+            )>(&mut self.connection)
             .await?;
 
-        let actors = crate::actors_for_movie(&movie, &mut self.connection).await;
-        let genres = crate::genres_for_movie(&movie, &mut self.connection).await;
+        let actors = crate::actors_for_movie(
+            &movie,
+            &mut self.connection,
+        )
+        .await;
+        let genres = crate::genres_for_movie(
+            &movie,
+            &mut self.connection,
+        )
+        .await;
 
-        Ok(FullMovie::from((movie, director, actors, genres)))
+        Ok(
+            FullMovie::from((
+                movie, director, actors, genres,
+            )),
+        )
     }
 }
-
 
 #[async_trait]
 impl GetMoviesByIds for PostgresMovieRepository {
@@ -91,7 +120,10 @@ impl GetMoviesByIds for PostgresMovieRepository {
         let movies_with_directors = schema::movie::table
             .filter(schema::movie::id.eq_any(&ids))
             .left_join(schema::director::table)
-            .load::<(Movie, Option<Director>)>(&mut self.connection)
+            .load::<(
+                Movie,
+                Option<Director>,
+            )>(&mut self.connection)
             .await?;
 
         if movies_with_directors.is_empty() {
@@ -111,7 +143,10 @@ impl GetMoviesByIds for PostgresMovieRepository {
                 schema::movie_actor::all_columns,
                 schema::actor::all_columns,
             ))
-            .load::<(MovieActor, Actor)>(&mut self.connection)
+            .load::<(
+                MovieActor,
+                Actor,
+            )>(&mut self.connection)
             .await?;
 
         // Use belonging_to to get all genre associations
@@ -123,14 +158,28 @@ impl GetMoviesByIds for PostgresMovieRepository {
         let actors_per_movie = movie_actors
             .grouped_by(&movies)
             .into_iter()
-            .map(|group| group.into_iter().map(|(_, actor)| actor).collect::<Vec<_>>())
+            .map(
+                |group| {
+                    group
+                        .into_iter()
+                        .map(|(_, actor)| actor)
+                        .collect::<Vec<_>>()
+                },
+            )
             .collect::<Vec<_>>();
 
         // Group genres by movie using Diesel's grouped_by
         let genres_per_movie = movie_genres
             .grouped_by(&movies)
             .into_iter()
-            .map(|group| group.into_iter().map(|mg| mg.genre).collect::<Vec<_>>())
+            .map(
+                |group| {
+                    group
+                        .into_iter()
+                        .map(|mg| mg.genre)
+                        .collect::<Vec<_>>()
+                },
+            )
             .collect::<Vec<_>>();
 
         // Build a map to preserve the requested order
@@ -138,20 +187,30 @@ impl GetMoviesByIds for PostgresMovieRepository {
             .into_iter()
             .zip(actors_per_movie)
             .zip(genres_per_movie)
-            .map(|(((movie, director), actors), genres)| {
-                let full_movie = FullMovie {
-                    id: movie.id,
-                    name: movie.name,
-                    director,
-                    description: movie.description,
-                    actors,
-                    genres,
-                    embedding: movie.embedding.map(|v| v.into()),
-                    added_on: Some(movie.added_on.to_string()),
-                    location: Some(movie.location),
-                };
-                (movie.id, full_movie)
-            })
+            .map(
+                |(((movie, director), actors), genres)| {
+                    let full_movie = FullMovie {
+                        id: movie.id,
+                        name: movie.name,
+                        director,
+                        description: movie.description,
+                        actors,
+                        genres,
+                        embedding: movie
+                            .embedding
+                            .map(|v| v.into()),
+                        added_on: Some(
+                            movie
+                                .added_on
+                                .to_string(),
+                        ),
+                        location: Some(movie.location),
+                    };
+                    (
+                        movie.id, full_movie,
+                    )
+                },
+            )
             .collect();
 
         // Return movies in the order they were requested
@@ -170,7 +229,13 @@ impl InsertMovie for PostgresMovieRepository {
         let actors: String = full_movie
             .actors
             .iter()
-            .map(|actor| actor.name.as_str())
+            .map(
+                |actor| {
+                    actor
+                        .name
+                        .as_str()
+                },
+            )
             .collect::<Vec<_>>()
             .join(",");
 
@@ -184,19 +249,28 @@ impl InsertMovie for PostgresMovieRepository {
         let embedding = format!(
             "{}-{} and has genres {} with actors {} and directed by {}",
             &full_movie.name,
-            &full_movie.description.as_ref().unwrap_or(&"".to_string()),
+            &full_movie
+                .description
+                .as_ref()
+                .unwrap_or(&"".to_string()),
             genres,
             actors,
             full_movie
                 .director
                 .as_ref()
-                .map(|director| director.name.as_str())
+                .map(
+                    |director| director
+                        .name
+                        .as_str()
+                )
                 .unwrap_or("")
         );
 
         let director_id: Option<i32> = match full_movie.director {
             Some(director) => {
-                let new_director = NewDirector { name: director.name };
+                let new_director = NewDirector {
+                    name: director.name,
+                };
 
                 let director_id: i32 = diesel::insert_into(schema::director::table)
                     .values(&new_director)
@@ -271,7 +345,10 @@ impl InsertMovie for PostgresMovieRepository {
             .execute(&mut self.connection)
             .await?;
 
-        if !full_movie.genres.is_empty() {
+        if !full_movie
+            .genres
+            .is_empty()
+        {
             let movie_genres: Vec<NewMovieGenre> = full_movie
                 .genres
                 .into_iter()
@@ -284,7 +361,10 @@ impl InsertMovie for PostgresMovieRepository {
                 .await?;
         }
 
-        GetMovieById::get_by_id(self, movie_id).await
+        GetMovieById::get_by_id(
+            self, movie_id,
+        )
+        .await
     }
 }
 
@@ -293,13 +373,22 @@ impl InsertMovies for PostgresMovieRepository {
     async fn insert_batch(
         &mut self,
         new_movies: &[NewMovie],
-    ) -> Result<Vec<(i32, String)>, DatabaseError> {
+    ) -> Result<
+        Vec<(
+            i32,
+            String,
+        )>,
+        DatabaseError,
+    > {
         diesel::insert_into(schema::movie::table)
             .values(new_movies)
             .on_conflict(schema::movie::name)
             .do_update()
             .set(schema::movie::id.eq(schema::movie::id))
-            .returning((schema::movie::id, schema::movie::name))
+            .returning((
+                schema::movie::id,
+                schema::movie::name,
+            ))
             .get_results(&mut self.connection)
             .await
             .map_err(DatabaseError::from)
@@ -340,10 +429,16 @@ impl SearchMoviesByEmbedding for PostgresMovieRepository {
 
         debug!(
             "pgvector returned movie IDs in order: {:?}",
-            movie_ids.iter().take(10).collect::<Vec<_>>()
+            movie_ids
+                .iter()
+                .take(10)
+                .collect::<Vec<_>>()
         );
 
-        GetMoviesByIds::get_by_ids(self, movie_ids).await
+        GetMoviesByIds::get_by_ids(
+            self, movie_ids,
+        )
+        .await
     }
 }
 
@@ -357,9 +452,15 @@ impl GetRecentMovies for PostgresMovieRepository {
             .load::<i32>(&mut self.connection)
             .await?;
 
-        debug!("Found {} recent movies", movie_ids.len());
+        debug!(
+            "Found {} recent movies",
+            movie_ids.len()
+        );
 
-        GetMoviesByIds::get_by_ids(self, movie_ids).await
+        GetMoviesByIds::get_by_ids(
+            self, movie_ids,
+        )
+        .await
     }
 }
 
@@ -369,9 +470,12 @@ impl SearchMoviesStructured for PostgresMovieRepository {
         &mut self,
         query: &StructuredQuery,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
-        structured_search::search_movies_structured(query, &mut self.connection)
-            .await
-            .map_err(DatabaseError::from)
+        structured_search::search_movies_structured(
+            query,
+            &mut self.connection,
+        )
+        .await
+        .map_err(DatabaseError::from)
     }
 }
 
@@ -392,14 +496,26 @@ impl InsertActors for PostgresActorRepository {
     async fn insert_batch(
         &mut self,
         actors: &[NewActor],
-    ) -> Result<Vec<(i32, String)>, DatabaseError> {
+    ) -> Result<
+        Vec<(
+            i32,
+            String,
+        )>,
+        DatabaseError,
+    > {
         diesel::insert_into(schema::actor::table)
             .values(actors)
             .on_conflict(schema::actor::name)
             .do_update()
             .set(schema::actor::id.eq(schema::actor::id))
-            .returning((schema::actor::id, schema::actor::name))
-            .get_results::<(i32, String)>(&mut self.connection)
+            .returning((
+                schema::actor::id,
+                schema::actor::name,
+            ))
+            .get_results::<(
+                i32,
+                String,
+            )>(&mut self.connection)
             .await
             .map_err(DatabaseError::from)
     }
@@ -408,10 +524,15 @@ impl InsertActors for PostgresActorRepository {
 #[async_trait]
 impl GetActorsForMovie for PostgresActorRepository {
     async fn get_for_movie(&mut self, movie: &Movie) -> Result<Vec<Actor>, DatabaseError> {
-        Ok(crate::actors_for_movie(movie, &mut self.connection).await)
+        Ok(
+            crate::actors_for_movie(
+                movie,
+                &mut self.connection,
+            )
+            .await,
+        )
     }
 }
-
 
 #[async_trait]
 impl InsertMovieActorAssociations for PostgresActorRepository {
@@ -421,7 +542,10 @@ impl InsertMovieActorAssociations for PostgresActorRepository {
     ) -> Result<usize, DatabaseError> {
         diesel::insert_into(schema::movie_actor::table)
             .values(movie_actors)
-            .on_conflict((schema::movie_actor::movie_id, schema::movie_actor::actor_id))
+            .on_conflict((
+                schema::movie_actor::movie_id,
+                schema::movie_actor::actor_id,
+            ))
             .do_nothing()
             .execute(&mut self.connection)
             .await
@@ -446,7 +570,13 @@ impl InsertDirectors for PostgresDirectorRepository {
     async fn insert_batch(
         &mut self,
         directors: &[NewDirector],
-    ) -> Result<Vec<(i32, String)>, DatabaseError> {
+    ) -> Result<
+        Vec<(
+            i32,
+            String,
+        )>,
+        DatabaseError,
+    > {
         use schema::director::dsl::*;
 
         let mut result = Vec::with_capacity(directors.len());
@@ -457,8 +587,13 @@ impl InsertDirectors for PostgresDirectorRepository {
                 .on_conflict(name)
                 .do_update()
                 .set(id.eq(id))
-                .returning((id, name))
-                .get_result::<(i32, String)>(&mut self.connection)
+                .returning((
+                    id, name,
+                ))
+                .get_result::<(
+                    i32,
+                    String,
+                )>(&mut self.connection)
                 .await?;
 
             result.push(inserted);
@@ -497,10 +632,15 @@ impl GetAllGenres for PostgresGenreRepository {
 #[async_trait]
 impl GetGenresForMovie for PostgresGenreRepository {
     async fn get_for_movie(&mut self, movie: &Movie) -> Result<Vec<String>, DatabaseError> {
-        Ok(crate::genres_for_movie(movie, &mut self.connection).await)
+        Ok(
+            crate::genres_for_movie(
+                movie,
+                &mut self.connection,
+            )
+            .await,
+        )
     }
 }
-
 
 #[async_trait]
 impl InsertMovieGenreAssociations for PostgresGenreRepository {
@@ -510,7 +650,10 @@ impl InsertMovieGenreAssociations for PostgresGenreRepository {
     ) -> Result<usize, DatabaseError> {
         diesel::insert_into(schema::movie_genre::table)
             .values(movie_genres)
-            .on_conflict((schema::movie_genre::movie_id, schema::movie_genre::genre))
+            .on_conflict((
+                schema::movie_genre::movie_id,
+                schema::movie_genre::genre,
+            ))
             .do_nothing()
             .execute(&mut self.connection)
             .await

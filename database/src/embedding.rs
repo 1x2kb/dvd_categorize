@@ -17,6 +17,12 @@ impl GenerateEmbeddings for OllamaEmbeddingProvider {
         &self,
         texts: Vec<String>,
     ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
-        Ok(ai_chat::get_embeddings(texts, ai_chat::EMBEDDING_MODEL).await?)
+        Ok(
+            ai_chat::get_embeddings(
+                texts,
+                ai_chat::EMBEDDING_MODEL,
+            )
+            .await?,
+        )
     }
 }

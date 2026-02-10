@@ -382,7 +382,6 @@ pub enum SearchMode {
     Structured,
 }
 
-
 /// Structured query criteria parsed from natural language
 /// Used for dynamic Diesel query building
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]

@@ -8,8 +8,13 @@ async fn search_recent_movies<R: GetRecentMovies>(
     repo: &mut R,
     limit: i64,
 ) -> Result<Vec<FullMovie>, Box<dyn std::error::Error>> {
-    let movies = repo.get_recent(limit).await?;
-    println!("Found {} recent movies", movies.len());
+    let movies = repo
+        .get_recent(limit)
+        .await?;
+    println!(
+        "Found {} recent movies",
+        movies.len()
+    );
     Ok(movies)
 }
 
@@ -17,8 +22,14 @@ async fn example_with_postgres() -> Result<(), Box<dyn std::error::Error>> {
     let conn = get_database_connection().await?;
     let mut repo = PostgresMovieRepository::new(conn);
 
-    let movies = search_recent_movies(&mut repo, 5).await?;
-    println!("PostgreSQL returned {} movies", movies.len());
+    let movies = search_recent_movies(
+        &mut repo, 5,
+    )
+    .await?;
+    println!(
+        "PostgreSQL returned {} movies",
+        movies.len()
+    );
 
     Ok(())
 }
@@ -38,11 +49,22 @@ async fn example_with_mock() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut repo = MockMovieRepository::with_movies(test_movies);
 
-    let movies = search_recent_movies(&mut repo, 5).await?;
-    println!("Mock returned {} movies", movies.len());
+    let movies = search_recent_movies(
+        &mut repo, 5,
+    )
+    .await?;
+    println!(
+        "Mock returned {} movies",
+        movies.len()
+    );
 
-    let movie = repo.get_by_id(1).await?;
-    println!("Retrieved movie: {}", movie.name);
+    let movie = repo
+        .get_by_id(1)
+        .await?;
+    println!(
+        "Retrieved movie: {}",
+        movie.name
+    );
 
     let query = StructuredQuery {
         actors: vec![],
@@ -52,8 +74,13 @@ async fn example_with_mock() -> Result<(), Box<dyn std::error::Error>> {
         description_keywords: vec![],
     };
 
-    let results = repo.search_structured(&query).await?;
-    println!("Structured search found {} movies", results.len());
+    let results = repo
+        .search_structured(&query)
+        .await?;
+    println!(
+        "Structured search found {} movies",
+        results.len()
+    );
 
     Ok(())
 }
@@ -61,14 +88,26 @@ async fn example_with_mock() -> Result<(), Box<dyn std::error::Error>> {
 async fn example_embedding_mock() -> Result<(), Box<dyn std::error::Error>> {
     use database::GenerateEmbedding;
 
-    let provider = MockEmbeddingProvider::new()
-        .with_embedding("action movie".to_string(), vec![1.0, 2.0, 3.0]);
+    let provider = MockEmbeddingProvider::new().with_embedding(
+        "action movie".to_string(),
+        vec![1.0, 2.0, 3.0],
+    );
 
-    let embedding = provider.generate_embedding("action movie").await?;
-    println!("Generated embedding with {} dimensions", embedding.len());
-    println!("Embedding values: {:?}", embedding);
+    let embedding = provider
+        .generate_embedding("action movie")
+        .await?;
+    println!(
+        "Generated embedding with {} dimensions",
+        embedding.len()
+    );
+    println!(
+        "Embedding values: {:?}",
+        embedding
+    );
 
-    let default_embedding = provider.generate_embedding("unknown text").await?;
+    let default_embedding = provider
+        .generate_embedding("unknown text")
+        .await?;
     println!(
         "Default embedding has {} dimensions",
         default_embedding.len()
@@ -88,7 +127,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=== Example: Using PostgreSQL (requires DATABASE_URL) ===");
     match example_with_postgres().await {
         Ok(_) => println!("PostgreSQL example completed successfully"),
-        Err(e) => println!("PostgreSQL example failed (expected if no DB): {}", e),
+        Err(e) => println!(
+            "PostgreSQL example failed (expected if no DB): {}",
+            e
+        ),
     }
 
     Ok(())

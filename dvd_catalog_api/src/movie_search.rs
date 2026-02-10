@@ -432,23 +432,40 @@ async fn text_only_search(
     query: &str,
     movies: &Arc<Vec<FullMovie>>,
     limit: usize,
-) -> (Vec<(i32, f32)>, String) {
+) -> (
+    Vec<(
+        i32,
+        f32,
+    )>,
+    String,
+) {
     let start_time = std::time::Instant::now();
     info!("Text-only search mode");
-    
+
     // Extract entities for keyword matching
-    let (titles, actors, genres) = extract_entities(query, movies).await;
+    let (titles, actors, genres) = extract_entities(
+        query, movies,
+    )
+    .await;
     info!(
         "Entity extraction - titles: {:?}, actors: {:?}, genres: {:?}",
         titles, actors, genres
     );
-    
-    let criteria = SearchCriteria { titles, actors, genres };
-    
+
+    let criteria = SearchCriteria {
+        titles,
+        actors,
+        genres,
+    };
+
     // Run keyword search only
     let keyword_start = std::time::Instant::now();
-    let keyword_results = keyword_search(movies, &criteria, limit * 2);
-    
+    let keyword_results = keyword_search(
+        movies,
+        &criteria,
+        limit * 2,
+    );
+
     info!(
         "Text search found {} results in {:.2?}",
         keyword_results.len(),
@@ -458,12 +475,18 @@ async fn text_only_search(
     if !keyword_results.is_empty() {
         info!(
             "Top matches (ID, score): {:?}",
-            keyword_results.iter().take(5).collect::<Vec<_>>()
+            keyword_results
+                .iter()
+                .take(5)
+                .collect::<Vec<_>>()
         );
     }
 
     // Return raw keyword scores
-    let final_results: Vec<(i32, f32)> = keyword_results
+    let final_results: Vec<(
+        i32,
+        f32,
+    )> = keyword_results
         .into_iter()
         .take(limit)
         .collect();
@@ -474,7 +497,10 @@ async fn text_only_search(
         final_results.len()
     );
 
-    (final_results, query.to_string())
+    (
+        final_results,
+        query.to_string(),
+    )
 }
 
 /// Performs vector-only search with query enhancement
@@ -484,27 +510,47 @@ async fn vector_only_search(
     limit: usize,
     disable_enhancement: bool,
     model: Option<&str>,
-) -> (Vec<(i32, f32)>, String) {
+) -> (
+    Vec<(
+        i32,
+        f32,
+    )>,
+    String,
+) {
     let start_time = std::time::Instant::now();
     info!("Vector-only search mode");
-    
+
     // Run query enhancement
     let enhanced_query = if disable_enhancement {
         info!("Query enhancement disabled, using original query");
         query.to_string()
     } else {
-        ai_chat::query_enhancement::enhance_query_for_embedding(query, model).await
+        ai_chat::query_enhancement::enhance_query_for_embedding(
+            query, model,
+        )
+        .await
     };
-    
-    info!("Enhanced query: {}", enhanced_query);
-    
+
+    info!(
+        "Enhanced query: {}",
+        enhanced_query
+    );
+
     // Run vector search only
     let vector_start = std::time::Instant::now();
     let vector_results = match embedding(&enhanced_query).await {
         Ok(embedding_vec) => {
-            match database::search_movies(embedding_vec, (limit * 2) as i64).await {
+            match database::search_movies(
+                embedding_vec,
+                (limit * 2) as i64,
+            )
+            .await
+            {
                 Ok(movies_from_db) => {
-                    let ids: Vec<i32> = movies_from_db.into_iter().map(|m| m.id).collect();
+                    let ids: Vec<i32> = movies_from_db
+                        .into_iter()
+                        .map(|m| m.id)
+                        .collect();
                     info!(
                         "Vector search found {} results in {:.2?}",
                         ids.len(),
@@ -513,26 +559,39 @@ async fn vector_only_search(
                     ids
                 }
                 Err(e) => {
-                    error!("Vector search failed: {:#?}", e);
+                    error!(
+                        "Vector search failed: {:#?}",
+                        e
+                    );
                     Vec::new()
                 }
             }
         }
         Err(e) => {
-            error!("Failed to generate embedding: {:#?}", e);
+            error!(
+                "Failed to generate embedding: {:#?}",
+                e
+            );
             Vec::new()
         }
     };
 
     // Return normalized vector scores
-    let final_results: Vec<(i32, f32)> = vector_results
+    let final_results: Vec<(
+        i32,
+        f32,
+    )> = vector_results
         .into_iter()
         .take(limit)
         .enumerate()
-        .map(|(rank, id)| {
-            let score = 1.0 / (1.0 + rank as f32);
-            (id, score)
-        })
+        .map(
+            |(rank, id)| {
+                let score = 1.0 / (1.0 + rank as f32);
+                (
+                    id, score,
+                )
+            },
+        )
         .collect();
 
     info!(
@@ -541,7 +600,10 @@ async fn vector_only_search(
         final_results.len()
     );
 
-    (final_results, enhanced_query)
+    (
+        final_results,
+        enhanced_query,
+    )
 }
 
 /// Performs hybrid search combining both keyword and vector search with RRF fusion
@@ -552,23 +614,39 @@ async fn hybrid_both_search(
     limit: usize,
     disable_enhancement: bool,
     model: Option<&str>,
-) -> (Vec<(i32, f32)>, String) {
+) -> (
+    Vec<(
+        i32,
+        f32,
+    )>,
+    String,
+) {
     let start_time = std::time::Instant::now();
     info!("Hybrid search mode (both text and vector)");
-    
+
     let movies_clone = Arc::clone(&movies);
     let query_owned = query.to_string();
     let query_for_enhancement = query.to_string();
 
     // Run entity extraction and query enhancement in parallel
     let (entity_result, enhanced_query) = tokio::join!(
-        async move { extract_entities(&query_owned, &movies_clone).await },
+        async move {
+            extract_entities(
+                &query_owned,
+                &movies_clone,
+            )
+            .await
+        },
         async move {
             if disable_enhancement {
                 info!("Query enhancement disabled, using original query");
                 query_for_enhancement
             } else {
-                ai_chat::query_enhancement::enhance_query_for_embedding(&query_for_enhancement, model).await
+                ai_chat::query_enhancement::enhance_query_for_embedding(
+                    &query_for_enhancement,
+                    model,
+                )
+                .await
             }
         }
     );
@@ -578,9 +656,16 @@ async fn hybrid_both_search(
         "Entity extraction - titles: {:?}, actors: {:?}, genres: {:?}",
         titles, actors, genres
     );
-    info!("Enhanced query: {}", enhanced_query);
+    info!(
+        "Enhanced query: {}",
+        enhanced_query
+    );
 
-    let criteria = SearchCriteria { titles, actors, genres };
+    let criteria = SearchCriteria {
+        titles,
+        actors,
+        genres,
+    };
     let movies_for_keyword = Arc::clone(&movies);
     let enhanced_query_clone = enhanced_query.clone();
 
@@ -588,7 +673,11 @@ async fn hybrid_both_search(
     let (keyword_results, vector_results) = tokio::join!(
         async move {
             let keyword_start = std::time::Instant::now();
-            let results = keyword_search(&movies_for_keyword, &criteria, limit * 2);
+            let results = keyword_search(
+                &movies_for_keyword,
+                &criteria,
+                limit * 2,
+            );
             info!(
                 "Keyword search found {} results in {:.2?}",
                 results.len(),
@@ -597,7 +686,10 @@ async fn hybrid_both_search(
             if !results.is_empty() {
                 info!(
                     "Top keyword matches: {:?}",
-                    results.iter().take(5).collect::<Vec<_>>()
+                    results
+                        .iter()
+                        .take(5)
+                        .collect::<Vec<_>>()
                 );
             }
             results
@@ -606,9 +698,17 @@ async fn hybrid_both_search(
             let vector_start = std::time::Instant::now();
             match embedding(&enhanced_query_clone).await {
                 Ok(embedding_vec) => {
-                    match database::search_movies(embedding_vec, (limit * 2) as i64).await {
+                    match database::search_movies(
+                        embedding_vec,
+                        (limit * 2) as i64,
+                    )
+                    .await
+                    {
                         Ok(movies_from_db) => {
-                            let ids: Vec<i32> = movies_from_db.into_iter().map(|m| m.id).collect();
+                            let ids: Vec<i32> = movies_from_db
+                                .into_iter()
+                                .map(|m| m.id)
+                                .collect();
                             info!(
                                 "Vector search found {} results in {:.2?}",
                                 ids.len(),
@@ -617,13 +717,19 @@ async fn hybrid_both_search(
                             ids
                         }
                         Err(e) => {
-                            error!("Vector search failed: {:#?}", e);
+                            error!(
+                                "Vector search failed: {:#?}",
+                                e
+                            );
                             Vec::new()
                         }
                     }
                 }
                 Err(e) => {
-                    error!("Failed to generate embedding: {:#?}", e);
+                    error!(
+                        "Failed to generate embedding: {:#?}",
+                        e
+                    );
                     Vec::new()
                 }
             }
@@ -631,25 +737,36 @@ async fn hybrid_both_search(
     );
 
     // Fuse results using RRF
-    let final_results: Vec<(i32, f32)> = if !keyword_results.is_empty() && !vector_results.is_empty() {
+    let final_results: Vec<(
+        i32,
+        f32,
+    )> = if !keyword_results.is_empty() && !vector_results.is_empty() {
         info!("Fusing keyword and vector results with RRF");
-        reciprocal_rank_fusion(keyword_results, vector_results, RRF_K_VALUE)
-            .into_iter()
-            .take(limit)
-            .collect()
+        reciprocal_rank_fusion(
+            keyword_results,
+            vector_results,
+            RRF_K_VALUE,
+        )
+        .into_iter()
+        .take(limit)
+        .collect()
     } else if !keyword_results.is_empty() {
         info!("Using keyword-only results (vector search failed)");
         keyword_results
             .into_iter()
             .take(limit)
             .enumerate()
-            .map(|(rank, (id, keyword_score))| {
-                let mut score = 1.0 / (RRF_K_VALUE + rank as f32 + 1.0);
-                if keyword_score >= EXACT_TITLE_MATCH_SCORE {
-                    score *= EXACT_MATCH_BOOST_MULTIPLIER;
-                }
-                (id, score)
-            })
+            .map(
+                |(rank, (id, keyword_score))| {
+                    let mut score = 1.0 / (RRF_K_VALUE + rank as f32 + 1.0);
+                    if keyword_score >= EXACT_TITLE_MATCH_SCORE {
+                        score *= EXACT_MATCH_BOOST_MULTIPLIER;
+                    }
+                    (
+                        id, score,
+                    )
+                },
+            )
             .collect()
     } else if !vector_results.is_empty() {
         info!("Using vector-only results (keyword search failed)");
@@ -657,7 +774,14 @@ async fn hybrid_both_search(
             .into_iter()
             .take(limit)
             .enumerate()
-            .map(|(rank, id)| (id, 1.0 / (RRF_K_VALUE + rank as f32 + 1.0)))
+            .map(
+                |(rank, id)| {
+                    (
+                        id,
+                        1.0 / (RRF_K_VALUE + rank as f32 + 1.0),
+                    )
+                },
+            )
             .collect()
     } else {
         info!("No search results found");
@@ -670,7 +794,10 @@ async fn hybrid_both_search(
         final_results.len()
     );
 
-    (final_results, enhanced_query)
+    (
+        final_results,
+        enhanced_query,
+    )
 }
 
 /// Performs structured query search using AI to parse the query and dynamic Diesel queries
@@ -679,49 +806,102 @@ async fn structured_query_search(
     query: &str,
     limit: usize,
     model: Option<&str>,
-) -> (Vec<(i32, f32)>, String) {
+) -> (
+    Vec<(
+        i32,
+        f32,
+    )>,
+    String,
+) {
     let start_time = std::time::Instant::now();
     info!("Structured query search mode");
 
-    match ai_chat::structured_query_parser::parse_query_to_structured(query, model).await {
+    match ai_chat::structured_query_parser::parse_query_to_structured(
+        query, model,
+    )
+    .await
+    {
         Ok(structured_query) => {
-            info!("Parsed structured query: {:?}", structured_query);
-            
-            let structured_query_str = format!("{:?}", structured_query);
-            
+            info!(
+                "Parsed structured query: {:?}",
+                structured_query
+            );
+
+            let structured_query_str = format!(
+                "{:?}",
+                structured_query
+            );
+
             match database::get_database_connection().await {
                 Ok(mut conn) => {
-                    match database::structured_search::search_movies_structured(&structured_query, &mut conn).await {
+                    match database::structured_search::search_movies_structured(
+                        &structured_query,
+                        &mut conn,
+                    )
+                    .await
+                    {
                         Ok(movies) => {
-                            info!("Structured search found {} movies in {:.2?}", movies.len(), start_time.elapsed());
-                            
-                            let results: Vec<(i32, f32)> = movies
+                            info!(
+                                "Structured search found {} movies in {:.2?}",
+                                movies.len(),
+                                start_time.elapsed()
+                            );
+
+                            let results: Vec<(
+                                i32,
+                                f32,
+                            )> = movies
                                 .into_iter()
                                 .take(limit)
                                 .enumerate()
-                                .map(|(rank, movie)| {
-                                    let score = 1.0 / (1.0 + rank as f32);
-                                    (movie.id, score)
-                                })
+                                .map(
+                                    |(rank, movie)| {
+                                        let score = 1.0 / (1.0 + rank as f32);
+                                        (
+                                            movie.id, score,
+                                        )
+                                    },
+                                )
                                 .collect();
-                            
-                            (results, structured_query_str)
+
+                            (
+                                results,
+                                structured_query_str,
+                            )
                         }
                         Err(e) => {
-                            error!("Structured search database error: {:?}", e);
-                            (Vec::new(), query.to_string())
+                            error!(
+                                "Structured search database error: {:?}",
+                                e
+                            );
+                            (
+                                Vec::new(),
+                                query.to_string(),
+                            )
                         }
                     }
                 }
                 Err(e) => {
-                    error!("Failed to get database connection: {:?}", e);
-                    (Vec::new(), query.to_string())
+                    error!(
+                        "Failed to get database connection: {:?}",
+                        e
+                    );
+                    (
+                        Vec::new(),
+                        query.to_string(),
+                    )
                 }
             }
         }
         Err(e) => {
-            error!("Failed to parse query to structured format: {}", e);
-            (Vec::new(), query.to_string())
+            error!(
+                "Failed to parse query to structured format: {}",
+                e
+            );
+            (
+                Vec::new(),
+                query.to_string(),
+            )
         }
     }
 }
@@ -749,10 +929,37 @@ pub async fn hybrid_search(
     String,
 ) {
     match search_mode {
-        models::SearchMode::Text => text_only_search(query, &movies, limit).await,
-        models::SearchMode::Vector => vector_only_search(query, limit, disable_enhancement, model).await,
-        models::SearchMode::Both => hybrid_both_search(query, movies, limit, disable_enhancement, model).await,
-        models::SearchMode::Structured => structured_query_search(query, limit, model).await,
+        models::SearchMode::Text => {
+            text_only_search(
+                query, &movies, limit,
+            )
+            .await
+        }
+        models::SearchMode::Vector => {
+            vector_only_search(
+                query,
+                limit,
+                disable_enhancement,
+                model,
+            )
+            .await
+        }
+        models::SearchMode::Both => {
+            hybrid_both_search(
+                query,
+                movies,
+                limit,
+                disable_enhancement,
+                model,
+            )
+            .await
+        }
+        models::SearchMode::Structured => {
+            structured_query_search(
+                query, limit, model,
+            )
+            .await
+        }
     }
 }
 

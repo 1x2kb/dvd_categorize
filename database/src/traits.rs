@@ -33,7 +33,13 @@ pub trait InsertMovies: Send + Sync {
     async fn insert_batch(
         &mut self,
         movies: &[NewMovie],
-    ) -> Result<Vec<(i32, String)>, DatabaseError>;
+    ) -> Result<
+        Vec<(
+            i32,
+            String,
+        )>,
+        DatabaseError,
+    >;
 }
 
 #[async_trait]
@@ -74,7 +80,13 @@ pub trait InsertActors: Send + Sync {
     async fn insert_batch(
         &mut self,
         actors: &[NewActor],
-    ) -> Result<Vec<(i32, String)>, DatabaseError>;
+    ) -> Result<
+        Vec<(
+            i32,
+            String,
+        )>,
+        DatabaseError,
+    >;
 }
 
 #[async_trait]
@@ -97,7 +109,13 @@ pub trait InsertDirectors: Send + Sync {
     async fn insert_batch(
         &mut self,
         directors: &[NewDirector],
-    ) -> Result<Vec<(i32, String)>, DatabaseError>;
+    ) -> Result<
+        Vec<(
+            i32,
+            String,
+        )>,
+        DatabaseError,
+    >;
 }
 
 // Single-purpose traits for genres

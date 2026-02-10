@@ -227,16 +227,21 @@ pub async fn list_models() -> Result<Vec<models::AvailableModel>, String> {
             .unwrap(),
     );
 
-    match ollama.list_local_models().await {
+    match ollama
+        .list_local_models()
+        .await
+    {
         Ok(models_list) => {
             let available_models: Vec<models::AvailableModel> = models_list
                 .into_iter()
-                .map(|model| models::AvailableModel {
-                    name: model.name,
-                    size: model.size,
-                })
+                .map(
+                    |model| models::AvailableModel {
+                        name: model.name,
+                        size: model.size,
+                    },
+                )
                 .collect();
-            
+
             info!(
                 "Found {} available models",
                 available_models.len()
@@ -248,10 +253,7 @@ pub async fn list_models() -> Result<Vec<models::AvailableModel>, String> {
                 "Failed to list models: {:?}",
                 e
             );
-            log::error!(
-                "{}",
-                error_msg
-            );
+            log::error!("{}", error_msg);
             Err(error_msg)
         }
     }
@@ -294,26 +296,31 @@ pub async fn pull_model(model_name: &str) -> Result<String, String> {
             .unwrap(),
     );
 
-    match ollama.pull_model(model_name.to_string(), false).await {
+    match ollama
+        .pull_model(
+            model_name.to_string(),
+            false,
+        )
+        .await
+    {
         Ok(_) => {
             info!(
                 "Successfully pulled model: {}",
                 model_name
             );
-            Ok(format!(
-                "Successfully pulled model: {}",
-                model_name
-            ))
+            Ok(
+                format!(
+                    "Successfully pulled model: {}",
+                    model_name
+                ),
+            )
         }
         Err(e) => {
             let error_msg = format!(
                 "Failed to pull model {}: {:?}",
                 model_name, e
             );
-            log::error!(
-                "{}",
-                error_msg
-            );
+            log::error!("{}", error_msg);
             Err(error_msg)
         }
     }
