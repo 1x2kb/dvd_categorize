@@ -112,6 +112,10 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
             post(get_matching_movies),
         )
         .route(
+            "/ai/chat",
+            post(chat),
+        )
+        .route(
             "/movie/location",
             post(update_movie_location),
         )
