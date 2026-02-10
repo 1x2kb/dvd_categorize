@@ -36,6 +36,7 @@ const MAIN_CSS: Asset = asset!("/assets/main.css");
 const HEADER_SVG: Asset = asset!("/assets/header.svg");
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 const MOVIE_GRID_CSS: Asset = asset!("/assets/movie_grid.css");
+const CHAT_CSS: Asset = asset!("/assets/chat.css");
 
 fn main() {
     console_error_panic_hook::set_once();
@@ -93,6 +94,7 @@ fn App() -> Element {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS } document::Link { rel: "stylesheet", href: TAILWIND_CSS }
         document::Link { rel: "stylesheet", href: MOVIE_GRID_CSS }
+        document::Link { rel: "stylesheet", href: CHAT_CSS }
         Router::<Route> {}
     }
 }

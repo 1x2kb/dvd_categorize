@@ -60,13 +60,94 @@ pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
     )
 }
 
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn chat() -> impl axum::response::IntoResponse {
-    (
-        axum::http::StatusCode::NOT_FOUND,
-        "Chat endpoint temporarily disabled",
+pub async fn chat(
+    State(state): State<CacheState>,
+    Json(request): Json<models::ChatRequest>,
+) -> Result<Json<models::ChatResponse>, (StatusCode, String)> {
+    info!("Processing chat request with {} message(s)", request.messages.len());
+
+    // Get movies from cache
+    let movies = state.movies.read().await.clone();
+    
+    if movies.is_empty() {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "No movies available in the database".to_string(),
+        ));
+    }
+
+    // Build context from movies
+    let movie_context = movies
+        .iter()
+        .take(100)
+        .map(|m| {
+            format!(
+                "{}{}{}", 
+                m.name,
+                if !m.genres.is_empty() { format!(" - Genres: {}", m.genres.join(", ")) } else { String::new() },
+                m.location.as_ref().map(|l| format!(" - Location: {}", l)).unwrap_or_default()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Convert chat history to Ollama format
+    let messages: Vec<ollama_rs::generation::chat::ChatMessage> = std::iter::once(
+        ollama_rs::generation::chat::ChatMessage::system(
+            format!(
+                "You are a helpful assistant that answers questions about a user's DVD movie collection. \
+                 Be conversational and friendly. When recommending movies, mention their location if available. \
+                 Here are the movies in the collection (showing first 100):\n\n{}",
+                movie_context
+            )
+        )
     )
+    .chain(
+        request.messages.iter().map(|msg| {
+            match msg.role {
+                models::Role::User => ollama_rs::generation::chat::ChatMessage::user(msg.message.clone()),
+                models::Role::Ai => ollama_rs::generation::chat::ChatMessage::assistant(msg.message.clone()),
+            }
+        })
+    )
+    .collect();
+
+    // Get model name from request or use default
+    let model = request.model.unwrap_or_else(|| "llama3.2".to_string());
+
+    info!("Using model: {}", model);
+
+    // Create Ollama client
+    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
+    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
+    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
+
+    let ollama = ollama_rs::Ollama::from_url(ollama_url.parse().unwrap());
+
+    // Create chat request
+    let chat_request = ollama_rs::generation::chat::request::ChatMessageRequest::new(
+        model.clone(),
+        messages,
+    );
+
+    // Send to Ollama
+    match ollama.send_chat_messages(chat_request).await {
+        Ok(response) => {
+            info!("Successfully generated AI response");
+            Ok(Json(models::ChatResponse {
+                message: response.message.content,
+            }))
+        }
+        Err(e) => {
+            error!("Failed to generate AI response: {:?}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to generate AI response: {}", e),
+            ))
+        }
+    }
 }
 
 #[instrument(skip(cache_state), fields(movie_count))]
