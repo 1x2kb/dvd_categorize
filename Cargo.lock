@@ -891,6 +891,7 @@ name = "database"
 version = "0.1.0"
 dependencies = [
  "ai_chat",
+ "async-trait",
  "diesel",
  "diesel-async",
  "dotenvy",

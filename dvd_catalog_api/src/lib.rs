@@ -141,21 +141,35 @@ pub async fn export_csv(
 
 #[instrument]
 #[debug_handler]
-pub async fn preview_csv(Json(value): Json<CsvInput>) -> impl axum::response::IntoResponse {
-    let movies = csv_utils::parse_csv(value.input.as_bytes()).unwrap_or_else(
-        |e| {
-            error!(
+pub async fn preview_csv(Json(value): Json<CsvInput>) -> Result<
+    impl IntoResponse,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    let movies = match csv_utils::parse_csv(value.input.as_bytes()) {
+        Ok(movies) => movies,
+        Err(e) => {
+            let error = format!(
                 "Failed to parse CSV: {}",
                 e
             );
-            Vec::new()
-        },
-    );
+            error!(
+                "{}",
+                error
+            );
+            return Err((
+                StatusCode::BAD_REQUEST,
+                error,
+            ));
+        }
+    };
 
-    (
+    Ok((
         StatusCode::OK,
         Json(movies),
-    )
+    ))
 }
 
 #[instrument]
