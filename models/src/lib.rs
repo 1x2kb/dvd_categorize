@@ -40,6 +40,17 @@ pub use vector_similarity::VectorSimilarity;
 pub mod roled_message;
 pub use roled_message::*;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatRequest {
+    pub messages: Vec<RoledMessage>,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatResponse {
+    pub message: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CsvInput {
     pub input: String,

@@ -1,8 +1,9 @@
 use std::fmt::Display;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Role {
     Ai,
     User,
@@ -19,7 +20,7 @@ impl Display for Role {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoledMessage {
     pub message: String,
     pub role: Role,
