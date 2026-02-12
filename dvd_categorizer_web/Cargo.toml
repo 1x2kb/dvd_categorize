@@ -1,6 +1,6 @@
 [package]
 name = "dvd_categorizer_web"
-version = "0.2.0"
+version = "1.0.0"
 authors = ["1x2kb <natemeyer@protonmail.com>"]
 edition = "2021"
 

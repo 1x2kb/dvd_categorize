@@ -1676,7 +1676,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dvd_catalog_api"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "ai_chat",
  "axum",
@@ -1697,7 +1697,7 @@ dependencies = [
 
 [[package]]
 name = "dvd_categorizer_web"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "console_error_panic_hook",
