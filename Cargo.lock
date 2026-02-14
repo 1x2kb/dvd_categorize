@@ -25,7 +25,7 @@ dependencies = [
 
 [[package]]
 name = "ai_chat"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "env_logger",
  "log",
@@ -357,7 +357,7 @@ dependencies = [
 
 [[package]]
 name = "categorizer_utilities"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "database",
  "rand 0.8.5",
@@ -786,25 +786,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "csv_reader"
-version = "0.1.0"
-dependencies = [
- "ai_chat",
- "csv",
- "csv_utils",
- "database",
- "dotenvy",
- "env_logger",
- "log",
- "models",
- "serde",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "csv_utils"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "csv",
  "models",
@@ -888,7 +871,7 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "database"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "ai_chat",
  "async-trait",
@@ -3255,7 +3238,7 @@ dependencies = [
 
 [[package]]
 name = "models"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "diesel",

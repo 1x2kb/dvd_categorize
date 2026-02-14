@@ -60,48 +60,18 @@ pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
     )
 }
 
-#[instrument(skip(state))]
+#[instrument]
 #[debug_handler]
 pub async fn chat(
-    State(state): State<CacheState>,
     Json(request): Json<models::ChatRequest>,
 ) -> Result<Json<models::ChatResponse>, (StatusCode, String)> {
     info!("Processing chat request with {} message(s)", request.messages.len());
 
-    // Get movies from cache
-    let movies = state.movies.read().await.clone();
-
-    // Build collection context if movies are available
-    let collection_context = if movies.is_empty() {
-        String::from("The user's DVD collection is currently empty.")
-    } else {
-        let movie_context = movies
-            .iter()
-            .take(100)
-            .map(|m| {
-                format!(
-                    "{}{}{}", 
-                    m.name,
-                    if !m.genres.is_empty() { format!(" - Genres: {}", m.genres.join(", ")) } else { String::new() },
-                    m.location.as_ref().map(|l| format!(" - Location: {}", l)).unwrap_or_default()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!("The user has a DVD collection (showing first 100):\n\n{}", movie_context)
-    };
-
     // Convert chat history to Ollama format
     let messages: Vec<ollama_rs::generation::chat::ChatMessage> = std::iter::once(
         ollama_rs::generation::chat::ChatMessage::system(
-            format!(
-                "You are a friendly and knowledgeable assistant. You can help with any topic the user asks about. \
-                 You also have access to the user's personal DVD/movie collection. When the user asks about their \
-                 collection, recommendations from their library, or movie-related questions, use this data to provide \
-                 helpful answers. If recommending movies from their collection, mention the physical location if \
-                 available so they can find the disc. You are not limited to only discussing the collection.\n\n{}",
-                collection_context
-            )
+            "You are a friendly and knowledgeable assistant. You can help with any topic the user asks about. \
+             Be conversational, helpful, and concise.".to_string()
         )
     )
     .chain(
