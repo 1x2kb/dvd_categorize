@@ -37,6 +37,7 @@ const HEADER_SVG: Asset = asset!("/assets/header.svg");
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 const MOVIE_GRID_CSS: Asset = asset!("/assets/movie_grid.css");
 const CHAT_CSS: Asset = asset!("/assets/chat.css");
+const AI_LIVE_RESULTS_CSS: Asset = asset!("/assets/ai_live_results.css");
 
 fn main() {
     console_error_panic_hook::set_once();
@@ -92,9 +93,11 @@ fn App() -> Element {
 
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
-        document::Link { rel: "stylesheet", href: MAIN_CSS } document::Link { rel: "stylesheet", href: TAILWIND_CSS }
+        document::Link { rel: "stylesheet", href: MAIN_CSS }
+        document::Link { rel: "stylesheet", href: TAILWIND_CSS }
         document::Link { rel: "stylesheet", href: MOVIE_GRID_CSS }
         document::Link { rel: "stylesheet", href: CHAT_CSS }
+        document::Link { rel: "stylesheet", href: AI_LIVE_RESULTS_CSS }
         Router::<Route> {}
     }
 }
