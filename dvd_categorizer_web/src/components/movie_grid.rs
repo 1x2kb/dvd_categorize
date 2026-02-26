@@ -89,11 +89,9 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
 
                 // Scores
                 div {
-                    class: "movie-info-row",
-                    style: "display: flex; gap: 15px; margin-bottom: 8px;",
+                    class: "movie-info-row movie-score-container",
                     span {
-                        class: "movie-info-label",
-                        style: "background: rgba(8, 145, 178, 0.2); padding: 2px 8px; border-radius: 4px; font-size: 12px;",
+                        class: "movie-info-label movie-score-badge",
                         {
                             match props.search_mode {
                                 models::SearchMode::Text => format!("Text Score: {:.2}", props.scored_movie.vector_score),
@@ -180,8 +178,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                 // Added On timestamp
                 if let Some(added_on) = &props.scored_movie.movie.added_on {
                     div {
-                        class: "movie-info-row",
-                        style: "margin-top: 8px; font-size: 12px; opacity: 0.8;",
+                        class: "movie-info-row movie-added-on",
                         span {
                             class: "movie-info-label",
                             "Added: "
@@ -206,25 +203,25 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                 // Location - Editable
                 if location_opt().is_some() {
                     div {
-                        class: "movie-info-row",
-                        style: "margin-top: 8px; font-size: 12px;",
+                        class: "movie-info-row movie-location-row",
 
                         if editing() {
                             // Edit mode
                             div {
-                                style: "display: flex; gap: 8px; align-items: center;",
+                                class: "location-edit-container",
                                 span {
                                     class: "movie-info-label",
                                     "Location: "
                                 }
                                 input {
+                                    class: "location-input",
                                     r#type: "text",
                                     value: "{location_input}",
                                     oninput: move |evt| location_input.set(evt.value()),
-                                    style: "flex: 1; padding: 4px 8px; border: 1px solid #0891b2; border-radius: 4px; background: #111827; color: white; font-size: 12px;",
                                     disabled: is_saving(),
                                 }
                                 button {
+                                    class: "location-save-button",
                                     onclick: move |_| {
                                         let new_location = location_input();
                                         spawn(async move {
@@ -246,7 +243,6 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                                         });
                                     },
                                     disabled: is_saving(),
-                                    style: "padding: 4px 12px; background: linear-gradient(135deg, #0891b2, #0e7490); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600;",
                                     if is_saving() {
                                         "Saving..."
                                     } else {
@@ -254,12 +250,12 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                                     }
                                 }
                                 button {
+                                    class: "location-cancel-button",
                                     onclick: move |_| {
                                         editing.set(false);
                                         save_error.set(None);
                                     },
                                     disabled: is_saving(),
-                                    style: "padding: 4px 12px; background: #374151; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;",
                                     "Cancel"
                                 }
                             }
@@ -267,24 +263,24 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                             // Show error if present
                             if let Some(error) = save_error() {
                                 div {
-                                    style: "color: #ef4444; font-size: 11px; margin-top: 4px;",
+                                    class: "location-error",
                                     "Error: {error}"
                                 }
                             }
                         } else {
                             // Display mode
                             div {
-                                style: "display: flex; gap: 8px; align-items: center;",
+                                class: "location-display-container",
                                 span {
                                     class: "movie-info-label",
                                     "Location: "
                                 }
                                 span {
-                                    class: "movie-info-value",
-                                    style: "font-weight: 600; color: #0891b2; flex: 1;",
+                                    class: "movie-info-value location-value",
                                     "{location_opt().unwrap()}"
                                 }
                                 button {
+                                    class: "location-edit-button",
                                     onclick: move |_| {
                                         if let Some(loc) = location_opt() {
                                             location_input.set(loc);
@@ -292,7 +288,6 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                                         editing.set(true);
                                         save_error.set(None);
                                     },
-                                    style: "padding: 2px 8px; background: rgba(8, 145, 178, 0.2); color: #0891b2; border: 1px solid #0891b2; border-radius: 4px; cursor: pointer; font-size: 11px;",
                                     "Edit"
                                 }
                             }

@@ -31,12 +31,8 @@ pub fn InsertMedia() -> Element {
 
                 // Error/Success message display
                 if let Some(msg) = error_message() {
-                    div { class: "message",
-                        style: if msg.starts_with("✓") {
-                            "background-color: #efe; border: 1px solid #cfc; padding: 12px; margin: 10px 0; border-radius: 4px; color: #363;"
-                        } else {
-                            "background-color: #fee; border: 1px solid #fcc; padding: 12px; margin: 10px 0; border-radius: 4px; color: #c33;"
-                        },
+                    div {
+                        class: if msg.starts_with("✓") { "message message-success" } else { "message message-error" },
                         if !msg.starts_with("✓") {
                             strong { "Error: " }
                         }

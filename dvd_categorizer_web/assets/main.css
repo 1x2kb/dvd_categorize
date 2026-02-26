@@ -366,3 +366,152 @@ body {
     color: #fbbf24;
     font-size: 13px;
 }
+
+/* Message styles for insert_media */
+.message-success {
+    background-color: #efe;
+    border: 1px solid #cfc;
+    padding: 12px;
+    margin: 10px 0;
+    border-radius: 4px;
+    color: #363;
+}
+
+.message-error {
+    background-color: #fee;
+    border: 1px solid #fcc;
+    padding: 12px;
+    margin: 10px 0;
+    border-radius: 4px;
+    color: #c33;
+}
+
+/* Movie card styles for movie_card.rs */
+.movie-card-timestamp {
+    font-size: 0.9em;
+    color: #888;
+    margin-top: 8px;
+}
+
+.movie-card-location {
+    font-size: 0.9em;
+    font-weight: 600;
+    color: #0891b2;
+    margin-top: 4px;
+}
+
+/* Responsive design for mobile */
+@media (max-width: 1024px) {
+    .insert-media-container,
+    .model-pull-container {
+        max-width: 80vw;
+    }
+
+    #links {
+        width: 90%;
+        max-width: 400px;
+    }
+}
+
+@media (max-width: 768px) {
+    body {
+        margin: 10px;
+    }
+
+    .insert-media-container,
+    .model-pull-container {
+        max-width: 95vw;
+        padding: 15px;
+    }
+
+    .csv-section,
+    .model-pull-section {
+        padding: 15px;
+    }
+
+    .section-title {
+        font-size: 1.5rem;
+    }
+
+    .button-group {
+        flex-wrap: wrap;
+    }
+
+    .button {
+        flex: 1;
+        min-width: 120px;
+    }
+
+    #links {
+        width: 100%;
+        font-size: large;
+    }
+
+    #navbar {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    #navbar a {
+        margin-right: 10px;
+    }
+
+    .message {
+        max-width: 90%;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        margin: 5px;
+    }
+
+    .insert-media-container,
+    .model-pull-container {
+        max-width: 100%;
+        padding: 10px;
+    }
+
+    .csv-section,
+    .model-pull-section {
+        padding: 12px;
+    }
+
+    .section-title {
+        font-size: 1.25rem;
+    }
+
+    .preview-title {
+        font-size: 1.1rem;
+    }
+
+    .csv-textarea {
+        font-size: 13px;
+        min-height: 120px;
+    }
+
+    .button-group {
+        flex-direction: column;
+    }
+
+    .button {
+        width: 100%;
+    }
+
+    .csv-instructions {
+        font-size: 13px;
+    }
+
+    .model-input {
+        font-size: 14px;
+    }
+
+    #links {
+        font-size: medium;
+    }
+
+    .message {
+        max-width: 100%;
+        font-size: 14px;
+    }
+}

@@ -121,19 +121,18 @@ pub fn AiLiveResults() -> Element {
     rsx! {
         div {
             class: "ai-live-results-container",
-            style: "max-width: 60vw; margin: 0 auto;",
 
             // Browse actions bar at the top
             div {
                 class: "browse-actions-bar",
-                style: "margin-bottom: 12px; padding: 8px 12px; background: #1f2937; border-radius: 6px; display: flex; gap: 10px; align-items: center; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);",
 
                 div {
-                    style: "color: #9ca3af; font-weight: 600; font-size: 13px;",
+                    class: "browse-label",
                     "Browse:"
                 }
 
                 button {
+                    class: "browse-button",
                     onclick: move |_| {
                         spawn(async move {
                             if is_loading() {
@@ -159,7 +158,6 @@ pub fn AiLiveResults() -> Element {
                         });
                     },
                     disabled: is_loading(),
-                    style: "padding: 8px 16px; background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; font-size: 13px;",
 
                     if is_loading() {
                         "Loading..."
@@ -172,124 +170,51 @@ pub fn AiLiveResults() -> Element {
             // Search section
             div {
                 class: "search-section",
-                style: "margin-bottom: 20px; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);",
 
                 // Search mode tabs
                 div {
-                    style: "display: flex; gap: 8px; padding: 16px; background: #1f2937; align-items: center;",
+                    class: "search-mode-tabs",
 
                     span {
-                        style: "color: #9ca3af; font-size: 13px; font-weight: 600; margin-right: 4px;",
+                        class: "mode-label",
                         "Mode:"
                     }
 
                     button {
+                        class: if matches!(search_mode(), models::SearchMode::Text) { "mode-button active" } else { "mode-button" },
                         onclick: move |_| search_mode.set(models::SearchMode::Text),
-                        style: format!(
-                            "padding: 8px 16px; background: {}; color: {}; border: {}; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s ease; border-radius: 6px; {}",
-                            if matches!(search_mode(), models::SearchMode::Text) {
-                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)"
-                            } else {
-                                "#111827"
-                            },
-                            if matches!(search_mode(), models::SearchMode::Text) { "#ffffff" } else { "#9ca3af" },
-                            if matches!(search_mode(), models::SearchMode::Text) {
-                                "2px solid #0891b2"
-                            } else {
-                                "1px solid #374151"
-                            },
-                            if matches!(search_mode(), models::SearchMode::Text) {
-                                "box-shadow: 0 2px 4px rgba(8, 145, 178, 0.3);"
-                            } else {
-                                "box-shadow: none;"
-                            }
-                        ),
-                        onmouseover: move |_| {},
                         "Text"
                     }
 
                     button {
+                        class: if matches!(search_mode(), models::SearchMode::Both) { "mode-button active" } else { "mode-button" },
                         onclick: move |_| search_mode.set(models::SearchMode::Both),
-                        style: format!(
-                            "padding: 8px 16px; background: {}; color: {}; border: {}; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s ease; border-radius: 6px; {}",
-                            if matches!(search_mode(), models::SearchMode::Both) {
-                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)"
-                            } else {
-                                "#111827"
-                            },
-                            if matches!(search_mode(), models::SearchMode::Both) { "#ffffff" } else { "#9ca3af" },
-                            if matches!(search_mode(), models::SearchMode::Both) {
-                                "2px solid #0891b2"
-                            } else {
-                                "1px solid #374151"
-                            },
-                            if matches!(search_mode(), models::SearchMode::Both) {
-                                "box-shadow: 0 2px 4px rgba(8, 145, 178, 0.3);"
-                            } else {
-                                "box-shadow: none;"
-                            }
-                        ),
                         "Both"
                     }
 
                     button {
+                        class: if matches!(search_mode(), models::SearchMode::Vector) { "mode-button active" } else { "mode-button" },
                         onclick: move |_| search_mode.set(models::SearchMode::Vector),
-                        style: format!(
-                            "padding: 8px 16px; background: {}; color: {}; border: {}; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s ease; border-radius: 6px; {}",
-                            if matches!(search_mode(), models::SearchMode::Vector) {
-                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)"
-                            } else {
-                                "#111827"
-                            },
-                            if matches!(search_mode(), models::SearchMode::Vector) { "#ffffff" } else { "#9ca3af" },
-                            if matches!(search_mode(), models::SearchMode::Vector) {
-                                "2px solid #0891b2"
-                            } else {
-                                "1px solid #374151"
-                            },
-                            if matches!(search_mode(), models::SearchMode::Vector) {
-                                "box-shadow: 0 2px 4px rgba(8, 145, 178, 0.3);"
-                            } else {
-                                "box-shadow: none;"
-                            }
-                        ),
                         "Vector"
                     }
 
                     button {
+                        class: if matches!(search_mode(), models::SearchMode::Structured) { "mode-button active" } else { "mode-button" },
                         onclick: move |_| search_mode.set(models::SearchMode::Structured),
-                        style: format!(
-                            "padding: 8px 16px; background: {}; color: {}; border: {}; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s ease; border-radius: 6px; {}",
-                            if matches!(search_mode(), models::SearchMode::Structured) {
-                                "linear-gradient(135deg, #0891b2 0%, #0e7490 100%)"
-                            } else {
-                                "#111827"
-                            },
-                            if matches!(search_mode(), models::SearchMode::Structured) { "#ffffff" } else { "#9ca3af" },
-                            if matches!(search_mode(), models::SearchMode::Structured) {
-                                "2px solid #0891b2"
-                            } else {
-                                "1px solid #374151"
-                            },
-                            if matches!(search_mode(), models::SearchMode::Structured) {
-                                "box-shadow: 0 2px 4px rgba(8, 145, 178, 0.3);"
-                            } else {
-                                "box-shadow: none;"
-                            }
-                        ),
                         "Structured"
                     }
 
                     // Model selector
                     div {
-                        style: "margin-left: auto; display: flex; align-items: center; gap: 8px;",
+                        class: "model-selector-container",
 
                         span {
-                            style: "color: #9ca3af; font-size: 13px; font-weight: 600;",
+                            class: "model-label",
                             "Model:"
                         }
 
                         select {
+                            class: "model-select",
                             value: match selected_model() {
                                 Some(ref model) => model.clone(),
                                 None => "default".to_string(),
@@ -302,7 +227,6 @@ pub fn AiLiveResults() -> Element {
                                     selected_model.set(Some(value));
                                 }
                             },
-                            style: "padding: 8px 12px; background: #111827; color: #d1d5db; border: 1px solid #374151; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;",
 
                             option { value: "default", "Default" }
                             for model in available_models().iter() {
@@ -316,17 +240,16 @@ pub fn AiLiveResults() -> Element {
                 }
 
                 div {
-                    style: "padding: 20px; background: #1f2937;",
+                    class: "search-input-area",
                     div {
                         class: "search-input-group",
-                        style: "display: flex; gap: 10px; align-items: center;",
 
                     input {
+                        class: "search-input",
                         r#type: "text",
                         placeholder: "Enter your search query...",
                         value: "{input_value}",
                         oninput: move |evt| input_value.set(evt.value()),
-                        style: "flex: 1; padding: 12px; border: 1px solid #374151; border-radius: 6px; background: #111827; color: white; font-size: 14px;",
                         onkeypress: move |evt| {
                             if evt.key() == Key::Enter {
                                 spawn(async move {
@@ -356,6 +279,7 @@ pub fn AiLiveResults() -> Element {
                     }
 
                     button {
+                        class: "search-button",
                         onclick: move |_| {
                             spawn(async move {
                                 if is_loading() {
@@ -381,7 +305,6 @@ pub fn AiLiveResults() -> Element {
                             });
                         },
                         disabled: is_loading(),
-                        style: "padding: 12px 24px; background: linear-gradient(135deg, #0891b2, #0e7490); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; min-width: 100px;",
 
                         if is_loading() {
                             "Searching..."
@@ -394,17 +317,17 @@ pub fn AiLiveResults() -> Element {
                 // Checkbox for disabling AI enhancement (only show for Vector/Both modes)
                 if !matches!(search_mode(), models::SearchMode::Text) {
                     div {
-                        style: "margin-top: 12px; display: flex; align-items: center; gap: 8px;",
+                        class: "enhancement-checkbox-container",
                         input {
+                            class: "enhancement-checkbox",
                             r#type: "checkbox",
                             id: "disable-enhancement",
                             checked: disable_enhancement(),
                             onchange: move |evt| disable_enhancement.set(evt.checked()),
-                            style: "cursor: pointer;",
                         }
                         label {
+                            class: "enhancement-label",
                             r#for: "disable-enhancement",
-                            style: "color: #9ca3af; font-size: 14px; cursor: pointer; user-select: none;",
                             "Disable AI query enhancement (use exact search query)"
                         }
                     }
@@ -413,13 +336,13 @@ pub fn AiLiveResults() -> Element {
                 // Display enhanced query if different from original
                 if !enhanced_query().is_empty() && enhanced_query() != original_query() {
                     div {
-                        style: "margin-top: 12px; padding: 10px; background: rgba(8, 145, 178, 0.1); border-left: 3px solid #0891b2; border-radius: 4px;",
+                        class: "enhanced-query-display",
                         div {
-                            style: "color: #0891b2; font-size: 12px; font-weight: 600; margin-bottom: 4px;",
+                            class: "enhanced-query-title",
                             "AI Enhanced Query:"
                         }
                         div {
-                            style: "color: #d1d5db; font-size: 14px;",
+                            class: "enhanced-query-text",
                             "{enhanced_query()}"
                         }
                     }

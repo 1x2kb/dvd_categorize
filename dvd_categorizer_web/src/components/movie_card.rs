@@ -65,7 +65,7 @@ pub fn MovieCard(movie: ReadSignal<FullMovie>) -> Element {
                 // Added On timestamp
                 if let Some(added_on) = &movie().added_on {
                     p {
-                        style: "font-size: 0.9em; color: #888; margin-top: 8px;",
+                        class: "movie-card-timestamp",
                         "Added: "
                         {
                             // Parse the timestamp and format it to local time
@@ -84,7 +84,7 @@ pub fn MovieCard(movie: ReadSignal<FullMovie>) -> Element {
                 // Location
                 if let Some(location) = &movie().location {
                     p {
-                        style: "font-size: 0.9em; font-weight: 600; color: #0891b2; margin-top: 4px;",
+                        class: "movie-card-location",
                         "Location: {location}"
                     }
                 }
