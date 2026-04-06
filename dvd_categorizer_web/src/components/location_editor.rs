@@ -2,6 +2,11 @@ use dioxus::prelude::*;
 use models::UpdateLocationRequest;
 use wasm_bindgen::JsCast;
 
+// Context to track if any location editor is currently active
+pub fn use_editing_context() -> Signal<bool> {
+    use_context::<Signal<bool>>()
+}
+
 async fn update_location_on_server(movie_id: i32, location: String) -> Result<(), String> {
     let window = web_sys::window().ok_or("No window")?;
     let hostname = window
@@ -42,6 +47,14 @@ pub fn LocationEditor(props: LocationEditorProps) -> Element {
     let mut save_error = use_signal(|| None::<String>);
     
     let input_id = use_signal(|| format!("location-input-{}", props.movie_id));
+    
+    // Get global editing context
+    let mut global_editing = use_editing_context();
+    
+    // Update global editing state when local editing changes
+    use_effect(move || {
+        global_editing.set(editing());
+    });
     
     // Sync current_location when props change (Option 2B: parent updates flow to child)
     use_effect(move || {

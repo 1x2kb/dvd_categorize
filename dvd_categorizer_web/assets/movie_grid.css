@@ -65,9 +65,38 @@
         opacity: 0.6;
         transform: scale(0.98);
     }
+    
+    /* When editing is active, blur all non-editing cards and disable hover effects */
+    .movie-grid.editing-active .movie-card:not(:has(.location-edit-container)) {
+        filter: blur(3px);
+        opacity: 0.6;
+        transform: scale(0.98);
+        pointer-events: none;
+    }
+    
+    /* Keep the editing card expanded */
+    .movie-grid.editing-active .movie-card:has(.location-edit-container) {
+        transform: translateY(-6px) scale(1.02);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.08);
+        border-color: rgba(8, 145, 178, 0.3);
+    }
 }
 
 .movie-card:hover {
+    transform: translateY(-6px) scale(1.02);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.08);
+    border-color: rgba(8, 145, 178, 0.3);
+}
+
+/* Disable hover effects when editing is active */
+.movie-grid.editing-active .movie-card:hover {
+    transform: none;
+    box-shadow: none;
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* But keep the editing card expanded even on hover */
+.movie-grid.editing-active .movie-card:has(.location-edit-container):hover {
     transform: translateY(-6px) scale(1.02);
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.08);
     border-color: rgba(8, 145, 178, 0.3);

@@ -172,9 +172,13 @@ pub struct MovieGridProps {
 
 #[component]
 pub fn MovieGrid(props: MovieGridProps) -> Element {
+    // Create and provide editing context for all LocationEditors
+    let is_editing = use_signal(|| false);
+    use_context_provider(|| is_editing);
+    
     rsx! {
         div {
-            class: "movie-grid movie-grid-cols-3",
+            class: if is_editing() { "movie-grid movie-grid-cols-3 editing-active" } else { "movie-grid movie-grid-cols-3" },
             for scored_movie in props.movies.iter() {
                 MovieCard { 
                     key: "{scored_movie.movie.id}",
