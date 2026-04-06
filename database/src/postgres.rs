@@ -465,6 +465,28 @@ impl GetRecentMovies for PostgresMovieRepository {
 }
 
 #[async_trait]
+impl RandomMovies for PostgresMovieRepository {
+    async fn get_random(&mut self, count: i64) -> Result<Vec<FullMovie>, DatabaseError> {
+        let movie_ids: Vec<i32> = schema::movie::table
+            .select(schema::movie::id)
+            .order(diesel::dsl::sql::<diesel::sql_types::Integer>("RANDOM()"))
+            .limit(count)
+            .load::<i32>(&mut self.connection)
+            .await?;
+
+        debug!(
+            "Found {} random movies",
+            movie_ids.len()
+        );
+
+        GetMoviesByIds::get_by_ids(
+            self, movie_ids,
+        )
+        .await
+    }
+}
+
+#[async_trait]
 impl SearchMoviesStructured for PostgresMovieRepository {
     async fn search_structured(
         &mut self,
