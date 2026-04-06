@@ -68,6 +68,26 @@ async fn fetch_recent_movies() -> Result<Vec<ScoredMovie>, reqwest::Error> {
     Ok(response)
 }
 
+async fn fetch_random_movies(count: u32) -> Result<Vec<ScoredMovie>, reqwest::Error> {
+    let window = web_sys::window().unwrap();
+    let location = window.location();
+    let hostname = location
+        .hostname()
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
+
+    let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+
+    let client = reqwest::Client::new();
+    let response: Vec<ScoredMovie> = client
+        .get(format!("http://{hostname}:{server_port}/dvd/random?count={count}"))
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    Ok(response)
+}
+
 async fn fetch_available_models() -> Result<models::AvailableModelsResponse, reqwest::Error> {
     let window = web_sys::window().unwrap();
     let location = window.location();
@@ -98,6 +118,7 @@ pub fn AiLiveResults() -> Element {
     let mut enhanced_query = use_signal(String::new);
     let mut original_query = use_signal(String::new);
     let mut selected_model = use_signal(|| None::<String>);
+    let mut showing_random = use_signal(|| false);
     let mut available_models = use_signal(Vec::<models::AvailableModel>::new);
 
     // Fetch available models on component mount
@@ -135,6 +156,7 @@ pub fn AiLiveResults() -> Element {
                         }
 
                         is_loading.set(true);
+                        showing_random.set(false);
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -146,6 +168,31 @@ pub fn AiLiveResults() -> Element {
                             }
                             Err(err) => {
                                 log::error!("Failed to fetch recent movies {:#?}", err);
+                                movies.set(Arc::new(vec![]));
+                            }
+                        }
+                        is_loading.set(false);
+                    });
+                },
+                on_random: move |_| {
+                    spawn(async move {
+                        if is_loading() {
+                            return;
+                        }
+
+                        is_loading.set(true);
+                        showing_random.set(true);
+                        movies.set(Arc::new(vec![]));
+                        enhanced_query.set(String::new());
+                        original_query.set(String::new());
+
+                        let result = fetch_random_movies(3).await;
+                        match result {
+                            Ok(random_movies) => {
+                                movies.set(Arc::new(random_movies));
+                            }
+                            Err(err) => {
+                                log::error!("Failed to fetch random movies {:#?}", err);
                                 movies.set(Arc::new(vec![]));
                             }
                         }
@@ -177,6 +224,7 @@ pub fn AiLiveResults() -> Element {
                             }
 
                             is_loading.set(true);
+                            showing_random.set(false);
                             movies.set(Arc::new(vec![]));
 
                             let result = send_search_request(input_value(), disable_enhancement(), search_mode(), selected_model()).await;
@@ -200,6 +248,18 @@ pub fn AiLiveResults() -> Element {
                     on_enhancement_toggle: move |checked| disable_enhancement.set(checked),
                     enhanced_query: enhanced_query(),
                     original_query: original_query()
+                }
+            }
+
+            // Visual indicator for random movies
+            if showing_random() {
+                div {
+                    class: "random-indicator",
+                    style: "text-align: center; padding: 12px; margin: 16px 0; background: rgba(8, 145, 178, 0.1); border-radius: 8px; border: 1px solid rgba(8, 145, 178, 0.3);",
+                    span {
+                        style: "color: #0891b2; font-weight: 600; font-size: 14px;",
+                        "🎲 Showing 3 random movies"
+                    }
                 }
             }
 
