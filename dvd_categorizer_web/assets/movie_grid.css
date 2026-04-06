@@ -99,7 +99,7 @@
 
 /* Movie poster */
 .movie-poster {
-    height: 60px;
+    aspect-ratio: 24 / 3;
     background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
     display: flex;
     align-items: center;
@@ -423,7 +423,6 @@
     }
     
     .movie-poster {
-        height: 50px;
         font-size: 12px;
     }
 
