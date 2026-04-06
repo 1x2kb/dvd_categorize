@@ -18,7 +18,7 @@
     gap: 20px;
     max-width: 60vw;
     margin: 0 auto;
-    padding: 0 20px;
+    grid-auto-rows: 1fr;
 }
 
 .movie-grid-cols-1 {
@@ -99,11 +99,10 @@
 
 /* Movie poster */
 .movie-poster {
-    height: 60px;
+    aspect-ratio: 24 / 3;
     background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: grid;
+    place-items: center;
     color: white;
     font-size: 14px;
     font-weight: bold;
@@ -143,7 +142,7 @@
 
 .movie-title {
     margin: 0 0 12px 0;
-    font-size: 20px;
+    font-size: clamp(16px, 4vw, 20px);
     font-weight: 700;
     color: #f9fafb;
     line-height: 1.2;
@@ -153,7 +152,7 @@
 .movie-description {
     margin: 0 0 16px 0;
     color: #d1d5db;
-    font-size: 14px;
+    font-size: clamp(12px, 3vw, 14px);
     line-height: 1.5;
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -188,7 +187,7 @@
     padding: 8px 12px;
     background: rgba(8, 145, 178, 0.05);
     border-radius: 8px;
-    border-left: 3px solid rgba(8, 145, 178, 0.3);
+    border-inline-start: 3px solid rgba(8, 145, 178, 0.3);
 }
 
 .movie-info-label {
@@ -387,19 +386,13 @@
         padding: 0 10px;
     }
     
+    .movie-grid-cols-1,
+    .movie-grid-cols-2,
     .movie-grid-cols-3,
     .movie-grid-cols-4,
     .movie-grid-cols-5,
     .movie-grid-cols-6 {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    .movie-title {
-        font-size: 18px;
-    }
-
-    .movie-description {
-        font-size: 13px;
+        grid-template-columns: repeat(1, 1fr);
     }
 }
 
@@ -423,20 +416,11 @@
     }
     
     .movie-poster {
-        height: 50px;
         font-size: 12px;
     }
 
     .movie-details {
         padding: 15px;
-    }
-
-    .movie-title {
-        font-size: 16px;
-    }
-
-    .movie-description {
-        font-size: 12px;
     }
 
     .movie-info-row {
