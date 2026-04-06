@@ -1,4 +1,7 @@
 use crate::components::movie_grid::MovieGrid;
+use crate::components::browse_bar::BrowseBar;
+use crate::components::search_mode_selector::SearchModeSelector;
+use crate::components::search_bar::SearchBar;
 use dioxus::prelude::*;
 use models::{ScoredMovie, SearchRequest};
 use serde::{Deserialize, Serialize};
@@ -122,48 +125,32 @@ pub fn AiLiveResults() -> Element {
         div {
             class: "ai-live-results-container",
 
-            // Browse actions bar at the top
-            div {
-                class: "browse-actions-bar",
+            // Browse section
+            BrowseBar {
+                is_loading: is_loading(),
+                on_browse: move |_| {
+                    spawn(async move {
+                        if is_loading() {
+                            return;
+                        }
 
-                div {
-                    class: "browse-label",
-                    "Browse:"
-                }
+                        is_loading.set(true);
+                        movies.set(Arc::new(vec![]));
+                        enhanced_query.set(String::new());
+                        original_query.set(String::new());
 
-                button {
-                    class: "browse-button",
-                    onclick: move |_| {
-                        spawn(async move {
-                            if is_loading() {
-                                return;
+                        let result = fetch_recent_movies().await;
+                        match result {
+                            Ok(recent_movies) => {
+                                movies.set(Arc::new(recent_movies));
                             }
-
-                            is_loading.set(true);
-                            movies.set(Arc::new(vec![]));
-                            enhanced_query.set(String::new());
-                            original_query.set(String::new());
-
-                            let result = fetch_recent_movies().await;
-                            match result {
-                                Ok(recent_movies) => {
-                                    movies.set(Arc::new(recent_movies));
-                                }
-                                Err(err) => {
-                                    log::error!("Failed to fetch recent movies {:#?}", err);
-                                    movies.set(Arc::new(vec![]));
-                                }
+                            Err(err) => {
+                                log::error!("Failed to fetch recent movies {:#?}", err);
+                                movies.set(Arc::new(vec![]));
                             }
-                            is_loading.set(false);
-                        });
-                    },
-                    disabled: is_loading(),
-
-                    if is_loading() {
-                        "Loading..."
-                    } else {
-                        "Recent Movies"
-                    }
+                        }
+                        is_loading.set(false);
+                    });
                 }
             }
 
@@ -172,167 +159,45 @@ pub fn AiLiveResults() -> Element {
                 class: "search-section",
 
                 // Search mode tabs
-                div {
-                    class: "search-mode-tabs",
-
-                    span {
-                        class: "mode-label",
-                        "Mode:"
-                    }
-
-                    button {
-                        class: if matches!(search_mode(), models::SearchMode::Text) { "mode-button active" } else { "mode-button" },
-                        onclick: move |_| search_mode.set(models::SearchMode::Text),
-                        "Text"
-                    }
-
-                    button {
-                        class: if matches!(search_mode(), models::SearchMode::Both) { "mode-button active" } else { "mode-button" },
-                        onclick: move |_| search_mode.set(models::SearchMode::Both),
-                        "Both"
-                    }
-
-                    button {
-                        class: if matches!(search_mode(), models::SearchMode::Vector) { "mode-button active" } else { "mode-button" },
-                        onclick: move |_| search_mode.set(models::SearchMode::Vector),
-                        "Vector"
-                    }
-
-                    button {
-                        class: if matches!(search_mode(), models::SearchMode::Structured) { "mode-button active" } else { "mode-button" },
-                        onclick: move |_| search_mode.set(models::SearchMode::Structured),
-                        "Structured"
-                    }
-
-                    // Model selector (hidden for Text mode)
-                    if !matches!(search_mode(), models::SearchMode::Text) {
-                        div {
-                            class: "model-selector-container",
-
-                            span {
-                                class: "model-label",
-                                "Model:"
-                            }
-
-                            select {
-                                class: "model-select",
-                                value: match selected_model() {
-                                    Some(ref model) => model.clone(),
-                                    None => "default".to_string(),
-                                },
-                                onchange: move |evt| {
-                                    let value = evt.value();
-                                    if value == "default" {
-                                        selected_model.set(None);
-                                    } else {
-                                        selected_model.set(Some(value));
-                                    }
-                                },
-
-                                option { value: "default", "Default" }
-                                for model in available_models().iter() {
-                                    option {
-                                        value: "{model.name}",
-                                        "{model.name}"
-                                    }
-                                }
-                            }
-                        }
-                    }
+                SearchModeSelector {
+                    search_mode: search_mode(),
+                    on_mode_change: move |mode| search_mode.set(mode),
+                    selected_model: selected_model(),
+                    on_model_change: move |model| selected_model.set(model),
+                    available_models: available_models
                 }
 
-                div {
-                    class: "search-input-area",
-                    div {
-                        class: "search-input-group",
+                SearchBar {
+                    input_value: input_value(),
+                    on_input_change: move |value| input_value.set(value),
+                    on_search: move |_| {
+                        spawn(async move {
+                            if is_loading() {
+                                return;
+                            }
 
-                    input {
-                        class: "search-input",
-                        r#type: "text",
-                        placeholder: "Enter your search query...",
-                        value: "{input_value}",
-                        oninput: move |evt| input_value.set(evt.value()),
-                        onkeypress: move |evt| {
-                            if evt.key() == Key::Enter {
-                                spawn(async move {
-                                    if is_loading() {
-                                        return;
-                                    }
+                            is_loading.set(true);
+                            movies.set(Arc::new(vec![]));
 
-                                    is_loading.set(true);
+                            let result = send_search_request(input_value(), disable_enhancement(), search_mode(), selected_model()).await;
+                            match result {
+                                Ok(response) => {
+                                    movies.set(Arc::new(response.results));
+                                    original_query.set(response.original_query);
+                                    enhanced_query.set(response.enhanced_query);
+                                }
+                                Err(err) => {
+                                    log::error!("Failed to send search request {:#?}", err);
                                     movies.set(Arc::new(vec![]));
-
-                                    let result = send_search_request(input_value(), disable_enhancement(), search_mode(), selected_model()).await;
-                                    match result {
-                                        Ok(response) => {
-                                            movies.set(Arc::new(response.results));
-                                            original_query.set(response.original_query);
-                                            enhanced_query.set(response.enhanced_query);
-                                        }
-                                        Err(err) => {
-                                            log::error!("Failed to send search request {:#?}", err);
-                                            movies.set(Arc::new(vec![]));
-                                        }
-                                    }
-                                    is_loading.set(false);
-                                });
+                                }
                             }
-                        }
-                    }
-
-                    button {
-                        class: "search-button",
-                        onclick: move |_| {
-                            spawn(async move {
-                                if is_loading() {
-                                    return;
-                                }
-
-                                is_loading.set(true);
-                                movies.set(Arc::new(vec![]));
-
-                                let result = send_search_request(input_value(), disable_enhancement(), search_mode(), selected_model()).await;
-                                match result {
-                                    Ok(response) => {
-                                        movies.set(Arc::new(response.results));
-                                        original_query.set(response.original_query);
-                                        enhanced_query.set(response.enhanced_query);
-                                    }
-                                    Err(err) => {
-                                        log::error!("Failed to send search request {:#?}", err);
-                                        movies.set(Arc::new(vec![]));
-                                    }
-                                }
-                                is_loading.set(false);
-                            });
-                        },
-                        disabled: is_loading(),
-
-                        if is_loading() {
-                            "Searching..."
-                        } else {
-                            "Search"
-                        }
-                    }
-                }
-
-                // Checkbox for disabling AI enhancement (only show for Vector/Both modes)
-                if !matches!(search_mode(), models::SearchMode::Text) {
-                    div {
-                        class: "enhancement-checkbox-container",
-                        input {
-                            class: "enhancement-checkbox",
-                            r#type: "checkbox",
-                            id: "disable-enhancement",
-                            checked: disable_enhancement(),
-                            onchange: move |evt| disable_enhancement.set(evt.checked()),
-                        }
-                        label {
-                            class: "enhancement-label",
-                            r#for: "disable-enhancement",
-                            "Disable AI query enhancement (use exact search query)"
-                        }
-                    }
+                            is_loading.set(false);
+                        });
+                    },
+                    is_loading: is_loading(),
+                    search_mode: search_mode(),
+                    disable_enhancement: disable_enhancement(),
+                    on_enhancement_toggle: move |checked| disable_enhancement.set(checked)
                 }
 
                 // Display enhanced query if different from original
@@ -348,7 +213,6 @@ pub fn AiLiveResults() -> Element {
                             "{enhanced_query()}"
                         }
                     }
-                }
                 }
             }
 
