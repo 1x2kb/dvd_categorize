@@ -214,7 +214,27 @@ pub fn InsertMedia() -> Element {
                                 }).collect()
                             );
                             rsx! {
-                                MovieGrid { movies: scored_movies, search_mode: models::SearchMode::Both }
+                                MovieGrid { 
+                                    movies: scored_movies, 
+                                    search_mode: models::SearchMode::Both,
+                                    on_location_updated: move |(movie_id, new_location): (i32, String)| {
+                                        // Update the movie in the dvd_data list
+                                        let current_dvds = dvd_data();
+                                        let updated_dvds: Vec<FullMovie> = current_dvds
+                                            .iter()
+                                            .map(|movie| {
+                                                if movie.id == movie_id {
+                                                    let mut updated_movie = movie.clone();
+                                                    updated_movie.location = Some(new_location.clone());
+                                                    updated_movie
+                                                } else {
+                                                    movie.clone()
+                                                }
+                                            })
+                                            .collect();
+                                        dvd_data.set(Arc::new(updated_dvds));
+                                    }
+                                }
                             }
                         }
                         

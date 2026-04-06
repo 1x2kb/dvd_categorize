@@ -45,6 +45,7 @@ async fn update_location_on_server(movie_id: i32, location: String) -> Result<()
 pub struct SingleMovieCardProps {
     pub scored_movie: ScoredMovie,
     pub search_mode: models::SearchMode,
+    pub on_location_updated: EventHandler<(i32, String)>,
 }
 
 #[component]
@@ -80,16 +81,6 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
             });
         }
     });
-    
-    let location_opt = use_memo(
-        move || {
-            props
-                .scored_movie
-                .movie
-                .location
-                .clone()
-        },
-    );
 
     rsx! {
         div {
@@ -225,7 +216,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                 }
 
                 // Location - Editable
-                if location_opt().is_some() {
+                if props.scored_movie.movie.location.is_some() {
                     div {
                         class: "movie-info-row movie-location-row",
 
@@ -247,14 +238,15 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                                     onkeydown: move |evt| {
                                         if evt.key() == Key::Enter && !is_saving() {
                                             // Save on Enter
-                                            let new_location = location_input();
+                                            let on_updated = props.on_location_updated.clone();
                                             spawn(async move {
                                                 is_saving.set(true);
                                                 save_error.set(None);
 
-                                                match update_location_on_server(movie_id, new_location).await {
+                                                match update_location_on_server(movie_id, location_input()).await {
                                                     Ok(_) => {
                                                         log::info!("Successfully updated location for movie {}", movie_id);
+                                                        on_updated.call((movie_id, location_input()));
                                                         editing.set(false);
                                                     }
                                                     Err(e) => {
@@ -275,14 +267,15 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                                 button {
                                     class: "location-save-button",
                                     onclick: move |_| {
-                                        let new_location = location_input();
+                                        let on_updated = props.on_location_updated.clone();
                                         spawn(async move {
                                             is_saving.set(true);
                                             save_error.set(None);
 
-                                            match update_location_on_server(movie_id, new_location).await {
+                                            match update_location_on_server(movie_id, location_input()).await {
                                                 Ok(_) => {
                                                     log::info!("Successfully updated location for movie {}", movie_id);
+                                                    on_updated.call((movie_id, location_input()));
                                                     editing.set(false);
                                                 }
                                                 Err(e) => {
@@ -329,13 +322,13 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                                 }
                                 span {
                                     class: "movie-info-value location-value",
-                                    "{location_opt().unwrap()}"
+                                    "{props.scored_movie.movie.location.as_ref().unwrap()}"
                                 }
                                 button {
                                     class: "location-edit-button",
                                     onclick: move |_| {
-                                        if let Some(loc) = location_opt() {
-                                            location_input.set(loc);
+                                        if let Some(ref loc) = props.scored_movie.movie.location {
+                                            location_input.set(loc.clone());
                                         }
                                         editing.set(true);
                                         save_error.set(None);
@@ -355,6 +348,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
 pub struct MovieGridProps {
     pub movies: Arc<Vec<ScoredMovie>>,
     pub search_mode: models::SearchMode,
+    pub on_location_updated: EventHandler<(i32, String)>,
 }
 
 #[component]
@@ -363,7 +357,11 @@ pub fn MovieGrid(props: MovieGridProps) -> Element {
         div {
             class: "movie-grid movie-grid-cols-3",
             for scored_movie in props.movies.iter() {
-                MovieCard { scored_movie: scored_movie.clone(), search_mode: props.search_mode }
+                MovieCard { 
+                    scored_movie: scored_movie.clone(), 
+                    search_mode: props.search_mode,
+                    on_location_updated: props.on_location_updated.clone()
+                }
             }
         }
     }
