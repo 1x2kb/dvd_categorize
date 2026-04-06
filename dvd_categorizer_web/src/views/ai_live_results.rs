@@ -351,7 +351,34 @@ pub fn AiLiveResults() -> Element {
             }
 
             // Movie grid section
-            MovieGrid { movies: Arc::clone(&movies()), search_mode: search_mode() }
+            MovieGrid { 
+                movies: Arc::clone(&movies()), 
+                search_mode: search_mode(),
+                on_location_updated: move |(movie_id, new_location): (i32, String)| {
+                    log::info!("Location update callback called for movie {} with location: {}", movie_id, new_location);
+                    // Update the movie in the list
+                    let current_movies = movies();
+                    let updated_movies: Vec<ScoredMovie> = current_movies
+                        .iter()
+                        .map(|scored_movie| {
+                            if scored_movie.movie.id == movie_id {
+                                let mut updated_movie = scored_movie.movie.clone();
+                                updated_movie.location = Some(new_location.clone());
+                                log::info!("Updated movie {} location to: {}", movie_id, new_location);
+                                ScoredMovie {
+                                    movie: updated_movie,
+                                    vector_score: scored_movie.vector_score,
+                                }
+                            } else {
+                                scored_movie.clone()
+                            }
+                        })
+                        .collect();
+                    let count = updated_movies.len();
+                    movies.set(Arc::new(updated_movies));
+                    log::info!("Movies signal updated, new count: {}", count);
+                }
+            }
         }
     }
 }

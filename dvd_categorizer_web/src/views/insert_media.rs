@@ -11,6 +11,7 @@ pub fn InsertMedia() -> Element {
     let mut dvd_data: Signal<Arc<Vec<FullMovie>>> = use_signal(|| Arc::new(Vec::new()));
     let mut is_previewing: Signal<bool> = use_signal(|| false);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
+    let mut is_sending: Signal<bool> = use_signal(|| false);
 
     // Helper for pluralization
     let dvd_count = dvd_data().len();
@@ -139,8 +140,10 @@ pub fn InsertMedia() -> Element {
 
                         button {
                             class: "button button-success",
+                            disabled: is_sending(),
                             onclick: move |_| {
                                 spawn(async move {
+                                is_sending.set(true);
                                 error_message.set(None);
                                 let window = web_sys::window().unwrap();
                                 let location = window.location();
@@ -184,9 +187,14 @@ pub fn InsertMedia() -> Element {
                                         error_message.set(Some(err_msg));
                                     }
                                 }
+                                is_sending.set(false);
                             });
                             },
-                            "Send to Database"
+                            if is_sending() {
+                                "Sending..."
+                            } else {
+                                "Send to Database"
+                            }
                         }
                     }
                 }
@@ -196,16 +204,47 @@ pub fn InsertMedia() -> Element {
             if !dvd_data().is_empty() {
                 div { class: "preview-section",
                     h3 { class: "preview-title", "Preview ({dvd_count} {movie_word} found)" }
-                    {
-                        // Convert FullMovie to ScoredMovie for display (with 0 score for preview)
-                        let scored_movies: Arc<Vec<ScoredMovie>> = Arc::new(
-                            dvd_data().iter().map(|movie| ScoredMovie {
-                                movie: movie.clone(),
-                                vector_score: 0.0,
-                            }).collect()
-                        );
-                        rsx! {
-                            MovieGrid { movies: scored_movies, search_mode: models::SearchMode::Both }
+                    div { class: "preview-wrapper",
+                        {
+                            // Convert FullMovie to ScoredMovie for display (with 0 score for preview)
+                            let scored_movies: Arc<Vec<ScoredMovie>> = Arc::new(
+                                dvd_data().iter().map(|movie| ScoredMovie {
+                                    movie: movie.clone(),
+                                    vector_score: 0.0,
+                                }).collect()
+                            );
+                            rsx! {
+                                MovieGrid { 
+                                    movies: scored_movies, 
+                                    search_mode: models::SearchMode::Both,
+                                    on_location_updated: move |(movie_id, new_location): (i32, String)| {
+                                        // Update the movie in the dvd_data list
+                                        let current_dvds = dvd_data();
+                                        let updated_dvds: Vec<FullMovie> = current_dvds
+                                            .iter()
+                                            .map(|movie| {
+                                                if movie.id == movie_id {
+                                                    let mut updated_movie = movie.clone();
+                                                    updated_movie.location = Some(new_location.clone());
+                                                    updated_movie
+                                                } else {
+                                                    movie.clone()
+                                                }
+                                            })
+                                            .collect();
+                                        dvd_data.set(Arc::new(updated_dvds));
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if is_sending() {
+                            div { class: "loading-overlay",
+                                div { class: "loading-content",
+                                    div { class: "spinner" }
+                                    p { "Sending to database..." }
+                                }
+                            }
                         }
                     }
                 }
