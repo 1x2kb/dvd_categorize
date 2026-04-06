@@ -1,45 +1,9 @@
 use chrono::{DateTime, Local, NaiveDateTime};
 use dioxus::prelude::*;
-use models::{ScoredMovie, UpdateLocationRequest};
+use models::ScoredMovie;
 use std::sync::Arc;
-use wasm_bindgen::JsCast;
 
-async fn update_location_on_server(movie_id: i32, location: String) -> Result<(), String> {
-    let window = web_sys::window().ok_or("No window")?;
-    let hostname = window
-        .location()
-        .hostname()
-        .unwrap_or_else(|_| "127.0.0.1".to_string());
-    let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
-
-    let request = UpdateLocationRequest { movie_id, location };
-
-    let client = reqwest::Client::new();
-    client
-        .post(format!("http://{hostname}:{server_port}/movie/location"))
-        .json(&request)
-        .send()
-        .await
-        .map_err(
-            |e| {
-                format!(
-                    "Request failed: {}",
-                    e
-                )
-            },
-        )?
-        .error_for_status()
-        .map_err(
-            |e| {
-                format!(
-                    "Server error: {}",
-                    e
-                )
-            },
-        )?;
-
-    Ok(())
-}
+use crate::components::location_editor::LocationEditor;
 
 #[derive(Props, Clone, PartialEq)]
 pub struct SingleMovieCardProps {
@@ -50,37 +14,7 @@ pub struct SingleMovieCardProps {
 
 #[component]
 fn MovieCard(props: SingleMovieCardProps) -> Element {
-    let mut editing = use_signal(|| false);
-    let mut location_input = use_signal(String::new);
-    let mut is_saving = use_signal(|| false);
-    let mut save_error = use_signal(|| None::<String>);
-
-    let movie_id = props
-        .scored_movie
-        .movie
-        .id;
-    
-    let input_id = use_signal(|| format!("location-input-{}", movie_id));
-    
-    // Focus input when editing mode is activated
-    use_effect(move || {
-        if editing() {
-            let id = input_id();
-            spawn(async move {
-                // Small delay to ensure DOM is updated
-                gloo_timers::future::TimeoutFuture::new(10).await;
-                if let Some(window) = web_sys::window() {
-                    if let Some(document) = window.document() {
-                        if let Some(element) = document.get_element_by_id(&id) {
-                            if let Some(input) = element.dyn_ref::<web_sys::HtmlInputElement>() {
-                                let _ = input.focus();
-                            }
-                        }
-                    }
-                }
-            });
-        }
-    });
+    let movie_id = props.scored_movie.movie.id;
 
     rsx! {
         div {
@@ -216,127 +150,12 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                 }
 
                 // Location - Editable
-                if props.scored_movie.movie.location.is_some() {
-                    div {
-                        class: "movie-info-row movie-location-row",
-
-                        if editing() {
-                            // Edit mode
-                            div {
-                                class: "location-edit-container",
-                                span {
-                                    class: "movie-info-label",
-                                    "Location: "
-                                }
-                                input {
-                                    id: "{input_id()}",
-                                    class: "location-input",
-                                    r#type: "text",
-                                    value: "{location_input}",
-                                    oninput: move |evt| location_input.set(evt.value()),
-                                    disabled: is_saving(),
-                                    onkeydown: move |evt| {
-                                        if evt.key() == Key::Enter && !is_saving() {
-                                            // Save on Enter
-                                            let on_updated = props.on_location_updated.clone();
-                                            spawn(async move {
-                                                is_saving.set(true);
-                                                save_error.set(None);
-
-                                                match update_location_on_server(movie_id, location_input()).await {
-                                                    Ok(_) => {
-                                                        log::info!("Successfully updated location for movie {}", movie_id);
-                                                        on_updated.call((movie_id, location_input()));
-                                                        editing.set(false);
-                                                    }
-                                                    Err(e) => {
-                                                        log::error!("Failed to update location: {}", e);
-                                                        save_error.set(Some(e));
-                                                    }
-                                                }
-
-                                                is_saving.set(false);
-                                            });
-                                        } else if evt.key() == Key::Escape && !is_saving() {
-                                            // Cancel on Escape
-                                            editing.set(false);
-                                            save_error.set(None);
-                                        }
-                                    },
-                                }
-                                button {
-                                    class: "location-save-button",
-                                    onclick: move |_| {
-                                        let on_updated = props.on_location_updated.clone();
-                                        spawn(async move {
-                                            is_saving.set(true);
-                                            save_error.set(None);
-
-                                            match update_location_on_server(movie_id, location_input()).await {
-                                                Ok(_) => {
-                                                    log::info!("Successfully updated location for movie {}", movie_id);
-                                                    on_updated.call((movie_id, location_input()));
-                                                    editing.set(false);
-                                                }
-                                                Err(e) => {
-                                                    log::error!("Failed to update location: {}", e);
-                                                    save_error.set(Some(e));
-                                                }
-                                            }
-
-                                            is_saving.set(false);
-                                        });
-                                    },
-                                    disabled: is_saving(),
-                                    if is_saving() {
-                                        "Saving..."
-                                    } else {
-                                        "Save"
-                                    }
-                                }
-                                button {
-                                    class: "location-cancel-button",
-                                    onclick: move |_| {
-                                        editing.set(false);
-                                        save_error.set(None);
-                                    },
-                                    disabled: is_saving(),
-                                    "Cancel"
-                                }
-                            }
-
-                            // Show error if present
-                            if let Some(error) = save_error() {
-                                div {
-                                    class: "location-error",
-                                    "Error: {error}"
-                                }
-                            }
-                        } else {
-                            // Display mode
-                            div {
-                                class: "location-display-container",
-                                span {
-                                    class: "movie-info-label",
-                                    "Location: "
-                                }
-                                span {
-                                    class: "movie-info-value location-value",
-                                    "{props.scored_movie.movie.location.as_ref().unwrap()}"
-                                }
-                                button {
-                                    class: "location-edit-button",
-                                    onclick: move |_| {
-                                        if let Some(ref loc) = props.scored_movie.movie.location {
-                                            location_input.set(loc.clone());
-                                        }
-                                        editing.set(true);
-                                        save_error.set(None);
-                                    },
-                                    "Edit"
-                                }
-                            }
-                        }
+                if let Some(ref location) = props.scored_movie.movie.location {
+                    LocationEditor {
+                        key: "{movie_id}-{location}",
+                        movie_id: movie_id,
+                        initial_location: location.clone(),
+                        on_location_updated: props.on_location_updated.clone()
                     }
                 }
             }
@@ -358,6 +177,7 @@ pub fn MovieGrid(props: MovieGridProps) -> Element {
             class: "movie-grid movie-grid-cols-3",
             for scored_movie in props.movies.iter() {
                 MovieCard { 
+                    key: "{scored_movie.movie.id}",
                     scored_movie: scored_movie.clone(), 
                     search_mode: props.search_mode,
                     on_location_updated: props.on_location_updated.clone()

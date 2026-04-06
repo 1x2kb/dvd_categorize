@@ -41,6 +41,8 @@ const AI_LIVE_RESULTS_CSS: Asset = asset!("/assets/ai_live_results.css");
 
 fn main() {
     console_error_panic_hook::set_once();
+    wasm_logger::init(wasm_logger::Config::default());
+    
     if let Err(e) = dotenv() {
         error!(
             "Error loading .env file: {}",
