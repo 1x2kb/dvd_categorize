@@ -197,22 +197,9 @@ pub fn AiLiveResults() -> Element {
                     is_loading: is_loading(),
                     search_mode: search_mode(),
                     disable_enhancement: disable_enhancement(),
-                    on_enhancement_toggle: move |checked| disable_enhancement.set(checked)
-                }
-
-                // Display enhanced query if different from original
-                if !enhanced_query().is_empty() && enhanced_query() != original_query() {
-                    div {
-                        class: "enhanced-query-display",
-                        div {
-                            class: "enhanced-query-title",
-                            "AI Enhanced Query:"
-                        }
-                        div {
-                            class: "enhanced-query-text",
-                            "{enhanced_query()}"
-                        }
-                    }
+                    on_enhancement_toggle: move |checked| disable_enhancement.set(checked),
+                    enhanced_query: enhanced_query(),
+                    original_query: original_query()
                 }
             }
 

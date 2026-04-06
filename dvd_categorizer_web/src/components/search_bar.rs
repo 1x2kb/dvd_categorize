@@ -10,6 +10,8 @@ pub struct SearchBarProps {
     pub search_mode: SearchMode,
     pub disable_enhancement: bool,
     pub on_enhancement_toggle: EventHandler<bool>,
+    pub enhanced_query: String,
+    pub original_query: String,
 }
 
 #[component]
@@ -65,6 +67,21 @@ pub fn SearchBar(props: SearchBarProps) -> Element {
                     label {
                         r#for: "disable-enhancement",
                         "Disable AI Enhancement"
+                    }
+                }
+            }
+
+            // Display enhanced query if different from original
+            if !props.enhanced_query.is_empty() && props.enhanced_query != props.original_query {
+                div {
+                    class: "enhanced-query-display",
+                    div {
+                        class: "enhanced-query-title",
+                        "AI Enhanced Query:"
+                    }
+                    div {
+                        class: "enhanced-query-text",
+                        "{props.enhanced_query}"
                     }
                 }
             }
