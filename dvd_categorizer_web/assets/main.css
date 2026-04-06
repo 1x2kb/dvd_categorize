@@ -102,6 +102,21 @@ body {
     background: #0d9c6e;
 }
 
+.button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.button:disabled:hover {
+    background: #10b981;
+}
+
+@keyframes ellipsis {
+    0% { content: '.'; }
+    33% { content: '..'; }
+    66% { content: '...'; }
+}
+
 .preview-section {
     margin-top: 20px;
 }
@@ -111,6 +126,52 @@ body {
     margin-bottom: 15px;
     font-size: 1.25rem;
     font-weight: 600;
+}
+
+.preview-wrapper {
+    position: relative;
+}
+
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 17, 22, 0.85);
+    backdrop-filter: blur(4px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    border-radius: 8px;
+}
+
+.loading-content {
+    text-align: center;
+    color: #e5e7eb;
+}
+
+.loading-content p {
+    margin-top: 15px;
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: #0891b2;
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    margin: 0 auto;
+    border: 4px solid #374151;
+    border-top: 4px solid #0891b2;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 #hero {
@@ -365,4 +426,153 @@ body {
     border-left: 4px solid #f59e0b;
     color: #fbbf24;
     font-size: 13px;
+}
+
+/* Message styles for insert_media */
+.message-success {
+    background-color: #efe;
+    border: 1px solid #cfc;
+    padding: 12px;
+    margin: 10px 0;
+    border-radius: 4px;
+    color: #363;
+}
+
+.message-error {
+    background-color: #fee;
+    border: 1px solid #fcc;
+    padding: 12px;
+    margin: 10px 0;
+    border-radius: 4px;
+    color: #c33;
+}
+
+/* Movie card styles for movie_card.rs */
+.movie-card-timestamp {
+    font-size: 0.9em;
+    color: #888;
+    margin-top: 8px;
+}
+
+.movie-card-location {
+    font-size: 0.9em;
+    font-weight: 600;
+    color: #0891b2;
+    margin-top: 4px;
+}
+
+/* Responsive design for mobile */
+@media (max-width: 1024px) {
+    .insert-media-container,
+    .model-pull-container {
+        max-width: 80vw;
+    }
+
+    #links {
+        width: 90%;
+        max-width: 400px;
+    }
+}
+
+@media (max-width: 768px) {
+    body {
+        margin: 10px;
+    }
+
+    .insert-media-container,
+    .model-pull-container {
+        max-width: 95vw;
+        padding: 15px;
+    }
+
+    .csv-section,
+    .model-pull-section {
+        padding: 15px;
+    }
+
+    .section-title {
+        font-size: 1.5rem;
+    }
+
+    .button-group {
+        flex-wrap: wrap;
+    }
+
+    .button {
+        flex: 1;
+        min-width: 120px;
+    }
+
+    #links {
+        width: 100%;
+        font-size: large;
+    }
+
+    #navbar {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    #navbar a {
+        margin-right: 10px;
+    }
+
+    .message {
+        max-width: 90%;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        margin: 5px;
+    }
+
+    .insert-media-container,
+    .model-pull-container {
+        max-width: 100%;
+        padding: 10px;
+    }
+
+    .csv-section,
+    .model-pull-section {
+        padding: 12px;
+    }
+
+    .section-title {
+        font-size: 1.25rem;
+    }
+
+    .preview-title {
+        font-size: 1.1rem;
+    }
+
+    .csv-textarea {
+        font-size: 13px;
+        min-height: 120px;
+    }
+
+    .button-group {
+        flex-direction: column;
+    }
+
+    .button {
+        width: 100%;
+    }
+
+    .csv-instructions {
+        font-size: 13px;
+    }
+
+    .model-input {
+        font-size: 14px;
+    }
+
+    #links {
+        font-size: medium;
+    }
+
+    .message {
+        max-width: 100%;
+        font-size: 14px;
+    }
 }

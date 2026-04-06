@@ -18,7 +18,7 @@
     gap: 20px;
     max-width: 60vw;
     margin: 0 auto;
-    padding: 0 20px;
+    grid-auto-rows: 1fr;
 }
 
 .movie-grid-cols-1 {
@@ -57,6 +57,21 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* When editing is active, keep the editing card expanded (always, not just on hover) */
+.movie-grid.editing-active .movie-card:has(.location-edit-container) {
+    transform: translateY(-6px) scale(1.02);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.08);
+    border-color: rgba(8, 145, 178, 0.3);
+}
+
+/* When editing is active, blur all non-editing cards */
+.movie-grid.editing-active .movie-card:not(:has(.location-edit-container)) {
+    filter: blur(3px);
+    opacity: 0.6;
+    transform: scale(0.98);
+    pointer-events: none;
+}
+
 /* Blur effect for non-hovered cards (desktop only) */
 @media (hover: hover) and (pointer: fine) {
     .movie-grid .movie-card:hover ~ .movie-card,
@@ -73,13 +88,21 @@
     border-color: rgba(8, 145, 178, 0.3);
 }
 
+/* Disable hover effects on non-editing cards when editing is active */
+.movie-grid.editing-active .movie-card:not(:has(.location-edit-container)):hover {
+    transform: scale(0.98);
+    box-shadow: none;
+    border-color: rgba(255, 255, 255, 0.1);
+    filter: blur(3px);
+    opacity: 0.6;
+}
+
 /* Movie poster */
 .movie-poster {
-    height: 60px;
+    aspect-ratio: 24 / 3;
     background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: grid;
+    place-items: center;
     color: white;
     font-size: 14px;
     font-weight: bold;
@@ -119,7 +142,7 @@
 
 .movie-title {
     margin: 0 0 12px 0;
-    font-size: 20px;
+    font-size: clamp(16px, 4vw, 20px);
     font-weight: 700;
     color: #f9fafb;
     line-height: 1.2;
@@ -129,10 +152,11 @@
 .movie-description {
     margin: 0 0 16px 0;
     color: #d1d5db;
-    font-size: 14px;
+    font-size: clamp(12px, 3vw, 14px);
     line-height: 1.5;
     display: -webkit-box;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
     font-weight: 400;
@@ -142,10 +166,12 @@
     z-index: 10;
 }
 
-.movie-card:hover .movie-description {
+.movie-card:hover .movie-description,
+.movie-grid.editing-active .movie-card:has(.location-edit-container) .movie-description {
     display: block;
     overflow: visible;
     -webkit-line-clamp: unset;
+    line-clamp: unset;
     background: rgba(31, 41, 55, 0.95);
     padding: 12px;
     border-radius: 8px;
@@ -161,7 +187,7 @@
     padding: 8px 12px;
     background: rgba(8, 145, 178, 0.05);
     border-radius: 8px;
-    border-left: 3px solid rgba(8, 145, 178, 0.3);
+    border-inline-start: 3px solid rgba(8, 145, 178, 0.3);
 }
 
 .movie-info-label {
@@ -219,12 +245,138 @@
     display: none;
 }
 
-.movie-card:hover .movie-genre-extra {
+.movie-card:hover .movie-genre-extra,
+.movie-grid.editing-active .movie-card:has(.location-edit-container) .movie-genre-extra {
     display: inline-block;
 }
 
-.movie-card:hover .movie-genre-more {
+.movie-card:hover .movie-genre-more,
+.movie-grid.editing-active .movie-card:has(.location-edit-container) .movie-genre-more {
     display: none;
+}
+
+/* Score display */
+.movie-score-container {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 8px;
+}
+
+.movie-score-badge {
+    background: rgba(8, 145, 178, 0.2);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+/* Added on timestamp */
+.movie-added-on {
+    margin-top: 8px;
+    font-size: 12px;
+    opacity: 0.8;
+}
+
+/* Location display and editing */
+.movie-location-row {
+    margin-top: 8px;
+    font-size: 12px;
+}
+
+.location-edit-container {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.location-input {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid #0891b2;
+    border-radius: 4px;
+    background: #111827;
+    color: white;
+    font-size: 12px;
+}
+
+.location-input:focus {
+    outline: none;
+    border-color: #0ea5e9;
+}
+
+.location-save-button {
+    padding: 4px 12px;
+    background: linear-gradient(135deg, #0891b2, #0e7490);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.location-save-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #0e7490, #155e75);
+    transform: translateY(-1px);
+}
+
+.location-save-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.location-cancel-button {
+    padding: 4px 12px;
+    background: #374151;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.2s ease;
+}
+
+.location-cancel-button:hover:not(:disabled) {
+    background: #4b5563;
+}
+
+.location-cancel-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.location-display-container {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.location-value {
+    font-weight: 600;
+    color: #0891b2;
+    flex: 1;
+}
+
+.location-edit-button {
+    padding: 2px 8px;
+    background: rgba(8, 145, 178, 0.2);
+    color: #0891b2;
+    border: 1px solid #0891b2;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.2s ease;
+}
+
+.location-edit-button:hover {
+    background: rgba(8, 145, 178, 0.3);
+    transform: translateY(-1px);
+}
+
+.location-error {
+    color: #ef4444;
+    font-size: 11px;
+    margin-top: 4px;
 }
 
 /* Responsive design */
@@ -234,11 +386,13 @@
         padding: 0 10px;
     }
     
+    .movie-grid-cols-1,
+    .movie-grid-cols-2,
     .movie-grid-cols-3,
     .movie-grid-cols-4,
     .movie-grid-cols-5,
     .movie-grid-cols-6 {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(1, 1fr);
     }
 }
 
@@ -262,7 +416,27 @@
     }
     
     .movie-poster {
-        height: 50px;
         font-size: 12px;
+    }
+
+    .movie-details {
+        padding: 15px;
+    }
+
+    .movie-info-row {
+        padding: 6px 10px;
+    }
+
+    .movie-info-label,
+    .movie-info-value {
+        font-size: 12px;
+    }
+
+    .location-edit-container {
+        flex-wrap: wrap;
+    }
+
+    .location-input {
+        min-width: 100%;
     }
 }
