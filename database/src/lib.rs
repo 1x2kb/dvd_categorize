@@ -550,3 +550,17 @@ pub async fn get_recent_movies(limit: i64) -> DbResult<Vec<FullMovie>> {
     // Use the optimized helper function to get full movie data
     get_movies_by_ids(movie_ids).await
 }
+
+/// Get random movies from the database.
+///
+/// # Arguments
+/// * `count` - The number of random movies to retrieve
+///
+/// # Errors
+/// Returns `DatabaseError` if the database query fails.
+pub async fn get_random_movies(count: i64) -> DbResult<Vec<FullMovie>> {
+    let conn = get_database_connection().await?;
+    let mut repo = PostgresMovieRepository::new(conn);
+    use traits::RandomMovies;
+    repo.get_random(count).await
+}
