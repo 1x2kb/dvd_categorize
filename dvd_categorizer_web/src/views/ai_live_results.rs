@@ -91,7 +91,7 @@ pub fn AiLiveResults() -> Element {
     let mut input_value = use_signal(String::new);
     let mut is_loading = use_signal(|| false);
     let mut disable_enhancement = use_signal(|| false);
-    let mut search_mode = use_signal(|| models::SearchMode::Both);
+    let mut search_mode = use_signal(|| models::SearchMode::Text);
     let mut enhanced_query = use_signal(String::new);
     let mut original_query = use_signal(String::new);
     let mut selected_model = use_signal(|| None::<String>);
@@ -204,35 +204,37 @@ pub fn AiLiveResults() -> Element {
                         "Structured"
                     }
 
-                    // Model selector
-                    div {
-                        class: "model-selector-container",
+                    // Model selector (hidden for Text mode)
+                    if !matches!(search_mode(), models::SearchMode::Text) {
+                        div {
+                            class: "model-selector-container",
 
-                        span {
-                            class: "model-label",
-                            "Model:"
-                        }
+                            span {
+                                class: "model-label",
+                                "Model:"
+                            }
 
-                        select {
-                            class: "model-select",
-                            value: match selected_model() {
-                                Some(ref model) => model.clone(),
-                                None => "default".to_string(),
-                            },
-                            onchange: move |evt| {
-                                let value = evt.value();
-                                if value == "default" {
-                                    selected_model.set(None);
-                                } else {
-                                    selected_model.set(Some(value));
-                                }
-                            },
+                            select {
+                                class: "model-select",
+                                value: match selected_model() {
+                                    Some(ref model) => model.clone(),
+                                    None => "default".to_string(),
+                                },
+                                onchange: move |evt| {
+                                    let value = evt.value();
+                                    if value == "default" {
+                                        selected_model.set(None);
+                                    } else {
+                                        selected_model.set(Some(value));
+                                    }
+                                },
 
-                            option { value: "default", "Default" }
-                            for model in available_models().iter() {
-                                option {
-                                    value: "{model.name}",
-                                    "{model.name}"
+                                option { value: "default", "Default" }
+                                for model in available_models().iter() {
+                                    option {
+                                        value: "{model.name}",
+                                        "{model.name}"
+                                    }
                                 }
                             }
                         }
