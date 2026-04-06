@@ -101,9 +101,8 @@
 .movie-poster {
     aspect-ratio: 24 / 3;
     background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: grid;
+    place-items: center;
     color: white;
     font-size: 14px;
     font-weight: bold;
