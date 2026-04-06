@@ -2,6 +2,7 @@ use chrono::{DateTime, Local, NaiveDateTime};
 use dioxus::prelude::*;
 use models::{ScoredMovie, UpdateLocationRequest};
 use std::sync::Arc;
+use wasm_bindgen::JsCast;
 
 async fn update_location_on_server(movie_id: i32, location: String) -> Result<(), String> {
     let window = web_sys::window().ok_or("No window")?;
@@ -57,6 +58,29 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
         .scored_movie
         .movie
         .id;
+    
+    let input_id = use_signal(|| format!("location-input-{}", movie_id));
+    
+    // Focus input when editing mode is activated
+    use_effect(move || {
+        if editing() {
+            let id = input_id();
+            spawn(async move {
+                // Small delay to ensure DOM is updated
+                gloo_timers::future::TimeoutFuture::new(10).await;
+                if let Some(window) = web_sys::window() {
+                    if let Some(document) = window.document() {
+                        if let Some(element) = document.get_element_by_id(&id) {
+                            if let Some(input) = element.dyn_ref::<web_sys::HtmlInputElement>() {
+                                let _ = input.focus();
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    });
+    
     let location_opt = use_memo(
         move || {
             props
@@ -214,11 +238,39 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                                     "Location: "
                                 }
                                 input {
+                                    id: "{input_id()}",
                                     class: "location-input",
                                     r#type: "text",
                                     value: "{location_input}",
                                     oninput: move |evt| location_input.set(evt.value()),
                                     disabled: is_saving(),
+                                    onkeydown: move |evt| {
+                                        if evt.key() == Key::Enter && !is_saving() {
+                                            // Save on Enter
+                                            let new_location = location_input();
+                                            spawn(async move {
+                                                is_saving.set(true);
+                                                save_error.set(None);
+
+                                                match update_location_on_server(movie_id, new_location).await {
+                                                    Ok(_) => {
+                                                        log::info!("Successfully updated location for movie {}", movie_id);
+                                                        editing.set(false);
+                                                    }
+                                                    Err(e) => {
+                                                        log::error!("Failed to update location: {}", e);
+                                                        save_error.set(Some(e));
+                                                    }
+                                                }
+
+                                                is_saving.set(false);
+                                            });
+                                        } else if evt.key() == Key::Escape && !is_saving() {
+                                            // Cancel on Escape
+                                            editing.set(false);
+                                            save_error.set(None);
+                                        }
+                                    },
                                 }
                                 button {
                                     class: "location-save-button",

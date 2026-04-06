@@ -1704,6 +1704,7 @@ dependencies = [
  "dioxus",
  "dotenvy",
  "env_logger",
+ "gloo-timers",
  "log",
  "models",
  "reqwest",
