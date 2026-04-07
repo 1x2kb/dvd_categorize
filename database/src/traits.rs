@@ -71,6 +71,11 @@ pub trait RandomMovies: Send + Sync {
 }
 
 #[async_trait]
+pub trait GetUnknownLocationMovies: Send + Sync {
+    async fn get_unknown_location(&mut self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError>;
+}
+
+#[async_trait]
 pub trait SearchMoviesStructured: Send + Sync {
     async fn search_structured(
         &mut self,
