@@ -1,7 +1,9 @@
 [package]
 name = "database"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
+description = "Async PostgreSQL database layer with Diesel ORM, pgvector support, and structured search"
+readme = "README.md"
 
 [features]
 testing = ["rand"]

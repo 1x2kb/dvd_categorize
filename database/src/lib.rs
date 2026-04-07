@@ -1,3 +1,43 @@
+//! Database Layer for DVD Categorizer
+//!
+//! This crate provides the database abstraction layer using Diesel ORM with async PostgreSQL support.
+//! It handles all database operations including CRUD operations, vector similarity search using pgvector,
+//! and structured query building.
+//!
+//! # Features
+//!
+//! - **Async PostgreSQL**: Full async support via diesel-async
+//! - **Vector Search**: Semantic similarity search using pgvector extension
+//! - **Structured Search**: Type-safe query building from structured criteria
+//! - **Batch Operations**: Optimized bulk inserts and queries
+//! - **Testing Support**: Mock implementations and test utilities
+//!
+//! # Architecture
+//!
+//! The crate is organized into several modules:
+//! - `actors`, `directors`, `genres`, `movies`: Entity-specific operations
+//! - `full_movies`: Operations on complete movie objects with all relationships
+//! - `embedding`: Vector embedding storage and retrieval
+//! - `structured_search`: Dynamic query building from structured criteria
+//! - `postgres`: Repository pattern implementations
+//! - `traits`: Trait definitions for database operations
+//!
+//! # Example
+//!
+//! ```no_run
+//! use database::{get_movies, insert_full_movie, search_movies};
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     // Get all movies
+//!     let movies = get_movies().await.unwrap();
+//!     
+//!     // Vector similarity search
+//!     let embedding = vec![0.1; 768]; // Example embedding
+//!     let similar = search_movies(embedding, 10).await.unwrap();
+//! }
+//! ```
+
 pub mod actors;
 pub mod directors;
 pub mod embedding;

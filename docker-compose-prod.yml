@@ -98,23 +98,3 @@ services:
     environment:
       VITE_API_BASE_URL: http://localhost:3000
     restart: unless-stopped
-
-  csv_reader-prod:
-    build:
-      context: .
-      dockerfile: docker/prod/csv.Dockerfile
-    depends_on:
-      diesel_migrate-prod:
-        condition: service_completed_successfully
-      postgres-prod:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres-prod:5432/app_db
-      RUST_LOG: "info,csv_reader=debug,database=debug,ai_chat=debug,models=debug,csv_utils=debug"
-      OLLAMA_HOST: ollama-prod
-      OLLAMA_PORT: "11434"
-    volumes:
-      - ./movies.csv:/app/movies.csv:ro
-    restart: "no"
-    profiles:
-      - database_load  # This prevents it from starting with docker-compose up

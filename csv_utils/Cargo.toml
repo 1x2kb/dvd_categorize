@@ -1,7 +1,9 @@
 [package]
 name = "csv_utils"
-version = "0.1.0"
-edition = "2024"
+version = "1.0.0"
+edition = "2021"
+description = "CSV parsing and serialization utilities for movie data import/export"
+readme = "README.md"
 
 [features]
 postgres = ["models/postgres"]

@@ -2,11 +2,11 @@
 members = [
     "ai_chat",
     "categorizer_utilities",
-    "csv_reader",
     "database",
     "dvd_catalog_api",
     "models",
-    "dvd_categorizer_web", "csv_utils",
+    "dvd_categorizer_web",
+    "csv_utils",
 ]
 
 resolver = "2"
