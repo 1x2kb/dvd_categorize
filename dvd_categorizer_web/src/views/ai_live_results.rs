@@ -88,6 +88,26 @@ async fn fetch_random_movies(count: u32) -> Result<Vec<ScoredMovie>, reqwest::Er
     Ok(response)
 }
 
+async fn fetch_unknown_location_movies() -> Result<Vec<ScoredMovie>, reqwest::Error> {
+    let window = web_sys::window().unwrap();
+    let location = window.location();
+    let hostname = location
+        .hostname()
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
+
+    let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+
+    let client = reqwest::Client::new();
+    let response: Vec<ScoredMovie> = client
+        .get(format!("http://{hostname}:{server_port}/dvd/unknown-location"))
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    Ok(response)
+}
+
 async fn fetch_available_models() -> Result<models::AvailableModelsResponse, reqwest::Error> {
     let window = web_sys::window().unwrap();
     let location = window.location();
@@ -193,6 +213,31 @@ pub fn AiLiveResults() -> Element {
                             }
                             Err(err) => {
                                 log::error!("Failed to fetch random movies {:#?}", err);
+                                movies.set(Arc::new(vec![]));
+                            }
+                        }
+                        is_loading.set(false);
+                    });
+                },
+                on_unknown_location: move |_| {
+                    spawn(async move {
+                        if is_loading() {
+                            return;
+                        }
+
+                        is_loading.set(true);
+                        showing_random.set(false);
+                        movies.set(Arc::new(vec![]));
+                        enhanced_query.set(String::new());
+                        original_query.set(String::new());
+
+                        let result = fetch_unknown_location_movies().await;
+                        match result {
+                            Ok(unknown_movies) => {
+                                movies.set(Arc::new(unknown_movies));
+                            }
+                            Err(err) => {
+                                log::error!("Failed to fetch unknown location movies {:#?}", err);
                                 movies.set(Arc::new(vec![]));
                             }
                         }

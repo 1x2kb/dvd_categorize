@@ -768,3 +768,36 @@ pub async fn get_random_movies(
         }
     }
 }
+
+/// Get movies with unknown location from the database
+#[instrument]
+#[debug_handler]
+pub async fn get_unknown_location_movies() -> Json<Vec<ScoredMovie>> {
+    info!("Getting movies with unknown location");
+
+    match database::get_unknown_location_movies(50).await {
+        Ok(movies) => {
+            info!(
+                "Found {} movies with unknown location",
+                movies.len()
+            );
+            let scored_movies: Vec<ScoredMovie> = movies
+                .into_iter()
+                .map(
+                    |movie| ScoredMovie {
+                        movie,
+                        vector_score: 0.0,
+                    },
+                )
+                .collect();
+            Json(scored_movies)
+        }
+        Err(e) => {
+            error!(
+                "Failed to get movies with unknown location: {}",
+                e
+            );
+            Json(Vec::new())
+        }
+    }
+}
