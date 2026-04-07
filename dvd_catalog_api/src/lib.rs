@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -9,6 +9,7 @@ use database::{FullMovie, SearchRequest};
 use log::{error, info};
 use models::{CsvInput, ScoredMovie};
 use ollama_rs::error::OllamaError;
+use serde::Deserialize;
 use std::{sync::Arc, time::Instant};
 use tracing::instrument;
 
@@ -19,6 +20,16 @@ pub use movie_search::extract_entities;
 #[derive(Clone, Debug)]
 pub struct CacheState {
     pub movies: Arc<tokio::sync::RwLock<Vec<FullMovie>>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RandomMoviesQuery {
+    #[serde(default = "default_count")]
+    pub count: i64,
+}
+
+fn default_count() -> i64 {
+    3
 }
 
 #[instrument]
@@ -716,6 +727,41 @@ pub async fn get_recent_movies() -> Json<Vec<ScoredMovie>> {
         Err(e) => {
             error!(
                 "Failed to get recent movies: {}",
+                e
+            );
+            Json(Vec::new())
+        }
+    }
+}
+
+/// Get random movies from the database
+#[instrument]
+#[debug_handler]
+pub async fn get_random_movies(
+    Query(params): Query<RandomMoviesQuery>,
+) -> Json<Vec<ScoredMovie>> {
+    info!("Getting {} random movies", params.count);
+
+    match database::get_random_movies(params.count).await {
+        Ok(movies) => {
+            info!(
+                "Found {} random movies",
+                movies.len()
+            );
+            let scored_movies: Vec<ScoredMovie> = movies
+                .into_iter()
+                .map(
+                    |movie| ScoredMovie {
+                        movie,
+                        vector_score: 0.0,
+                    },
+                )
+                .collect();
+            Json(scored_movies)
+        }
+        Err(e) => {
+            error!(
+                "Failed to get random movies: {}",
                 e
             );
             Json(Vec::new())

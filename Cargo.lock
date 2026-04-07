@@ -1673,6 +1673,7 @@ dependencies = [
  "models",
  "ollama-rs",
  "redis",
+ "serde",
  "tokio",
  "tower-http",
  "tracing",
