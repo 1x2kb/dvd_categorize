@@ -71,48 +71,18 @@ pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
     )
 }
 
-#[instrument(skip(state))]
+#[instrument]
 #[debug_handler]
 pub async fn chat(
-    State(state): State<CacheState>,
     Json(request): Json<models::ChatRequest>,
 ) -> Result<Json<models::ChatResponse>, (StatusCode, String)> {
     info!("Processing chat request with {} message(s)", request.messages.len());
 
-    // Get movies from cache
-    let movies = state.movies.read().await.clone();
-    
-    if movies.is_empty() {
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "No movies available in the database".to_string(),
-        ));
-    }
-
-    // Build context from movies
-    let movie_context = movies
-        .iter()
-        .take(100)
-        .map(|m| {
-            format!(
-                "{}{}{}", 
-                m.name,
-                if !m.genres.is_empty() { format!(" - Genres: {}", m.genres.join(", ")) } else { String::new() },
-                m.location.as_ref().map(|l| format!(" - Location: {}", l)).unwrap_or_default()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
     // Convert chat history to Ollama format
     let messages: Vec<ollama_rs::generation::chat::ChatMessage> = std::iter::once(
         ollama_rs::generation::chat::ChatMessage::system(
-            format!(
-                "You are a helpful assistant that answers questions about a user's DVD movie collection. \
-                 Be conversational and friendly. When recommending movies, mention their location if available. \
-                 Here are the movies in the collection (showing first 100):\n\n{}",
-                movie_context
-            )
+            "You are a friendly and knowledgeable assistant. You can help with any topic the user asks about. \
+             Be conversational, helpful, and concise.".to_string()
         )
     )
     .chain(
@@ -126,7 +96,7 @@ pub async fn chat(
     .collect();
 
     // Get model name from request or use default
-    let model = request.model.unwrap_or_else(|| "llama3.2".to_string());
+    let model = request.model.unwrap_or_else(|| "phi3.5".to_string());
 
     info!("Using model: {}", model);
 

@@ -102,29 +102,6 @@ services:
     command: ["diesel", "migration", "run"]
     restart: "no"  # Don't restart after completion
 
-  csv_reader:
-    build:
-      context: .
-      dockerfile: docker/run/csv.Dockerfile
-      args:
-        UID: ${UID}
-        GID: ${GID}
-        USERNAME: ${USERNAME}
-    volumes:
-      - ./:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      diesel_migrate:
-        condition: service_completed_successfully
-    environment:
-      DATABASE_URL: postgres://app_user:strongpassword@postgres:5432/app_db
-      RUST_LOG: "info,csv_reader=debug,database=debug,ai_chat=debug,models=debug,csv_utils=debug"
-      OLLAMA_HOST: ollama
-      OLLAMA_PORT: "11434"
-    profiles:
-      - database_load  # This prevents it from starting with docker-compose up
-
 volumes:
   postgres_data:
   redis_data:

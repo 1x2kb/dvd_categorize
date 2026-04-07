@@ -1,3 +1,33 @@
+//! AI Chat Integration Module
+//!
+//! This crate provides integration with Ollama for AI-powered features including:
+//! - Chat conversations about the movie collection
+//! - Vector embeddings generation for semantic search
+//! - Query enhancement for better search results
+//! - Structured query parsing from natural language
+//!
+//! # Features
+//!
+//! - **Embeddings**: Generate vector embeddings using `nomic-embed-text` model
+//! - **Chat**: Conversational AI for answering questions about movies
+//! - **Query Enhancement**: Expand short queries for better semantic search
+//! - **Structured Parsing**: Convert natural language to structured search criteria
+//!
+//! # Example
+//!
+//! ```no_run
+//! use ai_chat::{get_embedding, list_models};
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     // Generate embeddings for a text
+//!     let embedding = get_embedding("science fiction movies").await.unwrap();
+//!     
+//!     // List available models
+//!     let models = list_models().await.unwrap();
+//! }
+//! ```
+
 pub mod embedding;
 pub mod live_ui;
 mod prompts;
@@ -26,18 +56,32 @@ pub use query_enhancement::*;
 pub use embedding::EMBEDDING_MODEL;
 
 // AI Model constants
-const DEFAULT_CHAT_MODEL: &str = "llama3.2";
+const DEFAULT_CHAT_MODEL: &str = "phi3.5";
 const DEFAULT_SMALL_MODEL: &str = "phi3.5";
 const DEFAULT_OLLAMA_HOST: &str = "ollama";
 const DEFAULT_OLLAMA_PORT: &str = "11434";
 const DEFAULT_CONTEXT_WINDOW: u64 = 64000;
 
+/// Client for interacting with Ollama AI services
+///
+/// Wraps the Ollama client with additional context about the AI action being performed.
 #[derive(Debug)]
 pub struct OllamaClient {
     pub ollama_client: Ollama,
     pub ai_action: AiAction,
 }
 
+/// Generates an AI response about the movie collection
+///
+/// # Arguments
+///
+/// * `dvds` - Arc-wrapped vector of movies to query about
+/// * `ollama` - Ollama client with AI action context
+///
+/// # Returns
+///
+/// * `Ok(String)` - AI-generated response
+/// * `Err(String)` - Error message if AI response generation fails
 #[instrument(level = Level::DEBUG)]
 pub async fn ai_message(
     dvds: Arc<Vec<FullMovie>>,
@@ -51,6 +95,19 @@ pub async fn ai_message(
     .or_else(|_| Ok(String::from("There was a problem creating an AI response to the question")))
 }
 
+/// Extracts structured search filters from a natural language question
+///
+/// Uses AI to parse the question and identify relevant actors, directors, genres, and other
+/// search criteria that can be used to filter the movie collection.
+///
+/// # Arguments
+///
+/// * `question` - Natural language question about movies
+///
+/// # Returns
+///
+/// * `Ok(DvdFilters)` - Structured filters extracted from the question
+/// * `Err(String)` - Error message if parsing fails
 #[instrument(level = Level::DEBUG)]
 pub async fn find_related_keys(
     question: impl AsRef<str> + std::fmt::Debug,
@@ -186,6 +243,15 @@ pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::Oll
     Ok(response)
 }
 
+/// Extracts JSON content from a string by finding the outermost braces
+///
+/// # Arguments
+///
+/// * `s` - String potentially containing JSON
+///
+/// # Returns
+///
+/// The substring containing the JSON object, or the original string if no braces found
 fn extract_enclosed_content(s: &str) -> &str {
     if let Some(start) = s.find('{') {
         if let Some(end) = s.rfind('}') {
@@ -263,7 +329,7 @@ pub async fn list_models() -> Result<Vec<models::AvailableModel>, String> {
 ///
 /// # Arguments
 ///
-/// * `model_name` - The name of the model to pull (e.g., "llama3.2", "phi3.5")
+/// * `model_name` - The name of the model to pull (e.g., "phi3.5", "nomic-embed-text")
 ///
 /// # Returns
 ///

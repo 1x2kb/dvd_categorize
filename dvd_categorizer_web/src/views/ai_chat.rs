@@ -124,7 +124,7 @@ pub fn AiChat() -> Element {
                                 let messages = app_data.read().ai_chat.read().clone().unwrap_or_default();
                                 let chat_request = ChatRequest {
                                     messages,
-                                    model: Some("llama3.2".to_string()),
+                                    model: Some("phi3.5".to_string()),
                                 };
 
                                 let client = reqwest::Client::new();
@@ -215,7 +215,7 @@ pub fn AiChat() -> Element {
                             let messages = app_data.read().ai_chat.read().clone().unwrap_or_default();
                             let chat_request = ChatRequest {
                                 messages,
-                                model: Some("llama3.2".to_string()),
+                                model: Some("phi3.5".to_string()),
                             };
 
                             let client = reqwest::Client::new();

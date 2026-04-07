@@ -1,7 +1,8 @@
 [package]
 name = "dvd_catalog_api"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
+description = "Axum REST API server for DVD catalog with search orchestration and caching"
 
 [lib]
 name = "dvd_catalog"

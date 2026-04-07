@@ -1,3 +1,44 @@
+//! Shared Domain Models for DVD Categorizer
+//!
+//! This crate contains all shared data structures and domain models used across the application.
+//! It uses feature flags to conditionally compile different functionality based on the needs
+//! of each consuming crate.
+//!
+//! # Features
+//!
+//! - **postgres**: Diesel ORM integration with PostgreSQL types and schema
+//! - **ai**: AI-related types for chat and embeddings
+//! - **vector-similarity**: Vector similarity scoring traits
+//! - **text-matching**: Text-based search scoring traits
+//! - **testing**: Test utilities and mock data generation
+//!
+//! # Core Types
+//!
+//! - `FullMovie`: Complete movie representation with all relationships
+//! - `Actor`, `Director`, `Genre`: Entity types
+//! - `SearchRequest`, `SearchResponse`: Search API types
+//! - `StructuredQuery`: Parsed search criteria
+//! - `SearchMode`: Enum for different search strategies (Text, Vector, Both, Structured)
+//!
+//! # Feature-Gated Traits
+//!
+//! - `VectorSimilarity`: Cosine similarity calculations (requires `vector-similarity`)
+//! - `TextMatchScoring`: Text-based match scoring (requires `text-matching`)
+//! - `Random`: Test data generation (requires `testing`)
+//!
+//! # Example
+//!
+//! ```
+//! use models::{FullMovie, SearchMode, SearchRequest};
+//!
+//! let request = SearchRequest {
+//!     query: "science fiction".to_string(),
+//!     disable_enhancement: false,
+//!     search_mode: SearchMode::Both,
+//!     model: None,
+//! };
+//! ```
+
 #[cfg(feature = "ai")]
 pub mod ai_state;
 
