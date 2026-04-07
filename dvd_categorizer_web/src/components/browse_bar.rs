@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 pub struct BrowseBarProps {
     pub on_browse: EventHandler<()>,
     pub on_random: EventHandler<()>,
+    pub on_unknown_location: EventHandler<()>,
     pub is_loading: bool,
 }
 
@@ -36,6 +37,17 @@ pub fn BrowseBar(props: BrowseBarProps) -> Element {
                     "Loading..."
                 } else {
                     "Random Movies"
+                }
+            }
+            button {
+                class: "browse-button",
+                onclick: move |_| props.on_unknown_location.call(()),
+                disabled: props.is_loading,
+
+                if props.is_loading {
+                    "Loading..."
+                } else {
+                    "Unknown Location"
                 }
             }
         }

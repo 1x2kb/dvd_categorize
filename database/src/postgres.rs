@@ -487,6 +487,29 @@ impl RandomMovies for PostgresMovieRepository {
 }
 
 #[async_trait]
+impl GetUnknownLocationMovies for PostgresMovieRepository {
+    async fn get_unknown_location(&mut self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError> {
+        let movie_ids: Vec<i32> = schema::movie::table
+            .select(schema::movie::id)
+            .filter(schema::movie::location.eq("Unknown"))
+            .order(schema::movie::added_on.desc())
+            .limit(limit)
+            .load::<i32>(&mut self.connection)
+            .await?;
+
+        debug!(
+            "Found {} movies with unknown location",
+            movie_ids.len()
+        );
+
+        GetMoviesByIds::get_by_ids(
+            self, movie_ids,
+        )
+        .await
+    }
+}
+
+#[async_trait]
 impl SearchMoviesStructured for PostgresMovieRepository {
     async fn search_structured(
         &mut self,
