@@ -2,6 +2,8 @@
 name = "categorizer_utilities"
 version = "1.0.0"
 edition = "2021"
+description = "Miscellaneous utility functions for the DVD Categorizer application"
+readme = "README.md"
 
 [dependencies]
 database = { path = "../database" }

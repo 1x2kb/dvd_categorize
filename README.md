@@ -167,6 +167,8 @@ See [STRUCTURED_SEARCH.md](Documentation/Explantion/STRUCTURED_SEARCH.md) for de
 
 ## Documentation
 
+### Architecture & Flow Diagrams
+
 Detailed diagrams and explanations for core application flows:
 
 - **[ER Diagram](Documentation/Diagrams/ER_DIAGRAM.md)** — Database schema and table relationships
@@ -175,6 +177,21 @@ Detailed diagrams and explanations for core application flows:
 - **[CSV Import/Export Flow](Documentation/Diagrams/CSV_IMPORT_FLOW.md)** — Import preview, import, and export sequences
 - **[Application Startup](Documentation/Diagrams/APPLICATION_STARTUP.md)** — Docker Compose boot order, API initialization, cache lifecycle
 - **[Structured Search](Documentation/Explantion/STRUCTURED_SEARCH.md)** — Deep dive on AI-parsed structured queries
+
+### Configuration & Reference
+
+- **[Environment Variables](Documentation/ENVIRONMENT_VARIABLES.md)** — Complete reference for all environment variables
+
+### Crate Documentation
+
+Each workspace crate has its own README with detailed documentation:
+
+- **[ai_chat](ai_chat/README.md)** — Ollama integration, embeddings, query enhancement
+- **[database](database/README.md)** — Async PostgreSQL layer, vector search, structured queries
+- **[models](models/README.md)** — Shared domain types and feature-gated traits
+- **[csv_utils](csv_utils/README.md)** — CSV parsing and serialization
+- **[categorizer_utilities](categorizer_utilities/README.md)** — Utility functions
+- **[dvd_categorizer_web](dvd_categorizer_web/README.md)** — Dioxus frontend UI
 
 ## Tech Stack
 

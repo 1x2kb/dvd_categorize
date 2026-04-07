@@ -2,6 +2,8 @@
 name = "models"
 version = "1.0.0"
 edition = "2021"
+description = "Shared domain models and types with feature-gated functionality for postgres, AI, and testing"
+readme = "README.md"
 
 [features]
 postgres = ["diesel", "pgvector", "chrono"]

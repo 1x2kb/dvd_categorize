@@ -2,6 +2,8 @@
 name = "ai_chat"
 version = "1.0.0"
 edition = "2021"
+description = "Ollama integration for AI-powered features: embeddings, query enhancement, and structured query parsing"
+readme = "README.md"
 
 [dependencies]
 ollama-rs.workspace = true
