@@ -23,7 +23,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
             // Movie poster placeholder
             div {
                 class: "movie-poster",
-                "{props.scored_movie.movie.name}"
+                "{props.scored_movie.movie.display_name()}"
             }
 
             // Movie details
@@ -33,7 +33,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                 // Title
                 h3 {
                     class: "movie-title",
-                    "{props.scored_movie.movie.name}"
+                    "{props.scored_movie.movie.display_name()}"
                 }
 
                 // Scores
@@ -181,7 +181,7 @@ pub fn MovieGrid(props: MovieGridProps) -> Element {
             class: if is_editing() { "movie-grid movie-grid-cols-3 editing-active" } else { "movie-grid movie-grid-cols-3" },
             for scored_movie in props.movies.iter() {
                 MovieCard { 
-                    key: "{scored_movie.movie.id}",
+                    key: "{scored_movie.movie.key_hash}",
                     scored_movie: scored_movie.clone(), 
                     search_mode: props.search_mode,
                     on_location_updated: props.on_location_updated.clone()

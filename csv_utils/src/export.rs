@@ -10,6 +10,7 @@ pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
     // Write header row
     writer.write_record([
         "Title",
+        "Year",
         "Description",
         "Actors",
         "Genres",
@@ -56,8 +57,11 @@ pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
             .as_deref()
             .unwrap_or("");
 
+        let year = movie.release_year.to_string();
+
         writer.write_record([
             &movie.name,
+            &year,
             movie
                 .description
                 .as_deref()
@@ -83,6 +87,7 @@ mod tests {
     fn test_movies_to_csv() {
         let movies = vec![FullMovie {
             id: 1,
+            key_hash: FullMovie::generate_key_hash("Test Movie"),
             name: "Test Movie".to_string(),
             description: Some("A test description".to_string()),
             actors: vec![
@@ -105,13 +110,19 @@ mod tests {
             embedding: None,
             added_on: None,
             location: None,
+            release_year: 2024,
         }];
 
         let csv = movies_to_csv(&movies).unwrap();
         assert!(csv.contains("Test Movie"));
+        assert!(csv.contains("2024"));
         assert!(csv.contains("A test description"));
         assert!(csv.contains("Actor One | Actor Two"));
         assert!(csv.contains("Action | Drama"));
         assert!(csv.contains("Test Director"));
+        
+        // Verify header includes Year column
+        let lines: Vec<&str> = csv.lines().collect();
+        assert!(lines[0].contains("Year"));
     }
 }

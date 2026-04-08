@@ -29,6 +29,7 @@ mod tests {
     fn test_calculate_match_score() {
         let movie = FullMovie {
             id: 1,
+            key_hash: FullMovie::generate_key_hash("The Matrix"),
             name: "The Matrix".to_string(),
             description: Some(
                 "A computer hacker learns about the true nature of reality".to_string(),
@@ -49,6 +50,7 @@ mod tests {
             embedding: None,
             added_on: None,
             location: None,
+            release_year: 1999,
         };
 
         // Test title match

@@ -335,26 +335,36 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> DbResult<Vec<FullMovie>> {
                 movies_map
                     .remove(&id)
                     .map(
-                        |(movie, director)| FullMovie {
-                            id: movie.id,
-                            name: movie.name,
-                            director,
-                            description: movie.description,
-                            actors: actors_map
-                                .remove(&movie.id)
-                                .unwrap_or_default(),
-                            genres: genres_map
-                                .remove(&movie.id)
-                                .unwrap_or_default(),
-                            embedding: movie
-                                .embedding
-                                .map(|v| v.into()),
-                            added_on: Some(
-                                movie
-                                    .added_on
-                                    .to_string(),
-                            ),
-                            location: Some(movie.location),
+                        |(movie, director)| {
+                            // Generate hash from display name for consistency
+                            let display_name = if movie.release_year == 0 {
+                                movie.name.clone()
+                            } else {
+                                format!("{} ({})", movie.name, movie.release_year)
+                            };
+                            FullMovie {
+                                id: movie.id,
+                                key_hash: FullMovie::generate_key_hash(&display_name),
+                                name: movie.name,
+                                director,
+                                description: movie.description,
+                                actors: actors_map
+                                    .remove(&movie.id)
+                                    .unwrap_or_default(),
+                                genres: genres_map
+                                    .remove(&movie.id)
+                                    .unwrap_or_default(),
+                                embedding: movie
+                                    .embedding
+                                    .map(|v| v.into()),
+                                added_on: Some(
+                                    movie
+                                        .added_on
+                                        .to_string(),
+                                ),
+                                location: Some(movie.location),
+                                release_year: movie.release_year,
+                            }
                         },
                     )
             },
@@ -471,6 +481,7 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> DbResult<FullMovie> {
         embedding: embedding.map(|v| v.into()),
         added_on: None,
         location: full_movie.location,
+        release_year: full_movie.release_year,
     };
 
     let movie_id = diesel::insert_into(schema::movie::table)
@@ -585,6 +596,42 @@ pub async fn get_recent_movies(limit: i64) -> DbResult<Vec<FullMovie>> {
     debug!(
         "Found {} recent movies",
         movie_ids.len()
+    );
+
+    // Use the optimized helper function to get full movie data
+    get_movies_by_ids(movie_ids).await
+}
+
+/// Retrieves movies by release year range, ordered by release year descending.
+///
+/// # Arguments
+/// * `min_year` - Minimum release year (inclusive)
+/// * `max_year` - Maximum release year (inclusive)
+/// * `limit` - Maximum number of results to return
+///
+/// # Returns
+/// A vector of movies with release years in the specified range, ordered by most recent release year first.
+///
+/// # Errors
+/// Returns `DatabaseError` if the database query fails.
+pub async fn get_movies_by_release_year(min_year: i32, max_year: i32, limit: i64) -> DbResult<Vec<FullMovie>> {
+    let mut conn = get_database_connection().await?;
+
+    // Get the IDs of movies within the year range
+    let movie_ids: Vec<i32> = movie::table
+        .select(movie::id)
+        .filter(movie::release_year.ge(min_year))
+        .filter(movie::release_year.le(max_year))
+        .order(movie::release_year.desc())
+        .limit(limit)
+        .load::<i32>(&mut conn)
+        .await?;
+
+    debug!(
+        "Found {} movies released between {} and {}",
+        movie_ids.len(),
+        min_year,
+        max_year
     );
 
     // Use the optimized helper function to get full movie data

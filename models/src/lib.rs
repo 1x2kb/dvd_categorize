@@ -160,6 +160,7 @@ pub struct Movie {
     #[cfg(feature = "postgres")]
     pub added_on: NaiveDateTime,
     pub location: String,
+    pub release_year: i32,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::movie, check_for_backend(diesel::pg::Pg)))]
@@ -173,6 +174,7 @@ pub struct NewMovie {
     #[cfg(feature = "postgres")]
     pub added_on: Option<NaiveDateTime>,
     pub location: Option<String>,
+    pub release_year: i32,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable, Identifiable, Queryable), diesel(table_name = schema::movie_actor, check_for_backend(diesel::pg::Pg)))]
@@ -225,6 +227,8 @@ pub struct FullMovie {
     pub added_on: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    pub release_year: i32,
+    pub key_hash: u64,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
@@ -235,6 +239,46 @@ pub struct ScoredMovie {
 }
 
 impl FullMovie {
+    /// Generate a stable hash from the movie name for use as a DOM key
+    pub fn generate_key_hash(name: &str) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        name.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Get the display name formatted as "Name (Year)"
+    /// Year 0 indicates unknown year and will not be displayed
+    pub fn display_name(&self) -> String {
+        if self.release_year == 0 {
+            self.name.clone()
+        } else {
+            format!("{} ({})", self.name, self.release_year)
+        }
+    }
+
+    /// Parse a movie name that may contain a year in format "Name (Year)"
+    /// Returns (name, optional_year)
+    pub fn parse_name_and_year(full_name: &str) -> (String, Option<i32>) {
+        // Check if the name ends with (YYYY) pattern
+        if let Some(last_paren) = full_name.rfind('(') {
+            if let Some(close_paren) = full_name[last_paren..].find(')') {
+                let year_str = &full_name[last_paren + 1..last_paren + close_paren];
+                if let Ok(year) = year_str.trim().parse::<i32>() {
+                    // Validate it's a reasonable year (1800-2100)
+                    if year >= 1800 && year <= 2100 {
+                        let name = full_name[..last_paren].trim().to_string();
+                        return (name, Some(year));
+                    }
+                }
+            }
+        }
+        // No valid year found, return the full name
+        (full_name.to_string(), None)
+    }
+
     #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
     pub fn embedding_str(&self) -> String {
         let actors: String = self
@@ -401,6 +445,7 @@ impl
     ) -> Self {
         Self {
             id: movie.id,
+            key_hash: Self::generate_key_hash(&movie.name),
             name: movie.name,
             description: movie.description,
             director,
@@ -419,6 +464,7 @@ impl
             #[cfg(not(feature = "postgres"))]
             added_on: None,
             location: Some(movie.location),
+            release_year: movie.release_year,
         }
     }
 }
@@ -532,12 +578,14 @@ impl Random for FullMovie {
         let num_actors = random.gen_range(1..10);
         let num_genres = random.gen_range(1..4);
 
+        let name = format!(
+            "Movie Title {}",
+            random.gen_range(0..1000),
+        );
         Self {
             id: random.gen_range(0..10000000),
-            name: format!(
-                "Movie Title {}",
-                random.gen_range(0..1000),
-            ),
+            key_hash: Self::generate_key_hash(&name),
+            name,
             description: Some(
                 format!(
                     "Movie Description {}",
@@ -555,6 +603,7 @@ impl Random for FullMovie {
             embedding: None,
             added_on: None,
             location: None,
+            release_year: random.gen_range(1950..2025),
         }
     }
 }
@@ -568,6 +617,7 @@ impl FullMovie {
         vec![
             FullMovie {
                 id: 1,
+                key_hash: Self::generate_key_hash("The Matrix"),
                 name: "The Matrix".to_string(),
                 description: Some(
                     "A computer hacker learns about the true nature of reality".to_string(),
@@ -587,9 +637,11 @@ impl FullMovie {
                 embedding: None,
                 added_on: None,
                 location: None,
+                release_year: 1999,
             },
             FullMovie {
                 id: 2,
+                key_hash: Self::generate_key_hash("Inception"),
                 name: "Inception".to_string(),
                 description: Some(
                     "A thief who steals corporate secrets through dream-sharing technology"
@@ -610,9 +662,11 @@ impl FullMovie {
                 embedding: None,
                 added_on: None,
                 location: None,
+                release_year: 2010,
             },
             FullMovie {
                 id: 3,
+                key_hash: Self::generate_key_hash("Interstellar"),
                 name: "Interstellar".to_string(),
                 description: Some(
                     "A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival"
@@ -633,6 +687,7 @@ impl FullMovie {
                 embedding: None,
                 added_on: None,
                 location: None,
+                release_year: 2014,
             },
         ]
     }

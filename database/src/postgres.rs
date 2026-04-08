@@ -189,8 +189,15 @@ impl GetMoviesByIds for PostgresMovieRepository {
             .zip(genres_per_movie)
             .map(
                 |(((movie, director), actors), genres)| {
+                    // Generate hash from display name for consistency
+                    let display_name = if movie.release_year == 0 {
+                        movie.name.clone()
+                    } else {
+                        format!("{} ({})", movie.name, movie.release_year)
+                    };
                     let full_movie = FullMovie {
                         id: movie.id,
+                        key_hash: FullMovie::generate_key_hash(&display_name),
                         name: movie.name,
                         director,
                         description: movie.description,
@@ -205,6 +212,7 @@ impl GetMoviesByIds for PostgresMovieRepository {
                                 .to_string(),
                         ),
                         location: Some(movie.location),
+                        release_year: movie.release_year,
                     };
                     (
                         movie.id, full_movie,
@@ -312,6 +320,7 @@ impl InsertMovie for PostgresMovieRepository {
             embedding: embedding.map(|v| v.into()),
             added_on: None,
             location: full_movie.location,
+            release_year: full_movie.release_year,
         };
 
         let movie_id = diesel::insert_into(schema::movie::table)
@@ -382,9 +391,12 @@ impl InsertMovies for PostgresMovieRepository {
     > {
         diesel::insert_into(schema::movie::table)
             .values(new_movies)
-            .on_conflict(schema::movie::name)
+            .on_conflict((
+                schema::movie::name,
+                schema::movie::release_year,
+            ))
             .do_update()
-            .set(schema::movie::id.eq(schema::movie::id))
+            .set(schema::movie::id.eq(schema::movie::id)) // No op
             .returning((
                 schema::movie::id,
                 schema::movie::name,
