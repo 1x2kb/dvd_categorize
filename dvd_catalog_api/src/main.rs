@@ -152,6 +152,10 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
             get(get_recent_movies),
         )
         .route(
+            "/dvd/recent-releases",
+            get(get_recent_releases),
+        )
+        .route(
             "/dvd/random",
             get(get_random_movies),
         )

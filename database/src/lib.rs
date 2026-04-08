@@ -601,6 +601,42 @@ pub async fn get_recent_movies(limit: i64) -> DbResult<Vec<FullMovie>> {
     get_movies_by_ids(movie_ids).await
 }
 
+/// Retrieves movies by release year range, ordered by release year descending.
+///
+/// # Arguments
+/// * `min_year` - Minimum release year (inclusive)
+/// * `max_year` - Maximum release year (inclusive)
+/// * `limit` - Maximum number of results to return
+///
+/// # Returns
+/// A vector of movies with release years in the specified range, ordered by most recent release year first.
+///
+/// # Errors
+/// Returns `DatabaseError` if the database query fails.
+pub async fn get_movies_by_release_year(min_year: i32, max_year: i32, limit: i64) -> DbResult<Vec<FullMovie>> {
+    let mut conn = get_database_connection().await?;
+
+    // Get the IDs of movies within the year range
+    let movie_ids: Vec<i32> = movie::table
+        .select(movie::id)
+        .filter(movie::release_year.ge(min_year))
+        .filter(movie::release_year.le(max_year))
+        .order(movie::release_year.desc())
+        .limit(limit)
+        .load::<i32>(&mut conn)
+        .await?;
+
+    debug!(
+        "Found {} movies released between {} and {}",
+        movie_ids.len(),
+        min_year,
+        max_year
+    );
+
+    // Use the optimized helper function to get full movie data
+    get_movies_by_ids(movie_ids).await
+}
+
 /// Get random movies from the database.
 ///
 /// # Arguments
