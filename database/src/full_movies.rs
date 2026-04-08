@@ -85,6 +85,7 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
                 location: movie
                     .location
                     .clone(),
+                release_year: movie.release_year,
             },
         )
         .collect();

@@ -59,16 +59,14 @@
 
 /* When editing is active, keep the editing card expanded (always, not just on hover) */
 .movie-grid.editing-active .movie-card:has(.location-edit-container) {
-    transform: translateY(-6px) scale(1.02);
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.08);
     border-color: rgba(8, 145, 178, 0.3);
 }
 
 /* When editing is active, blur all non-editing cards */
 .movie-grid.editing-active .movie-card:not(:has(.location-edit-container)) {
-    filter: blur(3px);
-    opacity: 0.6;
-    transform: scale(0.98);
+    filter: blur(4px);
+    opacity: 0.7;
     pointer-events: none;
 }
 
@@ -76,25 +74,22 @@
 @media (hover: hover) and (pointer: fine) {
     .movie-grid .movie-card:hover ~ .movie-card,
     .movie-grid:has(.movie-card:hover) .movie-card:not(:hover) {
-        filter: blur(3px);
-        opacity: 0.6;
-        transform: scale(0.98);
+        filter: blur(4px);
+        opacity: 0.7;
     }
 }
 
 .movie-card:hover {
-    transform: translateY(-6px) scale(1.02);
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.08);
     border-color: rgba(8, 145, 178, 0.3);
 }
 
 /* Disable hover effects on non-editing cards when editing is active */
 .movie-grid.editing-active .movie-card:not(:has(.location-edit-container)):hover {
-    transform: scale(0.98);
     box-shadow: none;
     border-color: rgba(255, 255, 255, 0.1);
-    filter: blur(3px);
-    opacity: 0.6;
+    filter: blur(4px);
+    opacity: 0.7;
 }
 
 /* Movie poster */

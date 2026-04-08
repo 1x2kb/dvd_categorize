@@ -32,6 +32,28 @@ fn default_count() -> i64 {
     3
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RecentReleasesQuery {
+    #[serde(default = "default_min_year")]
+    pub min_year: i32,
+    #[serde(default = "default_max_year")]
+    pub max_year: i32,
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+}
+
+fn default_min_year() -> i32 {
+    2020
+}
+
+fn default_max_year() -> i32 {
+    2026 // Update this periodically or make it configurable
+}
+
+fn default_limit() -> i64 {
+    50
+}
+
 #[instrument]
 pub async fn hello_world() -> &'static str {
     "Hello from DVD_CATALOG_API!"
@@ -727,6 +749,46 @@ pub async fn get_recent_movies() -> Json<Vec<ScoredMovie>> {
         Err(e) => {
             error!(
                 "Failed to get recent movies: {}",
+                e
+            );
+            Json(Vec::new())
+        }
+    }
+}
+
+/// Get movies by release year range
+#[instrument]
+#[debug_handler]
+pub async fn get_recent_releases(Query(params): Query<RecentReleasesQuery>) -> Json<Vec<ScoredMovie>> {
+    info!(
+        "Getting movies released between {} and {} (limit: {})",
+        params.min_year,
+        params.max_year,
+        params.limit
+    );
+
+    match database::get_movies_by_release_year(params.min_year, params.max_year, params.limit).await {
+        Ok(movies) => {
+            info!(
+                "Found {} movies released between {} and {}",
+                movies.len(),
+                params.min_year,
+                params.max_year
+            );
+            let scored_movies: Vec<ScoredMovie> = movies
+                .into_iter()
+                .map(
+                    |movie| ScoredMovie {
+                        movie,
+                        vector_score: 0.0,
+                    },
+                )
+                .collect();
+            Json(scored_movies)
+        }
+        Err(e) => {
+            error!(
+                "Failed to get movies by release year: {}",
                 e
             );
             Json(Vec::new())

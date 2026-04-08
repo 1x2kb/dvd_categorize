@@ -37,14 +37,16 @@ async fn example_with_postgres() -> Result<(), Box<dyn std::error::Error>> {
 async fn example_with_mock() -> Result<(), Box<dyn std::error::Error>> {
     let test_movies = vec![FullMovie {
         id: 1,
+        key_hash: FullMovie::generate_key_hash("Test Movie"),
         name: "Test Movie".to_string(),
         director: None,
         description: Some("A test movie".to_string()),
         actors: vec![],
         genres: vec!["Action".to_string()],
         embedding: None,
-        added_on: Some("2024-01-01".to_string()),
-        location: Some("A1".to_string()),
+        added_on: None,
+        location: None,
+        release_year: 2024,
     }];
 
     let mut repo = MockMovieRepository::with_movies(test_movies);
