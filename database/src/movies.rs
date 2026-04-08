@@ -16,7 +16,10 @@ pub async fn insert_movies(
 > {
     diesel::insert_into(schema::movie::table)
         .values(new_movies)
-        .on_conflict(schema::movie::name)
+        .on_conflict((
+            schema::movie::name,
+            schema::movie::release_year,
+        ))
         .do_update()
         .set(schema::movie::id.eq(schema::movie::id))
         .returning((
