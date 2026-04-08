@@ -109,19 +109,28 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
 
     for record in reader.deserialize() {
         let csv_record: CsvRecord = record?;
-        let name = csv_record
+        let raw_title = csv_record
             .title
             .trim()
             .to_string();
+
+        // Parse name and year from the title
+        let (name, release_year) = FullMovie::parse_name_and_year(&raw_title);
 
         // Skip if we've already seen this movie name
         if !seen_names.insert(name.clone()) {
             continue;
         }
 
+        // Generate hash from the full display name to maintain uniqueness
+        let display_name = match release_year {
+            Some(year) => format!("{} ({})", name, year),
+            None => name.clone(),
+        };
+
         let movie = FullMovie {
             id: 0,
-            key_hash: FullMovie::generate_key_hash(&name),
+            key_hash: FullMovie::generate_key_hash(&display_name),
             name,
             description: csv_record
                 .description
@@ -190,6 +199,7 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
                             .to_string()
                     },
                 ),
+            release_year,
         };
         movies.push(movie);
     }
@@ -227,6 +237,7 @@ t_title,t_description,Actor1 | Actor2 | Actor3,Western | Action | Adventure | Co
             embedding: None,
             added_on: Some("2024-01-01".to_string()),
             location: Some("Shelf A".to_string()),
+            release_year: None,
         };
 
         let full_movies = parse_csv(csv.as_bytes());

@@ -189,9 +189,14 @@ impl GetMoviesByIds for PostgresMovieRepository {
             .zip(genres_per_movie)
             .map(
                 |(((movie, director), actors), genres)| {
+                    // Generate hash from display name for consistency
+                    let display_name = match movie.release_year {
+                        Some(year) => format!("{} ({})", movie.name, year),
+                        None => movie.name.clone(),
+                    };
                     let full_movie = FullMovie {
                         id: movie.id,
-                        key_hash: FullMovie::generate_key_hash(&movie.name),
+                        key_hash: FullMovie::generate_key_hash(&display_name),
                         name: movie.name,
                         director,
                         description: movie.description,
@@ -206,6 +211,7 @@ impl GetMoviesByIds for PostgresMovieRepository {
                                 .to_string(),
                         ),
                         location: Some(movie.location),
+                        release_year: movie.release_year,
                     };
                     (
                         movie.id, full_movie,
@@ -313,6 +319,7 @@ impl InsertMovie for PostgresMovieRepository {
             embedding: embedding.map(|v| v.into()),
             added_on: None,
             location: full_movie.location,
+            release_year: full_movie.release_year,
         };
 
         let movie_id = diesel::insert_into(schema::movie::table)

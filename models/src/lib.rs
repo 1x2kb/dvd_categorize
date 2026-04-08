@@ -160,6 +160,7 @@ pub struct Movie {
     #[cfg(feature = "postgres")]
     pub added_on: NaiveDateTime,
     pub location: String,
+    pub release_year: Option<i32>,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::movie, check_for_backend(diesel::pg::Pg)))]
@@ -173,6 +174,7 @@ pub struct NewMovie {
     #[cfg(feature = "postgres")]
     pub added_on: Option<NaiveDateTime>,
     pub location: Option<String>,
+    pub release_year: Option<i32>,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable, Identifiable, Queryable), diesel(table_name = schema::movie_actor, check_for_backend(diesel::pg::Pg)))]
@@ -225,6 +227,8 @@ pub struct FullMovie {
     pub added_on: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub release_year: Option<i32>,
     pub key_hash: u64,
 }
 
@@ -244,6 +248,34 @@ impl FullMovie {
         let mut hasher = DefaultHasher::new();
         name.hash(&mut hasher);
         hasher.finish()
+    }
+
+    /// Get the display name formatted as "Name (Year)"
+    pub fn display_name(&self) -> String {
+        match self.release_year {
+            Some(year) => format!("{} ({})", self.name, year),
+            None => self.name.clone(),
+        }
+    }
+
+    /// Parse a movie name that may contain a year in format "Name (Year)"
+    /// Returns (name, optional_year)
+    pub fn parse_name_and_year(full_name: &str) -> (String, Option<i32>) {
+        // Check if the name ends with (YYYY) pattern
+        if let Some(last_paren) = full_name.rfind('(') {
+            if let Some(close_paren) = full_name[last_paren..].find(')') {
+                let year_str = &full_name[last_paren + 1..last_paren + close_paren];
+                if let Ok(year) = year_str.trim().parse::<i32>() {
+                    // Validate it's a reasonable year (1800-2100)
+                    if year >= 1800 && year <= 2100 {
+                        let name = full_name[..last_paren].trim().to_string();
+                        return (name, Some(year));
+                    }
+                }
+            }
+        }
+        // No valid year found, return the full name
+        (full_name.to_string(), None)
     }
 
     #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
@@ -431,6 +463,7 @@ impl
             #[cfg(not(feature = "postgres"))]
             added_on: None,
             location: Some(movie.location),
+            release_year: movie.release_year,
         }
     }
 }
@@ -569,6 +602,7 @@ impl Random for FullMovie {
             embedding: None,
             added_on: None,
             location: None,
+            release_year: None,
         }
     }
 }
@@ -602,6 +636,7 @@ impl FullMovie {
                 embedding: None,
                 added_on: None,
                 location: None,
+                release_year: Some(1999),
             },
             FullMovie {
                 id: 2,
@@ -626,6 +661,7 @@ impl FullMovie {
                 embedding: None,
                 added_on: None,
                 location: None,
+                release_year: Some(2010),
             },
             FullMovie {
                 id: 3,
@@ -650,6 +686,7 @@ impl FullMovie {
                 embedding: None,
                 added_on: None,
                 location: None,
+                release_year: Some(2014),
             },
         ]
     }

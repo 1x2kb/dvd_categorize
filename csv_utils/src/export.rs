@@ -106,6 +106,7 @@ mod tests {
             embedding: None,
             added_on: None,
             location: None,
+            release_year: Some(2024),
         }];
 
         let csv = movies_to_csv(&movies).unwrap();

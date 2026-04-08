@@ -23,7 +23,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
             // Movie poster placeholder
             div {
                 class: "movie-poster",
-                "{props.scored_movie.movie.name}"
+                "{props.scored_movie.movie.display_name()}"
             }
 
             // Movie details
@@ -33,7 +33,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                 // Title
                 h3 {
                     class: "movie-title",
-                    "{props.scored_movie.movie.name}"
+                    "{props.scored_movie.movie.display_name()}"
                 }
 
                 // Scores

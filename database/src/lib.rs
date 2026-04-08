@@ -335,27 +335,35 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> DbResult<Vec<FullMovie>> {
                 movies_map
                     .remove(&id)
                     .map(
-                        |(movie, director)| FullMovie {
-                            id: movie.id,
-                            key_hash: FullMovie::generate_key_hash(&movie.name),
-                            name: movie.name,
-                            director,
-                            description: movie.description,
-                            actors: actors_map
-                                .remove(&movie.id)
-                                .unwrap_or_default(),
-                            genres: genres_map
-                                .remove(&movie.id)
-                                .unwrap_or_default(),
-                            embedding: movie
-                                .embedding
-                                .map(|v| v.into()),
-                            added_on: Some(
-                                movie
-                                    .added_on
-                                    .to_string(),
-                            ),
-                            location: Some(movie.location),
+                        |(movie, director)| {
+                            // Generate hash from display name for consistency
+                            let display_name = match movie.release_year {
+                                Some(year) => format!("{} ({})", movie.name, year),
+                                None => movie.name.clone(),
+                            };
+                            FullMovie {
+                                id: movie.id,
+                                key_hash: FullMovie::generate_key_hash(&display_name),
+                                name: movie.name,
+                                director,
+                                description: movie.description,
+                                actors: actors_map
+                                    .remove(&movie.id)
+                                    .unwrap_or_default(),
+                                genres: genres_map
+                                    .remove(&movie.id)
+                                    .unwrap_or_default(),
+                                embedding: movie
+                                    .embedding
+                                    .map(|v| v.into()),
+                                added_on: Some(
+                                    movie
+                                        .added_on
+                                        .to_string(),
+                                ),
+                                location: Some(movie.location),
+                                release_year: movie.release_year,
+                            }
                         },
                     )
             },
@@ -472,6 +480,7 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> DbResult<FullMovie> {
         embedding: embedding.map(|v| v.into()),
         added_on: None,
         location: full_movie.location,
+        release_year: full_movie.release_year,
     };
 
     let movie_id = diesel::insert_into(schema::movie::table)
