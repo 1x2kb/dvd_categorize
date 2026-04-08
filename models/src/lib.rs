@@ -225,6 +225,7 @@ pub struct FullMovie {
     pub added_on: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    pub key_hash: u64,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
@@ -235,6 +236,16 @@ pub struct ScoredMovie {
 }
 
 impl FullMovie {
+    /// Generate a stable hash from the movie name for use as a DOM key
+    pub fn generate_key_hash(name: &str) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        name.hash(&mut hasher);
+        hasher.finish()
+    }
+
     #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
     pub fn embedding_str(&self) -> String {
         let actors: String = self
@@ -401,6 +412,7 @@ impl
     ) -> Self {
         Self {
             id: movie.id,
+            key_hash: Self::generate_key_hash(&movie.name),
             name: movie.name,
             description: movie.description,
             director,
@@ -532,12 +544,14 @@ impl Random for FullMovie {
         let num_actors = random.gen_range(1..10);
         let num_genres = random.gen_range(1..4);
 
+        let name = format!(
+            "Movie Title {}",
+            random.gen_range(0..1000),
+        );
         Self {
             id: random.gen_range(0..10000000),
-            name: format!(
-                "Movie Title {}",
-                random.gen_range(0..1000),
-            ),
+            key_hash: Self::generate_key_hash(&name),
+            name,
             description: Some(
                 format!(
                     "Movie Description {}",
@@ -568,6 +582,7 @@ impl FullMovie {
         vec![
             FullMovie {
                 id: 1,
+                key_hash: Self::generate_key_hash("The Matrix"),
                 name: "The Matrix".to_string(),
                 description: Some(
                     "A computer hacker learns about the true nature of reality".to_string(),
@@ -590,6 +605,7 @@ impl FullMovie {
             },
             FullMovie {
                 id: 2,
+                key_hash: Self::generate_key_hash("Inception"),
                 name: "Inception".to_string(),
                 description: Some(
                     "A thief who steals corporate secrets through dream-sharing technology"
@@ -613,6 +629,7 @@ impl FullMovie {
             },
             FullMovie {
                 id: 3,
+                key_hash: Self::generate_key_hash("Interstellar"),
                 name: "Interstellar".to_string(),
                 description: Some(
                     "A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival"

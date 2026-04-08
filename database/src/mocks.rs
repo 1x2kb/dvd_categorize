@@ -549,6 +549,7 @@ mod tests {
         let mut repo = MockMovieRepository::new();
         let movie = FullMovie {
             id: 0,
+            key_hash: FullMovie::generate_key_hash("Test Movie"),
             name: "Test Movie".to_string(),
             director: None,
             description: None,

@@ -181,7 +181,7 @@ pub fn MovieGrid(props: MovieGridProps) -> Element {
             class: if is_editing() { "movie-grid movie-grid-cols-3 editing-active" } else { "movie-grid movie-grid-cols-3" },
             for scored_movie in props.movies.iter() {
                 MovieCard { 
-                    key: "{scored_movie.movie.id}",
+                    key: "{scored_movie.movie.key_hash}",
                     scored_movie: scored_movie.clone(), 
                     search_mode: props.search_mode,
                     on_location_updated: props.on_location_updated.clone()

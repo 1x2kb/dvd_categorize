@@ -83,6 +83,7 @@ mod tests {
     fn test_movies_to_csv() {
         let movies = vec![FullMovie {
             id: 1,
+            key_hash: FullMovie::generate_key_hash("Test Movie"),
             name: "Test Movie".to_string(),
             description: Some("A test description".to_string()),
             actors: vec![

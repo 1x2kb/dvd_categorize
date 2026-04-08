@@ -121,6 +121,7 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
 
         let movie = FullMovie {
             id: 0,
+            key_hash: FullMovie::generate_key_hash(&name),
             name,
             description: csv_record
                 .description
@@ -207,6 +208,7 @@ t_title,t_description,Actor1 | Actor2 | Actor3,Western | Action | Adventure | Co
 
         let expected = FullMovie {
             id: 0,
+            key_hash: FullMovie::generate_key_hash("t_title"),
             name: "t_title".to_string(),
             description: Some("t_description".to_string()),
             actors: vec![

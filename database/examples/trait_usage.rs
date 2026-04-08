@@ -37,6 +37,7 @@ async fn example_with_postgres() -> Result<(), Box<dyn std::error::Error>> {
 async fn example_with_mock() -> Result<(), Box<dyn std::error::Error>> {
     let test_movies = vec![FullMovie {
         id: 1,
+        key_hash: FullMovie::generate_key_hash("Test Movie"),
         name: "Test Movie".to_string(),
         director: None,
         description: Some("A test movie".to_string()),

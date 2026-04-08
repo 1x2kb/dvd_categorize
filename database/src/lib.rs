@@ -337,6 +337,7 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> DbResult<Vec<FullMovie>> {
                     .map(
                         |(movie, director)| FullMovie {
                             id: movie.id,
+                            key_hash: FullMovie::generate_key_hash(&movie.name),
                             name: movie.name,
                             director,
                             description: movie.description,

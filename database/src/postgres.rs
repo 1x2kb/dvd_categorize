@@ -191,6 +191,7 @@ impl GetMoviesByIds for PostgresMovieRepository {
                 |(((movie, director), actors), genres)| {
                     let full_movie = FullMovie {
                         id: movie.id,
+                        key_hash: FullMovie::generate_key_hash(&movie.name),
                         name: movie.name,
                         director,
                         description: movie.description,
