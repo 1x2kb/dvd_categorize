@@ -77,12 +77,13 @@ sequenceDiagram
 Header row is **required**. Column order does not matter.
 
 ```
-Title,Description,Actors,Genres,Director,AddedOn,Location
+Title,Year,Description,Actors,Genres,Director,AddedOn,Location
 ```
 
 | Column | Required | Notes |
 |--------|----------|-------|
 | Title | Yes | Movie name (max 100 chars) |
+| Year | Yes | Release year (integer, use 0 for unknown) |
 | Description | No | Free text, used for embedding generation |
 | Actors | No | Comma-separated within the field |
 | Genres | No | Comma-separated within the field |

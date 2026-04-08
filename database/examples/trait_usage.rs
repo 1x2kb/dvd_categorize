@@ -44,9 +44,9 @@ async fn example_with_mock() -> Result<(), Box<dyn std::error::Error>> {
         actors: vec![],
         genres: vec!["Action".to_string()],
         embedding: None,
-        added_on: Some("2024-01-01".to_string()),
-        location: Some("A1".to_string()),
-        release_year: Some(2024),
+        added_on: None,
+        location: None,
+        release_year: 2024,
     }];
 
     let mut repo = MockMovieRepository::with_movies(test_movies);

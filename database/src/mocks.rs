@@ -558,7 +558,7 @@ mod tests {
             embedding: None,
             added_on: None,
             location: None,
-            release_year: None,
+            release_year: 0,
         };
 
         let inserted = repo

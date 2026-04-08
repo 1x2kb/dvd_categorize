@@ -12,6 +12,8 @@ pub use export::movies_to_csv;
 struct CsvRecord {
     #[serde(alias = "Title", alias = "TITLE")]
     title: String,
+    #[serde(alias = "Year", alias = "YEAR")]
+    year: i32,
     #[serde(alias = "Description", alias = "DESCRIPTION")]
     description: Option<String>,
     #[serde(alias = "Actors", alias = "ACTORS")]
@@ -26,8 +28,9 @@ struct CsvRecord {
     location: Option<String>,
 }
 
-const REQUIRED_HEADERS: [&str; 7] = [
+const REQUIRED_HEADERS: [&str; 8] = [
     "Title",
+    "Year",
     "Description",
     "Actors",
     "Genres",
@@ -109,13 +112,12 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
 
     for record in reader.deserialize() {
         let csv_record: CsvRecord = record?;
-        let raw_title = csv_record
+        let name = csv_record
             .title
             .trim()
             .to_string();
 
-        // Parse name and year from the title
-        let (name, release_year) = FullMovie::parse_name_and_year(&raw_title);
+        let release_year = csv_record.year;
 
         // Skip if we've already seen this movie name
         if !seen_names.insert(name.clone()) {
@@ -123,9 +125,10 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
         }
 
         // Generate hash from the full display name to maintain uniqueness
-        let display_name = match release_year {
-            Some(year) => format!("{} ({})", name, year),
-            None => name.clone(),
+        let display_name = if release_year == 0 {
+            name.clone()
+        } else {
+            format!("{} ({})", name, release_year)
         };
 
         let movie = FullMovie {
@@ -213,12 +216,12 @@ mod tests {
 
     #[test]
     fn it_should_parse_csv() {
-        let csv = "Title,Description,Actors,Genres,Director,AddedOn,Location
-t_title,t_description,Actor1 | Actor2 | Actor3,Western | Action | Adventure | Comedy,Randolph Smith,2024-01-01,Shelf A";
+        let csv = "Title,Year,Description,Actors,Genres,Director,AddedOn,Location
+t_title,1999,t_description,Actor1 | Actor2 | Actor3,Western | Action | Adventure | Comedy,Randolph Smith,2024-01-01,Shelf A";
 
         let expected = FullMovie {
             id: 0,
-            key_hash: FullMovie::generate_key_hash("t_title"),
+            key_hash: FullMovie::generate_key_hash("t_title (1999)"),
             name: "t_title".to_string(),
             description: Some("t_description".to_string()),
             actors: vec![
@@ -237,7 +240,7 @@ t_title,t_description,Actor1 | Actor2 | Actor3,Western | Action | Adventure | Co
             embedding: None,
             added_on: Some("2024-01-01".to_string()),
             location: Some("Shelf A".to_string()),
-            release_year: None,
+            release_year: 1999,
         };
 
         let full_movies = parse_csv(csv.as_bytes());
@@ -264,13 +267,13 @@ t_title,t_description,Actor1,Western,Director";
         let err = result
             .unwrap_err()
             .to_string();
-        assert!(err.contains("Expected 7 headers, but found 5"));
+        assert!(err.contains("Expected 8 headers, but found 5"));
     }
 
     #[test]
     fn it_should_reject_wrong_header_names() {
-        let csv_wrong_name = "Title,Description,Actors,Genres,Director,Updated,Location
-t_title,t_description,Actor1,Western,Director,2024-01-01,Shelf A";
+        let csv_wrong_name = "Title,Year,Description,Actors,Genres,Director,Updated,Location
+t_title,1999,t_description,Actor1,Western,Director,2024-01-01,Shelf A";
 
         let result = parse_csv(csv_wrong_name.as_bytes());
         assert!(result.is_err());
@@ -287,8 +290,8 @@ t_title,t_description,Actor1,Western,Director,2024-01-01,Shelf A";
 
     #[test]
     fn it_should_accept_different_header_order() {
-        let csv_different_order = "Director,Genres,Actors,Description,Title,Location,AddedOn
-Randolph Smith,Western | Action,Actor1 | Actor2,t_description,t_title,Shelf A,2024-01-01";
+        let csv_different_order = "Director,Genres,Actors,Description,Title,Location,AddedOn,Year
+Randolph Smith,Western | Action,Actor1 | Actor2,t_description,t_title,Shelf A,2024-01-01,2020";
 
         let result = parse_csv(csv_different_order.as_bytes());
         assert!(
@@ -320,6 +323,10 @@ Randolph Smith,Western | Action,Actor1 | Actor2,t_description,t_title,Shelf A,20
                 .genres
                 .len(),
             2
+        );
+        assert_eq!(
+            movies[0].release_year,
+            2020
         );
     }
 }

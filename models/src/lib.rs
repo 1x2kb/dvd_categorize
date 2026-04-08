@@ -160,7 +160,7 @@ pub struct Movie {
     #[cfg(feature = "postgres")]
     pub added_on: NaiveDateTime,
     pub location: String,
-    pub release_year: Option<i32>,
+    pub release_year: i32,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::movie, check_for_backend(diesel::pg::Pg)))]
@@ -174,7 +174,7 @@ pub struct NewMovie {
     #[cfg(feature = "postgres")]
     pub added_on: Option<NaiveDateTime>,
     pub location: Option<String>,
-    pub release_year: Option<i32>,
+    pub release_year: i32,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable, Identifiable, Queryable), diesel(table_name = schema::movie_actor, check_for_backend(diesel::pg::Pg)))]
@@ -227,8 +227,7 @@ pub struct FullMovie {
     pub added_on: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub release_year: Option<i32>,
+    pub release_year: i32,
     pub key_hash: u64,
 }
 
@@ -251,10 +250,12 @@ impl FullMovie {
     }
 
     /// Get the display name formatted as "Name (Year)"
+    /// Year 0 indicates unknown year and will not be displayed
     pub fn display_name(&self) -> String {
-        match self.release_year {
-            Some(year) => format!("{} ({})", self.name, year),
-            None => self.name.clone(),
+        if self.release_year == 0 {
+            self.name.clone()
+        } else {
+            format!("{} ({})", self.name, self.release_year)
         }
     }
 
@@ -602,7 +603,7 @@ impl Random for FullMovie {
             embedding: None,
             added_on: None,
             location: None,
-            release_year: None,
+            release_year: random.gen_range(1950..2025),
         }
     }
 }
@@ -636,7 +637,7 @@ impl FullMovie {
                 embedding: None,
                 added_on: None,
                 location: None,
-                release_year: Some(1999),
+                release_year: 1999,
             },
             FullMovie {
                 id: 2,
@@ -661,7 +662,7 @@ impl FullMovie {
                 embedding: None,
                 added_on: None,
                 location: None,
-                release_year: Some(2010),
+                release_year: 2010,
             },
             FullMovie {
                 id: 3,
@@ -686,7 +687,7 @@ impl FullMovie {
                 embedding: None,
                 added_on: None,
                 location: None,
-                release_year: Some(2014),
+                release_year: 2014,
             },
         ]
     }

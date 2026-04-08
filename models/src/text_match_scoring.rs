@@ -50,7 +50,7 @@ mod tests {
             embedding: None,
             added_on: None,
             location: None,
-            release_year: Some(1999),
+            release_year: 1999,
         };
 
         // Test title match

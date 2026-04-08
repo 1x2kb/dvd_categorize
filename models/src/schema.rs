@@ -36,7 +36,7 @@ diesel::table! {
         added_on -> Timestamp,
         #[max_length = 100]
         location -> Varchar,
-        release_year -> Nullable<Int4>,
+        release_year -> Int4,
     }
 }
 

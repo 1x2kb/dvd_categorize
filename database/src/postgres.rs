@@ -190,9 +190,10 @@ impl GetMoviesByIds for PostgresMovieRepository {
             .map(
                 |(((movie, director), actors), genres)| {
                     // Generate hash from display name for consistency
-                    let display_name = match movie.release_year {
-                        Some(year) => format!("{} ({})", movie.name, year),
-                        None => movie.name.clone(),
+                    let display_name = if movie.release_year == 0 {
+                        movie.name.clone()
+                    } else {
+                        format!("{} ({})", movie.name, movie.release_year)
                     };
                     let full_movie = FullMovie {
                         id: movie.id,
