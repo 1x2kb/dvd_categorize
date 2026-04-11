@@ -2,7 +2,11 @@ use clap::Parser;
 use log::{info, warn};
 use models::FullMovie;
 use ollama_rs::{
-    generation::chat::{request::ChatMessageRequest, ChatMessage},
+    generation::{
+        chat::{request::ChatMessageRequest, ChatMessage},
+        parameters::KeepAlive,
+    },
+    models::ModelOptions,
     Ollama,
 };
 use std::{
@@ -15,7 +19,7 @@ use std::{
 const DEFAULT_MODEL: &str = "phi3.5";
 const DEFAULT_OLLAMA_HOST: &str = "localhost";
 const DEFAULT_OLLAMA_PORT: &str = "11434";
-const MAX_RETRY_ATTEMPTS: usize = 3;
+const MAX_RETRY_ATTEMPTS: usize = 6;
 
 #[derive(Parser, Debug)]
 #[command(name = "actor_reorder")]
@@ -138,7 +142,12 @@ Rules:
         ChatMessage::user(movie_info),
     ];
 
-    let request = ChatMessageRequest::new(model.to_string(), messages);
+    let request = ChatMessageRequest::new(model.to_string(), messages)
+        .options(
+            ModelOptions::default()
+                .num_ctx(32768)
+                .temperature(0.3)
+        );
 
     let response = ollama
         .send_chat_messages(request)
@@ -230,17 +239,8 @@ fn read_and_parse_csv_dry_run(args: &Args) -> Result<Vec<FullMovie>, Box<dyn std
     Ok(movies)
 }
 
-fn generate_output_path(input_path: &PathBuf, output: Option<PathBuf>) -> PathBBuf {
-    output.unwrap_or_else(|| {
-        let mut path = input_path.clone();
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("output");
-        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("csv");
-        path.set_file_name(format!("{}_reordered.{}", stem, ext));
-        path
-    })
+fn generate_output_path(input_path: &PathBuf, output: Option<PathBuf>) -> PathBuf {
+    output.unwrap_or_else(|| input_path.clone())
 }
 
 async fn read_and_parse_csv(args: &Args, ollama: &Ollama, model: &str) -> Result<Vec<FullMovie>, Box<dyn std::error::Error>> {
@@ -350,6 +350,20 @@ fn read_csv_range(
     Ok(selected_lines)
 }
 
+async fn unload_model(ollama: &Ollama, model: &str) -> Result<(), String> {
+    use ollama_rs::generation::completion::request::GenerationRequest;
+    
+    let mut request = GenerationRequest::new(model.to_string(), String::new());
+    request.keep_alive = Some(KeepAlive::UnloadOnCompletion);
+    
+    ollama
+        .generate(request)
+        .await
+        .map_err(|e| format!("Failed to unload model: {}", e))?;
+    
+    Ok(())
+}
+
 fn setup_ollama_client() -> (Ollama, String) {
     let ollama_host = env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
     let ollama_port = env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
@@ -369,8 +383,15 @@ async fn process_movies(
     args: &Args,
 ) {
     let movies_to_process = movies.len();
-    
+    let reset_model_count = 25;
     for (idx, movie) in movies.iter_mut().enumerate() {
+        // Unload model every 10 movies to prevent state buildup
+        if idx > 0 && idx % reset_model_count == 0 {
+            info!("Unloading model after {} movies to prevent state buildup", idx);
+            if let Err(e) = unload_model(ollama, model).await {
+                warn!("Failed to unload model: {}", e);
+            }
+        }
         let absolute_idx = args.start + idx;
         let csv_row = absolute_idx + 2;
         
@@ -505,7 +526,12 @@ Be VERY concise and actionable."#;
         ChatMessage::user(user_prompt),
     ];
 
-    let request = ChatMessageRequest::new(model.to_string(), messages);
+    let request = ChatMessageRequest::new(model.to_string(), messages)
+        .options(
+            ModelOptions::default()
+                .num_ctx(32768)
+                .temperature(0.3)
+        );
 
     let response = ollama
         .send_chat_messages(request)
