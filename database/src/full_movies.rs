@@ -121,16 +121,18 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
                     return movie
                         .actors
                         .iter()
+                        .enumerate()
                         .filter_map(
-                            |actor| {
+                            |(index, actor)| {
                                 actors
                                     .binary_search_by(|(_, name)| name.cmp(&actor.name))
                                     .ok()
-                                    .and_then(|index| actors.get(index))
+                                    .and_then(|actor_index| actors.get(actor_index))
                                     .map(
                                         |(actor_id, _)| NewMovieActor {
                                             movie_id,
                                             actor_id: *actor_id,
+                                            actor_order: (index + 1) as i32,
                                         },
                                     )
                             },

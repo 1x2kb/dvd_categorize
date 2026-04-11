@@ -346,7 +346,12 @@ impl InsertMovie for PostgresMovieRepository {
 
         let new_actor_movies: Vec<NewMovieActor> = actor_ids
             .into_iter()
-            .map(|actor_id| NewMovieActor { movie_id, actor_id })
+            .enumerate()
+            .map(|(index, actor_id)| NewMovieActor { 
+                movie_id, 
+                actor_id,
+                actor_order: (index + 1) as i32,
+            })
             .collect();
 
         diesel::insert_into(schema::movie_actor::table)

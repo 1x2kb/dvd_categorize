@@ -274,6 +274,7 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> DbResult<Vec<FullMovie>> {
     let all_actors = schema::movie_actor::table
         .filter(schema::movie_actor::movie_id.eq_any(&existing_movie_ids))
         .inner_join(schema::actor::table)
+        .order(schema::movie_actor::actor_order.asc())
         .load::<(
             MovieActor,
             Actor,
@@ -507,7 +508,12 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> DbResult<FullMovie> {
 
     let new_actor_movies: Vec<NewMovieActor> = actor_ids
         .into_iter()
-        .map(|actor_id| NewMovieActor { movie_id, actor_id })
+        .enumerate()
+        .map(|(index, actor_id)| NewMovieActor { 
+            movie_id, 
+            actor_id,
+            actor_order: (index + 1) as i32,
+        })
         .collect();
 
     diesel::insert_into(schema::movie_actor::table)

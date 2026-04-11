@@ -185,6 +185,7 @@ pub struct MovieActor {
     pub id: i32,
     pub movie_id: i32,
     pub actor_id: i32,
+    pub actor_order: i32,
 }
 
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::movie_actor, check_for_backend(diesel::pg::Pg)))]
@@ -192,6 +193,7 @@ pub struct MovieActor {
 pub struct NewMovieActor {
     pub movie_id: i32,
     pub actor_id: i32,
+    pub actor_order: i32,
 }
 
 #[cfg_attr(feature="postgres", derive(Queryable, Identifiable), diesel(table_name = schema::movie_genre, check_for_backend(diesel::pg::Pg)))]
