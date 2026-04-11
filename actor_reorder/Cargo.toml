@@ -1,0 +1,21 @@
+[package]
+name = "actor_reorder"
+version = "1.0.0"
+edition = "2021"
+description = "Binary to reorder movie actors by top billing using Ollama AI"
+
+[[bin]]
+name = "actor_reorder"
+path = "src/main.rs"
+
+[dependencies]
+csv_utils = { path = "../csv_utils" }
+models = { path = "../models" }
+ollama-rs.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+env_logger.workspace = true
+csv = "1.3"
+clap = { version = "4.5", features = ["derive"] }

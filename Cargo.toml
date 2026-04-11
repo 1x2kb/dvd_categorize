@@ -7,6 +7,7 @@ members = [
     "models",
     "dvd_categorizer_web",
     "csv_utils",
+    "actor_reorder",
 ]
 
 resolver = "2"
