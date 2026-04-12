@@ -1,11 +1,14 @@
-use csv::Writer;
+use csv::{WriterBuilder, QuoteStyle};
 use models::FullMovie;
 use std::error::Error;
 
 /// Converts a list of FullMovie objects to CSV format
 /// Format: Title, Description, Actors, Genres, Director, AddedOn
 pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
-    let mut writer = Writer::from_writer(vec![]);
+    let mut writer = WriterBuilder::new()
+        .quote_style(QuoteStyle::Necessary)
+        .double_quote(true)
+        .from_writer(vec![]);
 
     // Write header row
     writer.write_record([
@@ -124,5 +127,42 @@ mod tests {
         // Verify header includes Year column
         let lines: Vec<&str> = csv.lines().collect();
         assert!(lines[0].contains("Year"));
+    }
+
+    #[test]
+    fn test_csv_quote_escaping() {
+        let movies = vec![FullMovie {
+            id: 1,
+            key_hash: FullMovie::generate_key_hash("Movie with \"Quotes\""),
+            name: "Movie with \"Quotes\"".to_string(),
+            description: Some("Description with \"quotes\" and commas, here".to_string()),
+            actors: vec![
+                Actor {
+                    id: 1,
+                    name: "Actor \"Nickname\" Name".to_string(),
+                },
+            ],
+            director: Some(
+                Director {
+                    id: 1,
+                    name: "Director \"The\" Name".to_string(),
+                },
+            ),
+            genres: vec!["Action".to_string()],
+            embedding: None,
+            added_on: None,
+            location: None,
+            release_year: 2024,
+        }];
+
+        let csv = movies_to_csv(&movies).unwrap();
+        
+        // Parse back to verify proper escaping
+        let parsed = crate::parse_csv(csv.as_bytes()).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].name, "Movie with \"Quotes\"");
+        assert_eq!(parsed[0].description, Some("Description with \"quotes\" and commas, here".to_string()));
+        assert_eq!(parsed[0].actors[0].name, "Actor \"Nickname\" Name");
+        assert_eq!(parsed[0].director.as_ref().unwrap().name, "Director \"The\" Name");
     }
 }
