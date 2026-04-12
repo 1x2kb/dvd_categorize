@@ -157,6 +157,11 @@ mod tests {
 
         let csv = movies_to_csv(&movies).unwrap();
         
+        // Verify CSV uses "" for escaping quotes (CSV standard), not \"
+        println!("Raw CSV output:\n{}", csv);
+        assert!(csv.contains("\"Movie with \"\"Quotes\"\"\""), "CSV should escape quotes as \"\" not \\\"");
+        assert!(csv.contains("\"Description with \"\"quotes\"\" and commas, here\""), "CSV should escape quotes as \"\" not \\\"");
+        
         // Parse back to verify proper escaping
         let parsed = crate::parse_csv(csv.as_bytes()).unwrap();
         assert_eq!(parsed.len(), 1);
