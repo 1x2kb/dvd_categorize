@@ -19,7 +19,7 @@ use std::{
 const DEFAULT_MODEL: &str = "phi3.5";
 const DEFAULT_OLLAMA_HOST: &str = "localhost";
 const DEFAULT_OLLAMA_PORT: &str = "11434";
-const MAX_RETRY_ATTEMPTS: usize = 6;
+const MAX_RETRY_ATTEMPTS: usize = 4;
 
 #[derive(Parser, Debug)]
 #[command(name = "actor_reorder")]
@@ -118,16 +118,24 @@ async fn reorder_actors(
         .collect::<Vec<_>>()
         .join(", ");
 
-    let system_prompt = r#"You are a movie expert assistant. Your task is to reorder a list of actors for a given movie from top-billed (most important/lead roles) to least-billed (supporting roles).
+    let system_prompt = r#"You are a movie expert assistant. Your task is to reorder a list of actors for a given movie based on their BILLING ORDER (the order they appear in the opening/closing credits), NOT their popularity or fame.
+
+CRITICAL: Billing order reflects each actor's role size in THIS SPECIFIC MOVIE, not their overall career fame.
+
+Example: Ryan Reynolds appears in "Bullet Train" but has a very small cameo role, so he should be near the END of the billing order despite being more famous than the leads.
 
 Rules:
 1. Return ONLY a JSON array of actor names in the correct billing order
 2. Do not add or remove any actors - use exactly the names provided
-3. Base your ordering on your knowledge of the movie and typical billing practices
-4. Lead actors come first, supporting actors last
-5. If you're unsure, make your best educated guess based on the movie title, year, and description
-6. Format: ["Actor Name 1", "Actor Name 2", "Actor Name 3"]
-7. Do not include any explanation or additional text - ONLY the JSON array"#;
+3. DO NOT change the spelling or format of any actor names - copy them EXACTLY as provided
+4. The output array MUST contain the exact same number of actors as the input list
+5. Base your ordering on the SIZE and IMPORTANCE of each actor's role in THIS SPECIFIC MOVIE
+6. Lead roles (most screen time, central to plot) come first
+7. Supporting roles come in the middle
+8. Cameos and minor roles come last - even if the actor is very famous
+9. If you're unsure, make your best educated guess based on the movie title, year, and description
+10. Format: ["Actor Name 1", "Actor Name 2", "Actor Name 3"]
+11. Do not include any explanation or additional text - ONLY the JSON array"#;
 
     let movie_info = format!(
         "Movie: {} ({})\nDescription: {}\nActors to reorder: {}",
@@ -158,8 +166,31 @@ Rules:
 
     let json_content = extract_json_array(content);
 
-    serde_json::from_str::<Vec<String>>(json_content)
-        .map_err(|e| format!("Failed to parse JSON response: {}. Response was: {}", e, content))
+    let reordered: Vec<String> = serde_json::from_str(json_content)
+        .map_err(|e| format!("Failed to parse JSON response: {}. Response was: {}", e, content))?;
+    
+    // Validate response
+    let original_count = movie.actors.len();
+    if reordered.len() != original_count {
+        return Err(format!(
+            "AI returned {} actors but expected {}. Ignoring response.",
+            reordered.len(),
+            original_count
+        ));
+    }
+    
+    // Validate all returned actors exist in original list (case-insensitive to allow capitalization fixes)
+    let original_names: std::collections::HashSet<_> = movie.actors.iter().map(|a| a.name.to_lowercase()).collect();
+    for actor in &reordered {
+        if !original_names.contains(&actor.to_lowercase()) {
+            return Err(format!(
+                "AI returned actor '{}' not in original list. Ignoring response.",
+                actor
+            ));
+        }
+    }
+    
+    Ok(reordered)
 }
 
 fn extract_json_array(s: &str) -> &str {
@@ -383,7 +414,7 @@ async fn process_movies(
     args: &Args,
 ) {
     let movies_to_process = movies.len();
-    let reset_model_count = 25;
+    let reset_model_count = 50;
     for (idx, movie) in movies.iter_mut().enumerate() {
         // Unload model every 10 movies to prevent state buildup
         if idx > 0 && idx % reset_model_count == 0 {

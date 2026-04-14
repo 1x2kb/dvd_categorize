@@ -1768,6 +1768,7 @@ dependencies = [
  "ai_chat",
  "axum",
  "axum-macros",
+ "categorizer_utilities",
  "csv_utils",
  "database",
  "dotenvy",
