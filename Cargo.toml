@@ -7,6 +7,7 @@ members = [
     "models",
     "dvd_categorizer_web",
     "csv_utils",
+    "actor_reorder",
 ]
 
 resolver = "2"
@@ -19,7 +20,7 @@ tokio = { version = "1.43.0", features = ["full"] }
 dotenvy = "0.15"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.137"
-ollama-rs = { version = "0.2.4", features = ["tokio"] }
+ollama-rs = { version = "0.3.4", features = ["tokio"] }
 
 [profile]
 

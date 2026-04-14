@@ -48,6 +48,7 @@ diesel::table! {
         id -> Int4,
         movie_id -> Int4,
         actor_id -> Int4,
+        actor_order -> Int4,
     }
 }
 

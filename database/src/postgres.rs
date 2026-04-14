@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::NaiveDate;
 use diesel::prelude::*;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use log::debug;
@@ -313,12 +314,36 @@ impl InsertMovie for PostgresMovieRepository {
             }
         };
 
+        let added_on = full_movie.added_on.and_then(|date_str| {
+            // Try parsing as full timestamp first, then fall back to date-only
+            match chrono::NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%d %H:%M:%S%.f") {
+                Ok(dt) => Some(dt),
+                Err(_) => {
+                    match NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
+                        Ok(date) => {
+                            match date.and_hms_opt(0, 0, 0) {
+                                Some(dt) => Some(dt),
+                                None => {
+                                    log::error!("Invalid time components for date '{}' in movie '{}'", date_str, full_movie.name);
+                                    None
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to parse date '{}' for movie '{}': {}", date_str, full_movie.name, e);
+                            None
+                        }
+                    }
+                }
+            }
+        });
+
         let new_movie = NewMovie {
             name: full_movie.name,
             director_id,
             description: full_movie.description,
             embedding: embedding.map(|v| v.into()),
-            added_on: None,
+            added_on,
             location: full_movie.location,
             release_year: full_movie.release_year,
         };
@@ -346,7 +371,12 @@ impl InsertMovie for PostgresMovieRepository {
 
         let new_actor_movies: Vec<NewMovieActor> = actor_ids
             .into_iter()
-            .map(|actor_id| NewMovieActor { movie_id, actor_id })
+            .enumerate()
+            .map(|(index, actor_id)| NewMovieActor { 
+                movie_id, 
+                actor_id,
+                actor_order: (index + 1) as i32,
+            })
             .collect();
 
         diesel::insert_into(schema::movie_actor::table)

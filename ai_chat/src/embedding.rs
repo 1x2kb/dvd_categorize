@@ -1,10 +1,8 @@
 use crate::{DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_PORT};
 use log::debug;
 use ollama_rs::{
-    generation::{
-        embeddings::request::{EmbeddingsInput, GenerateEmbeddingsRequest},
-        options::GenerationOptions,
-    },
+    generation::embeddings::request::{EmbeddingsInput, GenerateEmbeddingsRequest},
+    models::ModelOptions,
     Ollama,
 };
 use std::error::Error;
@@ -55,7 +53,7 @@ where
         model.to_string(),
         EmbeddingsInput::Multiple(string_texts),
     )
-    .options(GenerationOptions::default().num_ctx(8192));
+    .options(ModelOptions::default().num_ctx(8192));
 
     let response = ollama
         .generate_embeddings(request)

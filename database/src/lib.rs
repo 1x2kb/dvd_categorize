@@ -56,7 +56,8 @@ use std::fmt::Display;
 
 use diesel::prelude::*;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use log::{debug, error};
+use log::{debug, error, info};
+use chrono::NaiveDate;
 pub use models::{schema::*, *};
 use pgvector::{Vector, VectorExpressionMethods};
 
@@ -274,6 +275,7 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> DbResult<Vec<FullMovie>> {
     let all_actors = schema::movie_actor::table
         .filter(schema::movie_actor::movie_id.eq_any(&existing_movie_ids))
         .inner_join(schema::actor::table)
+        .order(schema::movie_actor::actor_order.asc())
         .load::<(
             MovieActor,
             Actor,
@@ -474,12 +476,36 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> DbResult<FullMovie> {
         }
     };
 
+    let added_on = full_movie.added_on.and_then(|date_str| {
+        // Try parsing as full timestamp first, then fall back to date-only
+        match chrono::NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%d %H:%M:%S%.f") {
+            Ok(dt) => Some(dt),
+            Err(_) => {
+                match NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
+                    Ok(date) => {
+                        match date.and_hms_opt(0, 0, 0) {
+                            Some(dt) => Some(dt),
+                            None => {
+                                error!("Invalid time components for date '{}' in movie '{}'", date_str, full_movie.name);
+                                None
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to parse date '{}' for movie '{}': {}", date_str, full_movie.name, e);
+                        None
+                    }
+                }
+            }
+        }
+    });
+
     let new_movie = NewMovie {
         name: full_movie.name,
         director_id,
         description: full_movie.description,
         embedding: embedding.map(|v| v.into()),
-        added_on: None,
+        added_on,
         location: full_movie.location,
         release_year: full_movie.release_year,
     };
@@ -507,7 +533,12 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> DbResult<FullMovie> {
 
     let new_actor_movies: Vec<NewMovieActor> = actor_ids
         .into_iter()
-        .map(|actor_id| NewMovieActor { movie_id, actor_id })
+        .enumerate()
+        .map(|(index, actor_id)| NewMovieActor { 
+            movie_id, 
+            actor_id,
+            actor_order: (index + 1) as i32,
+        })
         .collect();
 
     diesel::insert_into(schema::movie_actor::table)

@@ -1,5 +1,6 @@
 use std::{collections::HashSet, error::Error};
 
+use chrono::NaiveDate;
 use models::{FullMovie, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovieGenre};
 
 ///
@@ -7,6 +8,21 @@ use models::{FullMovie, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovie
 ///
 /// TODO: Needs refactor
 pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), Box<dyn Error>> {
+    // Validate all dates before proceeding with insert
+    for movie in &full_movies {
+        if let Some(date_str) = &movie.added_on {
+            // Try parsing as full timestamp first, then fall back to date-only
+            let timestamp_ok = chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S%.f").is_ok();
+            let date_ok = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                .map(|date| date.and_hms_opt(0, 0, 0).is_some())
+                .unwrap_or(false);
+            
+            if !timestamp_ok && !date_ok {
+                return Err(format!("Invalid date '{}' for movie '{}'", date_str, movie.name).into());
+            }
+        }
+    }
+
     let (mut actors, _genres, mut directors) = (
         get_unique_actors(&full_movies),
         get_unique_genres(&full_movies),
@@ -81,7 +97,29 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
                     .description
                     .clone(),
                 embedding: Some(embedding.into()),
-                added_on: None,
+                added_on: movie.added_on.as_ref().and_then(|date_str| {
+                    // Try parsing as full timestamp first, then fall back to date-only
+                    match chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S%.f") {
+                        Ok(dt) => Some(dt),
+                        Err(_) => {
+                            match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                                Ok(date) => {
+                                    match date.and_hms_opt(0, 0, 0) {
+                                        Some(dt) => Some(dt),
+                                        None => {
+                                            log::warn!("Invalid time components for date '{}' in movie '{}'", date_str, movie.name);
+                                            None
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to parse date '{}' for movie '{}': {}", date_str, movie.name, e);
+                                    None
+                                }
+                            }
+                        }
+                    }
+                }),
                 location: movie
                     .location
                     .clone(),
@@ -121,16 +159,18 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
                     return movie
                         .actors
                         .iter()
+                        .enumerate()
                         .filter_map(
-                            |actor| {
+                            |(index, actor)| {
                                 actors
                                     .binary_search_by(|(_, name)| name.cmp(&actor.name))
                                     .ok()
-                                    .and_then(|index| actors.get(index))
+                                    .and_then(|actor_index| actors.get(actor_index))
                                     .map(
                                         |(actor_id, _)| NewMovieActor {
                                             movie_id,
                                             actor_id: *actor_id,
+                                            actor_order: (index + 1) as i32,
                                         },
                                     )
                             },
