@@ -2,9 +2,9 @@ use std::{future::Future, sync::Arc};
 
 use log::info;
 use models::FullMovie;
-use ollama_rs::generation::{
-    chat::{request::ChatMessageRequest, ChatMessage},
-    options::GenerationOptions,
+use ollama_rs::{
+    generation::chat::{request::ChatMessageRequest, ChatMessage},
+    models::ModelOptions,
 };
 
 use crate::{prompts, OllamaClient};
@@ -50,7 +50,7 @@ impl AiChatProvider for OllamaClient {
             messages,
         )
         .options(
-            GenerationOptions::default()
+            ModelOptions::default()
                 .num_ctx(num_ctx)
                 .temperature(temperature),
         );

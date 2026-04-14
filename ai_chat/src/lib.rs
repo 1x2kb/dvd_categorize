@@ -42,8 +42,8 @@ use ollama_rs::{
     generation::{
         chat::{request::ChatMessageRequest, ChatMessage},
         embeddings::request::GenerateEmbeddingsRequest,
-        options::GenerationOptions,
     },
+    models::ModelOptions,
     Ollama,
 };
 use prompts::USER_LIBRARY_PROMPT;
@@ -176,7 +176,7 @@ async fn bot_message(dvds: &[FullMovie], ollama: Arc<OllamaClient>) -> Result<St
     let chat_request = ChatMessageRequest::new(
         model, messages,
     )
-    .options(GenerationOptions::default().num_ctx(DEFAULT_CONTEXT_WINDOW));
+    .options(ModelOptions::default().num_ctx(DEFAULT_CONTEXT_WINDOW));
 
     let response = ollama
         .ollama_client
@@ -230,7 +230,7 @@ pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::Oll
         EMBEDDING_MODEL.to_string(),
         text.into(),
     )
-    .options(GenerationOptions::default().num_ctx(8192));
+    .options(ModelOptions::default().num_ctx(8192));
 
     let response = ollama
         .generate_embeddings(request)
