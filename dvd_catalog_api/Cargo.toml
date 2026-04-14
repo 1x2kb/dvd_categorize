@@ -28,4 +28,5 @@ ai_chat = { path = "../ai_chat" }
 redis = "0.28.2"
 ollama-rs.workspace = true
 csv_utils = { path = "../csv_utils" }
+categorizer_utilities = { path = "../categorizer_utilities" }
 serde.workspace = true
