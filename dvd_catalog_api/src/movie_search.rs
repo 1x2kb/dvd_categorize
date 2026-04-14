@@ -4,6 +4,7 @@ use std::sync::Arc;
 use ai_chat::OllamaClient;
 use axum::extract::Json;
 use axum_macros::debug_handler;
+use categorizer_utilities::strip_punctuation;
 use database::{question::AiAction, FullMovie};
 use log::{error, info};
 use ollama_rs::Ollama;
@@ -15,6 +16,25 @@ use crate::embedding;
 const RRF_K_VALUE: f32 = 60.0; // Standard reciprocal rank fusion constant
 const EXACT_TITLE_MATCH_SCORE: f32 = 100.0;
 const EXACT_MATCH_BOOST_MULTIPLIER: f32 = 10.0;
+
+// Stop words for entity extraction
+const STOP_PHRASES: &[&str] = &[
+    "movies",
+    "movie",
+    "films",
+    "film",
+    "show",
+    "shows",
+    "about",
+    "with",
+    "starring",
+    "featuring",
+    "directed by",
+    "that are",
+    "which are",
+    "that have",
+    "which have",
+];
 
 /// Search criteria for movie matching
 #[derive(Clone)]
@@ -56,28 +76,29 @@ pub async fn extract_entities(
     );
 
     let query_lower = query.to_lowercase();
+    let query_normalized = strip_punctuation(&query_lower);
     let mut titles = Vec::new();
     let mut actors = HashSet::new();
     let mut genres = HashSet::new();
 
     // First, look for exact matches of known entities in the query
     for genre in &all_genres {
-        let genre_lower = genre.to_lowercase();
+        let genre_normalized = strip_punctuation(&genre.to_lowercase());
         let genre_plural = format!(
             "{}s",
-            genre_lower
+            genre_normalized
         );
         // Match whole word to avoid partial matches
-        if query_lower
+        if query_normalized
             .split_whitespace()
-            .any(|w| w == genre_lower || w == genre_plural)
+            .any(|w| w == genre_normalized || w == genre_plural)
         {
-            genres.insert(genre_lower);
+            genres.insert(genre_normalized);
         }
     }
 
     // Look for actors and directors
-    let query_words: Vec<&str> = query_lower
+    let query_words: Vec<&str> = query_normalized
         .split_whitespace()
         .collect();
 
@@ -85,19 +106,23 @@ pub async fn extract_entities(
         .iter()
         .chain(all_directors.iter())
     {
-        let entity_lower = entity.to_lowercase();
-        let name_parts: Vec<&str> = entity_lower
+        let entity_normalized = strip_punctuation(&entity.to_lowercase());
+        let name_parts: Vec<&str> = entity_normalized
             .split_whitespace()
             .collect();
 
         // Check for exact match first (most reliable)
-        let exact_match = query_lower == entity_lower
-            || query_lower.contains(&format!(" {entity_lower} "))
-            || query_lower.starts_with(&format!("{entity_lower} "))
-            || query_lower.ends_with(&format!(" {entity_lower}"));
+        let exact_match = if query_normalized == entity_normalized {
+            true
+        } else {
+            // Check if entity appears as whole word(s) in query
+            let padded_query = format!(" {} ", query_normalized);
+            let padded_entity = format!(" {} ", entity_normalized);
+            padded_query.contains(&padded_entity)
+        };
 
         if exact_match {
-            actors.insert(entity_lower);
+            actors.insert(entity_normalized.clone());
             continue;
         }
 
@@ -126,13 +151,13 @@ pub async fn extract_entities(
                     .all(|&part| query_words.contains(&part));
 
                 if all_significant_parts_match && !matching_parts.is_empty() {
-                    actors.insert(entity_lower);
+                    actors.insert(entity_normalized.clone());
                     continue;
                 }
             } else {
                 // Partial query (e.g., just "Adam"): match if any significant part matches
                 if !matching_parts.is_empty() {
-                    actors.insert(entity_lower);
+                    actors.insert(entity_normalized.clone());
                     continue;
                 }
             }
@@ -141,21 +166,21 @@ pub async fn extract_entities(
         // For single-word names or as a fallback, check for standalone word match
         if name_parts.len() == 1 && name_parts[0].len() > 2 {
             let word = name_parts[0];
-            let word_match = query_lower
+            let word_match = query_normalized
                 .split_whitespace()
                 .any(|w| w == word)
-                || query_lower == word
-                || query_lower.starts_with(&format!("{word} "))
-                || query_lower.ends_with(&format!(" {word}"));
+                || query_normalized == word
+                || query_normalized.starts_with(&format!("{word} "))
+                || query_normalized.ends_with(&format!(" {word}"));
 
             if word_match {
-                actors.insert(entity_lower);
+                actors.insert(entity_normalized.clone());
             }
         }
     }
 
     // Extract potential title by removing matched entities
-    let mut remaining_query = query_lower.clone();
+    let mut remaining_query = query_normalized.clone();
     for genre in &genres {
         remaining_query = remaining_query.replace(
             genre, "",
@@ -174,25 +199,7 @@ pub async fn extract_entities(
         .to_string();
 
     // Remove common stop words and phrases
-    let stop_phrases = [
-        "movies",
-        "movie",
-        "films",
-        "film",
-        "show",
-        "shows",
-        "about",
-        "with",
-        "starring",
-        "featuring",
-        "directed by",
-        "that are",
-        "which are",
-        "that have",
-        "which have",
-    ];
-
-    for phrase in stop_phrases {
+    for phrase in STOP_PHRASES {
         remaining_query = remaining_query.replace(
             phrase, "",
         );
@@ -205,15 +212,9 @@ pub async fn extract_entities(
         .join(" ");
 
     // If we have remaining text that doesn't match known entities, treat it as a title
-    if !remaining_query
-        .trim()
-        .is_empty()
-    {
-        titles.push(
-            remaining_query
-                .trim()
-                .to_string(),
-        );
+    let remaining_trimmed = remaining_query.trim();
+    if !remaining_trimmed.is_empty() {
+        titles.push(remaining_trimmed.to_string());
     }
 
     info!(
@@ -242,27 +243,29 @@ fn score_movie_by_keywords(movie: &FullMovie, criteria: &SearchCriteria) -> f32 
             .name
             .to_lowercase();
         let title_lower = title.to_lowercase();
+        
+        let movie_title_normalized = strip_punctuation(&movie_title_lower);
+        let title_normalized = strip_punctuation(&title_lower);
 
-        if movie_title_lower == title_lower {
+        if movie_title_normalized == title_normalized {
             score += EXACT_TITLE_MATCH_SCORE; // Exact match
-        } else if movie_title_lower.contains(&title_lower) {
+        } else if movie_title_normalized.contains(&title_normalized) {
             score += 50.0; // Partial substring match
-        } else if title_lower.contains(&movie_title_lower) {
+        } else if title_normalized.contains(&movie_title_normalized) {
             score += 30.0; // Query contains movie title
         } else {
             // Check if movie title starts with the query (e.g., "RoboCop" starts with "Robot")
-            if movie_title_lower.starts_with(&title_lower) {
+            if movie_title_normalized.starts_with(&title_normalized) {
                 score += 45.0;
             } else {
                 // Check word-level matching for compound words
                 // Split on common delimiters and check if any word starts with query
-                let movie_words: Vec<&str> = movie_title_lower
-                    .split(|c: char| !c.is_alphanumeric())
-                    .filter(|w| !w.is_empty())
+                let movie_words: Vec<&str> = movie_title_normalized
+                    .split_whitespace()
                     .collect();
 
                 for word in movie_words {
-                    if word.starts_with(&title_lower) {
+                    if word.starts_with(&title_normalized) {
                         score += 40.0;
                         break;
                     }
@@ -274,11 +277,13 @@ fn score_movie_by_keywords(movie: &FullMovie, criteria: &SearchCriteria) -> f32 
     // Actor matching
     for actor in &criteria.actors {
         let actor_lower = actor.to_lowercase();
+        let actor_normalized = strip_punctuation(&actor_lower);
         for movie_actor in &movie.actors {
             let movie_actor_lower = movie_actor
                 .name
                 .to_lowercase();
-            if movie_actor_lower == actor_lower || movie_actor_lower.contains(&actor_lower) {
+            let movie_actor_normalized = strip_punctuation(&movie_actor_lower);
+            if movie_actor_normalized == actor_normalized || movie_actor_normalized.contains(&actor_normalized) {
                 score += 20.0;
                 break;
             }
@@ -290,10 +295,12 @@ fn score_movie_by_keywords(movie: &FullMovie, criteria: &SearchCriteria) -> f32 
         for actor in &criteria.actors {
             // Actors list includes directors from extraction
             let actor_lower = actor.to_lowercase();
+            let actor_normalized = strip_punctuation(&actor_lower);
             let director_lower = director
                 .name
                 .to_lowercase();
-            if director_lower == actor_lower || director_lower.contains(&actor_lower) {
+            let director_normalized = strip_punctuation(&director_lower);
+            if director_normalized == actor_normalized || director_normalized.contains(&actor_normalized) {
                 score += 25.0;
                 break;
             }
@@ -303,9 +310,11 @@ fn score_movie_by_keywords(movie: &FullMovie, criteria: &SearchCriteria) -> f32 
     // Genre matching
     for genre in &criteria.genres {
         let genre_lower = genre.to_lowercase();
+        let genre_normalized = strip_punctuation(&genre_lower);
         for movie_genre in &movie.genres {
             let movie_genre_lower = movie_genre.to_lowercase();
-            if movie_genre_lower == genre_lower {
+            let movie_genre_normalized = strip_punctuation(&movie_genre_lower);
+            if movie_genre_normalized == genre_normalized {
                 score += 15.0;
                 break;
             }
