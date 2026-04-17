@@ -16,7 +16,7 @@ ENV PATH="/home/appuser/.cargo/bin:${PATH}"
 
 RUN rustup default stable
 
-RUN cargo install --locked dioxus-cli --version 0.7.3
+RUN cargo install --locked dioxus-cli --version 0.7.5
 
 # Use tini to ensure proper signal forwarding to dx serve
 ENTRYPOINT ["/usr/bin/tini", "--"]

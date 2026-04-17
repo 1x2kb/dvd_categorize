@@ -7,7 +7,7 @@ readme = "README.md"
 
 [dependencies]
 database = { path = "../database" }
-rand = "0.8.5"
+rand = "0.10"
 
 [dev-dependencies]
 database = { path = "../database", features = ["testing"] }

@@ -1,10 +1,10 @@
 # Multi-stage build for production Web
-FROM rust:latest as builder
+FROM rust:latest AS builder
 
 WORKDIR /app
 
-# Install dioxus CLI
-RUN cargo install --locked dioxus-cli --version 0.7.0
+# Install dioxus CLI (match runtime dioxus version in Cargo.lock)
+RUN cargo install --locked dioxus-cli --version 0.7.5
 
 # Copy all source code
 COPY . .

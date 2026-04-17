@@ -11,6 +11,6 @@ vector-similarity = ["models/vector-similarity"]
 default = ["postgres", "vector-similarity"]
 
 [dependencies]
-csv = "*"
+csv = "1.4"
 models = { path = "../models" }
-serde = { version = "1.0.214", features = ["derive"] }
+serde.workspace = true

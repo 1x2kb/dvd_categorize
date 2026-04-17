@@ -58,7 +58,7 @@ use pgvector::Vector;
 pub mod schema;
 
 #[cfg(feature = "testing")]
-use rand::{thread_rng, Rng};
+use rand::{rng, RngExt};
 
 #[cfg(feature = "testing")]
 pub trait Random {
@@ -546,13 +546,13 @@ pub struct AvailableModelsResponse {
 #[cfg(feature = "testing")]
 impl Random for Actor {
     fn random() -> Self {
-        let id = thread_rng().gen_range(0..100000000);
+        let id = rng().random_range(0..100000000);
 
         Self {
             id,
             name: format!(
                 "Actor Name {}",
-                thread_rng().gen_range(0..1000)
+                rng().random_range(0..1000)
             ),
         }
     }
@@ -561,10 +561,10 @@ impl Random for Actor {
 impl Random for Director {
     fn random() -> Self {
         Self {
-            id: rand::thread_rng().gen_range(0..10000000),
+            id: rand::rng().random_range(0..10000000),
             name: format!(
                 "Director Name {}",
-                thread_rng().gen_range(0..1000)
+                rng().random_range(0..1000)
             ),
         }
     }
@@ -576,22 +576,22 @@ const GENRES: [&str; 4] = ["Western", "Action", "Sci-Fi", "Fantasy"];
 #[cfg(feature = "testing")]
 impl Random for FullMovie {
     fn random() -> Self {
-        let mut random = thread_rng();
-        let num_actors = random.gen_range(1..10);
-        let num_genres = random.gen_range(1..4);
+        let mut random = rng();
+        let num_actors = random.random_range(1..10);
+        let num_genres = random.random_range(1..4);
 
         let name = format!(
             "Movie Title {}",
-            random.gen_range(0..1000),
+            random.random_range(0..1000),
         );
         Self {
-            id: random.gen_range(0..10000000),
+            id: random.random_range(0..10000000),
             key_hash: Self::generate_key_hash(&name),
             name,
             description: Some(
                 format!(
                     "Movie Description {}",
-                    random.gen_range(0..1000),
+                    random.random_range(0..1000),
                 ),
             ),
             actors: (0..num_actors)
@@ -599,13 +599,13 @@ impl Random for FullMovie {
                 .collect(),
             director: Some(Director::random()),
             genres: (1..num_genres)
-                .map(|_| GENRES[random.gen_range(1..GENRES.len())].to_string())
+                .map(|_| GENRES[random.random_range(1..GENRES.len())].to_string())
                 .collect(),
             #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: None,
             added_on: None,
             location: None,
-            release_year: random.gen_range(1950..2025),
+            release_year: random.random_range(1950..2025),
         }
     }
 }

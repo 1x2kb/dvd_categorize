@@ -56,7 +56,7 @@ use std::fmt::Display;
 
 use diesel::prelude::*;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use log::{debug, error, info};
+use log::{debug, error};
 use chrono::NaiveDate;
 pub use models::{schema::*, *};
 use pgvector::{Vector, VectorExpressionMethods};

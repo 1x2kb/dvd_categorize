@@ -18,4 +18,6 @@ serde_json.workspace = true
 log.workspace = true
 env_logger.workspace = true
 csv = "1.3"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
+strsim = "0.11"
+dotenvy.workspace = true

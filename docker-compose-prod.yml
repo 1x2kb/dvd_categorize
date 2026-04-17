@@ -1,5 +1,3 @@
-version: '3.8'
-
 volumes:
   pgdata:
   ollama_data: # Note that this must be created manually. Prevents it from being deleted on docker compose down -v since models are very large files.
