@@ -66,8 +66,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let failed_path = generate_failed_output_path(&args.input);
         info!("Will write failed movies to: {}", failed_path.display());
         
+        let mut movies = read_and_parse_csv(&args).await?;
         let (ollama, model) = setup_ollama_client();
-        let mut movies = read_and_parse_csv(&args, &ollama, &model).await?;
         
         // Open output files for immediate writing
         let mut success_writer = create_success_writer(&output_path)?;
@@ -422,7 +422,7 @@ fn write_failed_movie(file: &mut File, movie: &FullMovie, error: &str) -> Result
     Ok(())
 }
 
-async fn read_and_parse_csv(args: &Args, ollama: &Ollama, model: &str) -> Result<Vec<FullMovie>, Box<dyn std::error::Error>> {
+async fn read_and_parse_csv(args: &Args) -> Result<Vec<FullMovie>, Box<dyn std::error::Error>> {
     // Count CSV records properly (handles multiline quoted fields)
     let file = File::open(&args.input)?;
     let mut rdr = csv::Reader::from_reader(file);
@@ -638,79 +638,3 @@ fn update_movie_actors(movie: &mut FullMovie, reordered_actors: Vec<String>, csv
 }
 
 
-fn extract_error_line(error_msg: &str, csv_content: &str) -> Option<(usize, String)> {
-    let line_num = if error_msg.contains("line: ") {
-        error_msg
-            .split("line: ")
-            .nth(1)?
-            .split(',')
-            .next()?
-            .trim()
-            .parse::<usize>()
-            .ok()?
-    } else {
-        return None;
-    };
-    
-    let lines: Vec<&str> = csv_content.lines().collect();
-    if line_num > 0 && line_num <= lines.len() {
-        Some((line_num, lines[line_num - 1].to_string()))
-    } else {
-        None
-    }
-}
-
-async fn debug_csv_error_with_ai(
-    ollama: &Ollama,
-    model: &str,
-    error_msg: &str,
-    problematic_line: &str,
-    line_number: usize,
-) -> Result<String, String> {
-    let system_prompt = r#"You are a CSV parsing debugging expert. Analyze the error and the problematic CSV line to identify the root cause and suggest fixes.
-
-Provide:
-1. Root cause of the parsing error
-2. Which field(s) are causing the issue
-3. Concrete fix suggestions for this specific line
-
-IMPORTANT! The CSV should have exactly 8 fields per row:
-- Title
-- Year
-- Description
-- Actors
-- Genres
-- Director
-- AddedOn
-- Location
-
-Do not provide code solutions. Just explain the issue with this specific line.
-
-Be VERY concise and actionable."#;
-
-    let user_prompt = format!(
-        "CSV Parsing Error:\n{}\n\nProblematic Line {} Content:\n{}\n\nWhat's wrong with this line and how to fix it?",
-        error_msg,
-        line_number,
-        problematic_line
-    );
-
-    let messages = vec![
-        ChatMessage::system(system_prompt.to_string()),
-        ChatMessage::user(user_prompt),
-    ];
-
-    let request = ChatMessageRequest::new(model.to_string(), messages)
-        .options(
-            ModelOptions::default()
-                .num_ctx(32768)
-                .temperature(0.3)
-        );
-
-    let response = ollama
-        .send_chat_messages(request)
-        .await
-        .map_err(|e| format!("Ollama error: {}", e))?;
-
-    Ok(response.message.content.trim().to_string())
-}
