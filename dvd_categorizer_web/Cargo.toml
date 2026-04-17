@@ -8,20 +8,20 @@ edition = "2021"
 
 [dependencies]
 console_error_panic_hook = "0.1.7"
-dioxus = { version = "0.7.3", features = ["router"] }
+dioxus = { version = "0.7.5", features = ["router"] }
 log.workspace = true
 env_logger.workspace = true
 tracing.workspace = true
 wasm-logger = "0.2"
 dotenvy.workspace = true
 models = { path = "../models", features = [] }
-reqwest = { version = "0.12.15", default-features = false, features = ["json"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["json"] }
 serde.workspace = true
 serde_json.workspace = true
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3.77", features = ["Window", "Location", "Document", "Element", "HtmlElement", "HtmlInputElement", "CssStyleDeclaration", "EventTarget"] }
 chrono = "0.4"
-gloo-timers = { version = "0.3", features = ["futures"] }
+gloo-timers = { version = "0.4", features = ["futures"] }
 
 [patch.crates-io]
 getrandom = { version = "0.2.15", features = ["js"] }

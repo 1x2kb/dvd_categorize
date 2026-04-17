@@ -1,5 +1,5 @@
 # Multi-stage build for production API
-FROM rust:latest as builder
+FROM rust:latest AS builder
 
 WORKDIR /app
 

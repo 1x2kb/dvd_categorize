@@ -17,5 +17,5 @@ serde.workspace = true
 diesel = { version = "^2.2.4", features = ["chrono"], optional = true }
 pgvector = { version = "0.4.0", features = ["diesel"], optional = true }
 ollama-rs = { workspace = true, optional = true }
-rand = { version = "0.8", optional = true }
+rand = { version = "0.10", optional = true }
 chrono = { version = "0.4", optional = true }

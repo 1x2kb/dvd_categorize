@@ -14,7 +14,7 @@ chrono = "0.4"
 diesel = { version = "^2.2.4" }
 diesel-async = { version = "0.8.0", features = ["postgres"] }
 dotenvy = "0.15"
-rand = { version = "0.8.5", optional = true }
+rand = { version = "0.10", optional = true }
 tokio.workspace = true
 serde.workspace = true
 log.workspace = true

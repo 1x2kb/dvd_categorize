@@ -1,8 +1,8 @@
 use database::FullMovie;
-use rand::{thread_rng, Rng};
+use rand::{rng, RngExt};
 
 pub fn get_random(movies: &[FullMovie]) -> &FullMovie {
-    let gen = thread_rng().gen_range(0..movies.len());
+    let gen = rng().random_range(0..movies.len());
 
     &movies[gen]
 }
