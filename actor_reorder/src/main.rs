@@ -15,8 +15,9 @@ use std::{
     io::{BufRead, BufReader},
     path::PathBuf,
 };
+use strsim::levenshtein;
 
-const DEFAULT_MODEL: &str = "phi3.5";
+const DEFAULT_MODEL: &str = "qwen2.5:14b";
 const DEFAULT_OLLAMA_HOST: &str = "localhost";
 const DEFAULT_OLLAMA_PORT: &str = "11434";
 const MAX_RETRY_ATTEMPTS: usize = 4;
@@ -48,6 +49,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv::dotenv().ok();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
@@ -61,10 +63,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Dry run complete - CSV parsed successfully");
     } else {
         info!("Will write reordered movies to: {}", output_path.display());
+        let failed_path = generate_failed_output_path(&args.input);
+        info!("Will write failed movies to: {}", failed_path.display());
+        
         let (ollama, model) = setup_ollama_client();
         let mut movies = read_and_parse_csv(&args, &ollama, &model).await?;
-        process_movies(&mut movies, &ollama, &model, &args).await;
-        write_output(&output_path, &movies)?;
+        
+        // Open output files for immediate writing
+        let mut success_writer = create_success_writer(&output_path)?;
+        let mut failed_writer = create_failed_writer(&failed_path)?;
+        
+        process_movies_streaming(&mut movies, &ollama, &model, &args, &mut success_writer, &mut failed_writer).await?;
+        
+        info!("Finished processing all movies");
     }
     
     info!("Done!");
@@ -120,28 +131,51 @@ async fn reorder_actors(
 
     let system_prompt = r#"You are a movie expert assistant. Your task is to reorder a list of actors for a given movie based on their BILLING ORDER (the order they appear in the opening/closing credits), NOT their popularity or fame.
 
-CRITICAL: Billing order reflects each actor's role size in THIS SPECIFIC MOVIE, not their overall career fame.
+!!!!! CRITICAL RULES - FOLLOW EXACTLY OR YOUR RESPONSE WILL BE REJECTED !!!!!
+
+1. ABSOLUTELY NEVER ADD ANY ACTORS NOT IN THE PROVIDED LIST
+2. ABSOLUTELY NEVER REMOVE ANY ACTORS FROM THE PROVIDED LIST
+3. Output array MUST contain THE EXACT SAME ACTORS as input - NO MORE, NO LESS
+4. Output array MUST have the EXACT SAME COUNT as input list
+5. Your ONLY job is to REORDER the existing actors - DO NOT ADD OR REMOVE ANYONE
+6. You may fix minor spelling errors in actor names (e.g., "Kurt Russel" -> "Kurt Russell")
+7. CONVERT ALL ACCENTED CHARACTERS TO ENGLISH EQUIVALENTS (e.g., "Renée" -> "Renee", "José" -> "Jose", "Zoë" -> "Zoe")
+8. USE ONLY STANDARD ENGLISH LETTERS (a-z, A-Z) - NO ACCENTED CHARACTERS ALLOWED
+
+DO NOT ADD ACTORS. DO NOT REMOVE ACTORS. ONLY REORDER THE EXACT LIST PROVIDED.
+
+Billing order reflects each actor's role size in THIS SPECIFIC MOVIE, not their overall career fame.
 
 Example: Ryan Reynolds appears in "Bullet Train" but has a very small cameo role, so he should be near the END of the billing order despite being more famous than the leads.
 
-Rules:
-1. Return ONLY a JSON array of actor names in the correct billing order
-2. Do not add or remove any actors - use exactly the names provided
-3. DO NOT change the spelling or format of any actor names - copy them EXACTLY as provided
-4. The output array MUST contain the exact same number of actors as the input list
-5. Base your ordering on the SIZE and IMPORTANCE of each actor's role in THIS SPECIFIC MOVIE
-6. Lead roles (most screen time, central to plot) come first
-7. Supporting roles come in the middle
-8. Cameos and minor roles come last - even if the actor is very famous
-9. If you're unsure, make your best educated guess based on the movie title, year, and description
-10. Format: ["Actor Name 1", "Actor Name 2", "Actor Name 3"]
-11. Do not include any explanation or additional text - ONLY the JSON array"#;
+Ordering Guidelines:
+- Lead roles (most screen time, central to plot) come first
+- Supporting roles come in the middle
+- Cameos and minor roles come last - even if the actor is very famous
+- Base ordering on the SIZE and IMPORTANCE of each actor's role in THIS SPECIFIC MOVIE
+- If you're unsure, make your best educated guess based on the movie title, year, and description
+
+REMINDER: Use ONLY the actors provided in the input list. DO NOT ADD any actors even if you think they should be included.
+
+TWO-STEP PROCESS:
+Step 1: Reorder the actors by billing importance
+Step 2: BEFORE returning your answer, verify your reordered list has the EXACT SAME COUNT as the input
+        - Count the input actors
+        - Count your output actors
+        - If counts don't match, fix your list to match the input count exactly
+        - Only return your answer after verifying the counts match
+
+Output Format:
+- Return ONLY a JSON array: ["Actor Name 1", "Actor Name 2", "Actor Name 3"]
+- The array must contain EXACTLY the same actors as provided, just reordered
+- Do not include any explanation or additional text - ONLY the JSON array"#;
 
     let movie_info = format!(
-        "Movie: {} ({})\nDescription: {}\nActors to reorder: {}",
+        "Movie Title: {}\nRelease Year: {} (IMPORTANT: Use this year to identify the correct version of the movie)\n\nActors to reorder (these actors ARE in the {} {} version): {}",
         movie.name,
         movie.release_year,
-        movie.description.as_deref().unwrap_or("No description"),
+        movie.release_year,
+        movie.name,
         actor_list
     );
 
@@ -169,23 +203,44 @@ Rules:
     let reordered: Vec<String> = serde_json::from_str(json_content)
         .map_err(|e| format!("Failed to parse JSON response: {}. Response was: {}", e, content))?;
     
-    // Validate response
+    // Validate only standard English characters - reject accented chars and Chinese
+    for actor in &reordered {
+        if actor.chars().any(|c| !c.is_ascii_alphanumeric() && !matches!(c, ' ' | '.' | '-' | '\'' | ',' | '"')) {
+            return Err(format!(
+                "Actor name contains non-English characters: '{}'",
+                actor
+            ));
+        }
+    }
+    
+    // Validate response - must match exact count
     let original_count = movie.actors.len();
     if reordered.len() != original_count {
         return Err(format!(
-            "AI returned {} actors but expected {}. Ignoring response.",
+            "AI returned {} actors but expected exactly {}. Ignoring response.",
             reordered.len(),
             original_count
         ));
     }
     
-    // Validate all returned actors exist in original list (case-insensitive to allow capitalization fixes)
-    let original_names: std::collections::HashSet<_> = movie.actors.iter().map(|a| a.name.to_lowercase()).collect();
+    // Validate all returned actors exist in original list using fuzzy matching
+    // Allows minor spelling fixes (e.g., "Kurt Russel" -> "Kurt Russell")
+    // Max Levenshtein distance of 2 allows single char add/remove/change
+    const MAX_EDIT_DISTANCE: usize = 2;
+    
     for actor in &reordered {
-        if !original_names.contains(&actor.to_lowercase()) {
+        let mut found_match = false;
+        for original in &movie.actors {
+            let distance = levenshtein(&actor.to_lowercase(), &original.name.to_lowercase());
+            if distance <= MAX_EDIT_DISTANCE {
+                found_match = true;
+                break;
+            }
+        }
+        if !found_match {
             return Err(format!(
-                "AI returned actor '{}' not in original list. Ignoring response.",
-                actor
+                "AI returned actor '{}' not matching any original actor (max edit distance {}). Ignoring response.",
+                actor, MAX_EDIT_DISTANCE
             ));
         }
     }
@@ -205,19 +260,22 @@ fn extract_json_array(s: &str) -> &str {
 }
 
 fn read_and_parse_csv_dry_run(args: &Args) -> Result<Vec<FullMovie>, Box<dyn std::error::Error>> {
+    // Count CSV records properly (handles multiline quoted fields)
+    let file = File::open(&args.input)?;
+    let mut rdr = csv::Reader::from_reader(file);
+    let total_lines = rdr.records().count();
+    info!("Total movie records in CSV: {}", total_lines);
+    
+    // Read header for display
     let file = File::open(&args.input)?;
     let reader = BufReader::new(file);
     let mut lines = reader.lines();
-
     let header = lines
         .next()
         .ok_or("CSV file is empty")?
         .map_err(|e| format!("Failed to read header: {}", e))?;
     
     info!("CSV header: {}", header);
-
-    let total_lines: usize = lines.count();
-    info!("Total movie records in CSV: {}", total_lines);
 
     if args.start >= total_lines {
         return Err(format!(
@@ -241,26 +299,18 @@ fn read_and_parse_csv_dry_run(args: &Args) -> Result<Vec<FullMovie>, Box<dyn std
         movies_to_process
     );
 
-    let selected_lines = read_csv_range(&args.input, &header, args.start, movies_to_process)?;
+    let csv_bytes = read_csv_range(&args.input, &header, args.start, movies_to_process)?;
     
-    info!("Parsing {} selected CSV lines...", selected_lines.len() - 1);
-    let csv_content = selected_lines.join("\n");
-    let movies = match csv_utils::parse_csv(csv_content.as_bytes()) {
+    info!("Parsing selected CSV records (dry run)...");
+    let movies = match csv_utils::parse_csv(csv_bytes.as_slice()) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("\n=== CSV Parsing Error ===");
             eprintln!("Error: {}", e);
             
-            let error_line = extract_error_line(&e.to_string(), &csv_content);
-            if let Some((line_num, line_content)) = error_line {
-                eprintln!("\n=== Problematic CSV Line {} ===", line_num);
-                eprintln!("{}", line_content);
-                eprintln!("\n=== End Line ===\n");
-            } else {
-                eprintln!("\n=== Raw CSV Content ===");
-                eprintln!("{}", csv_content);
-                eprintln!("\n=== End Raw Content ===\n");
-            }
+            eprintln!("\n=== CSV Parsing Failed ===");
+            eprintln!("Unable to parse CSV content");
+            eprintln!("\n=== End ===\n");
             
             return Err(e);
         }
@@ -274,20 +324,121 @@ fn generate_output_path(input_path: &PathBuf, output: Option<PathBuf>) -> PathBu
     output.unwrap_or_else(|| input_path.clone())
 }
 
+fn generate_failed_output_path(input_path: &PathBuf) -> PathBuf {
+    let mut failed_path = input_path.clone();
+    let stem = input_path.file_stem().unwrap_or_default().to_string_lossy();
+    let extension = input_path.extension().unwrap_or_default().to_string_lossy();
+    let new_name = format!("{}-failed.{}", stem, extension);
+    failed_path.set_file_name(new_name);
+    failed_path
+}
+
+fn create_success_writer(output_path: &PathBuf) -> Result<csv::Writer<File>, Box<dyn std::error::Error>> {
+    let file = File::create(output_path)?;
+    let writer = csv::Writer::from_writer(file);
+    Ok(writer)
+}
+
+fn create_failed_writer(output_path: &PathBuf) -> Result<File, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    let mut file = File::create(output_path)?;
+    // Write header
+    writeln!(file, "Title,Year,Description,Actors,Genres,Director,AddedOn,Location,Error")?;
+    Ok(file)
+}
+
+fn write_movie_to_csv(writer: &mut csv::Writer<File>, movie: &FullMovie) -> Result<(), Box<dyn std::error::Error>> {
+    use serde::Serialize;
+    
+    #[derive(Serialize)]
+    struct CsvMovie {
+        #[serde(rename = "Title")]
+        title: String,
+        #[serde(rename = "Year")]
+        year: i32,
+        #[serde(rename = "Description")]
+        description: String,
+        #[serde(rename = "Actors")]
+        actors: String,
+        #[serde(rename = "Genres")]
+        genres: String,
+        #[serde(rename = "Director")]
+        director: String,
+        #[serde(rename = "AddedOn")]
+        added_on: String,
+        #[serde(rename = "Location")]
+        location: String,
+    }
+    
+    let csv_movie = CsvMovie {
+        title: movie.name.clone(),
+        year: movie.release_year,
+        description: movie.description.as_deref().unwrap_or("").to_string(),
+        actors: movie.actors.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(" | "),
+        genres: movie.genres.join(" | "),
+        director: movie.director.as_ref().map(|d| d.name.as_str()).unwrap_or("").to_string(),
+        added_on: movie.added_on.as_deref().unwrap_or("").to_string(),
+        location: movie.location.as_deref().unwrap_or("").to_string(),
+    };
+    
+    writer.serialize(csv_movie)?;
+    writer.flush()?;
+    Ok(())
+}
+
+fn write_failed_movie(file: &mut File, movie: &FullMovie, error: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Write;
+    
+    let actors = movie.actors.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join("; ");
+    let genres = movie.genres.join("; ");
+    let director = movie.director.as_ref().map(|d| d.name.as_str()).unwrap_or("");
+    let description = movie.description.as_deref().unwrap_or("");
+    let added_on = movie.added_on.as_deref().unwrap_or("");
+    let location = movie.location.as_deref().unwrap_or("");
+    
+    // Escape fields that might contain commas or quotes
+    let escape = |s: &str| {
+        if s.contains(',') || s.contains('"') || s.contains('\n') {
+            format!("\"{}\"" , s.replace('"', "\"\""))
+        } else {
+            s.to_string()
+        }
+    };
+    
+    writeln!(
+        file,
+        "{},{},{},{},{},{},{},{},{}",
+        escape(&movie.name),
+        movie.release_year,
+        escape(description),
+        escape(&actors),
+        escape(&genres),
+        escape(director),
+        escape(added_on),
+        escape(location),
+        escape(error)
+    )?;
+    file.flush()?;
+    Ok(())
+}
+
 async fn read_and_parse_csv(args: &Args, ollama: &Ollama, model: &str) -> Result<Vec<FullMovie>, Box<dyn std::error::Error>> {
+    // Count CSV records properly (handles multiline quoted fields)
+    let file = File::open(&args.input)?;
+    let mut rdr = csv::Reader::from_reader(file);
+    let total_lines = rdr.records().count();
+    info!("Total movie records in CSV: {}", total_lines);
+    
+    // Read header for display
     let file = File::open(&args.input)?;
     let reader = BufReader::new(file);
     let mut lines = reader.lines();
-
     let header = lines
         .next()
         .ok_or("CSV file is empty")?
         .map_err(|e| format!("Failed to read header: {}", e))?;
     
     info!("CSV header: {}", header);
-
-    let total_lines: usize = lines.count();
-    info!("Total movie records in CSV: {}", total_lines);
 
     if args.start >= total_lines {
         return Err(format!(
@@ -311,37 +462,18 @@ async fn read_and_parse_csv(args: &Args, ollama: &Ollama, model: &str) -> Result
         movies_to_process
     );
 
-    let selected_lines = read_csv_range(&args.input, &header, args.start, movies_to_process)?;
+    let csv_bytes = read_csv_range(&args.input, &header, args.start, movies_to_process)?;
     
-    info!("Parsing {} selected CSV lines...", selected_lines.len() - 1);
-    let csv_content = selected_lines.join("\n");
-    let movies = match csv_utils::parse_csv(csv_content.as_bytes()) {
+    info!("Parsing selected CSV records...");
+    let movies = match csv_utils::parse_csv(csv_bytes.as_slice()) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("\n=== CSV Parsing Error ===");
             eprintln!("Error: {}", e);
             
-            let error_line = extract_error_line(&e.to_string(), &csv_content);
-            if let Some((line_num, line_content)) = error_line {
-                eprintln!("\n=== Problematic CSV Line {} ===", line_num);
-                eprintln!("{}", line_content);
-                eprintln!("\n=== End Line ===\n");
-                
-                eprintln!("\n=== AI Debugging Analysis ===");
-                match debug_csv_error_with_ai(ollama, model, &e.to_string(), &line_content, line_num).await {
-                    Ok(analysis) => {
-                        eprintln!("{}", analysis);
-                        eprintln!("\n=== End AI Analysis ===\n");
-                    }
-                    Err(ai_err) => {
-                        eprintln!("Failed to get AI analysis: {}", ai_err);
-                    }
-                }
-            } else {
-                eprintln!("\n=== Raw CSV Content ===");
-                eprintln!("{}", csv_content);
-                eprintln!("\n=== End Raw Content ===\n");
-            }
+            eprintln!("\n=== CSV Parsing Failed ===");
+            eprintln!("Unable to parse CSV content");
+            eprintln!("\n=== End ===\n");
             
             return Err(e);
         }
@@ -353,32 +485,37 @@ async fn read_and_parse_csv(args: &Args, ollama: &Ollama, model: &str) -> Result
 
 fn read_csv_range(
     input_path: &PathBuf,
-    header: &str,
+    _header: &str,
     start: usize,
     count: usize,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    // Use CSV parser to properly handle multiline quoted fields
     let file = File::open(input_path)?;
-    let reader = BufReader::new(file);
-    let mut lines_iter = reader.lines();
-
-    lines_iter.next();
-
+    let mut rdr = csv::Reader::from_reader(file);
+    
+    // Get headers
+    let headers = rdr.headers()?.clone();
+    
+    // Skip to start index
+    let mut records = rdr.records();
     for _ in 0..start {
-        lines_iter.next();
+        records.next();
     }
-
-    let mut selected_lines = Vec::new();
-    selected_lines.push(header.to_string());
+    
+    // Collect requested records
+    let mut wtr = csv::Writer::from_writer(vec![]);
+    wtr.write_record(&headers)?;
     
     for _ in 0..count {
-        if let Some(Ok(line)) = lines_iter.next() {
-            selected_lines.push(line);
+        if let Some(result) = records.next() {
+            let record = result?;
+            wtr.write_record(&record)?;
         } else {
             break;
         }
     }
     
-    Ok(selected_lines)
+    Ok(wtr.into_inner()?)
 }
 
 async fn unload_model(ollama: &Ollama, model: &str) -> Result<(), String> {
@@ -407,16 +544,19 @@ fn setup_ollama_client() -> (Ollama, String) {
     (ollama, model)
 }
 
-async fn process_movies(
+async fn process_movies_streaming(
     movies: &mut [FullMovie],
     ollama: &Ollama,
     model: &str,
     args: &Args,
-) {
+    success_writer: &mut csv::Writer<File>,
+    failed_writer: &mut File,
+) -> Result<(), Box<dyn std::error::Error>> {
     let movies_to_process = movies.len();
     let reset_model_count = 50;
+    
     for (idx, movie) in movies.iter_mut().enumerate() {
-        // Unload model every 10 movies to prevent state buildup
+        // Unload model every 50 movies to prevent state buildup
         if idx > 0 && idx % reset_model_count == 0 {
             info!("Unloading model after {} movies to prevent state buildup", idx);
             if let Err(e) = unload_model(ollama, model).await {
@@ -434,6 +574,8 @@ async fn process_movies(
                 csv_row,
                 movie.name
             );
+            // Write skipped movie to success file with original data
+            write_movie_to_csv(success_writer, movie)?;
             continue;
         }
 
@@ -450,13 +592,21 @@ async fn process_movies(
             Ok(reordered_actors) => {
                 log_actor_reordering(movie, &reordered_actors, csv_row);
                 update_movie_actors(movie, reordered_actors, csv_row);
+                // Write successful movie immediately
+                write_movie_to_csv(success_writer, movie)?;
             }
             Err(e) => {
                 warn!("  CSV row {} ({}): Failed to reorder actors: {}", csv_row, movie.name, e);
                 warn!("  CSV row {} ({}): Keeping original actor order", csv_row, movie.name);
+                // Write failed movie immediately
+                write_failed_movie(failed_writer, movie, &e)?;
+                // Also write to success file with original order
+                write_movie_to_csv(success_writer, movie)?;
             }
         }
     }
+    
+    Ok(())
 }
 
 fn log_actor_reordering(movie: &FullMovie, reordered_actors: &[String], csv_row: usize) {
@@ -487,13 +637,6 @@ fn update_movie_actors(movie: &mut FullMovie, reordered_actors: Vec<String>, csv
     info!("  CSV row {} ({}): Successfully reordered actors", csv_row, movie.name);
 }
 
-fn write_output(output_path: &PathBuf, movies: &[FullMovie]) -> Result<(), Box<dyn std::error::Error>> {
-    info!("Writing reordered movies to: {}", output_path.display());
-    let csv_content = csv_utils::movies_to_csv(movies)?;
-    std::fs::write(output_path, csv_content)?;
-    info!("Successfully wrote {} movies to: {}", movies.len(), output_path.display());
-    Ok(())
-}
 
 fn extract_error_line(error_msg: &str, csv_content: &str) -> Option<(usize, String)> {
     let line_num = if error_msg.contains("line: ") {
