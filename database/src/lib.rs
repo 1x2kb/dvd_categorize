@@ -54,10 +54,10 @@ use std::env;
 use std::error::Error;
 use std::fmt::Display;
 
+use chrono::NaiveDate;
 use diesel::prelude::*;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use log::{debug, error};
-use chrono::NaiveDate;
 pub use models::{schema::*, *};
 use pgvector::{Vector, VectorExpressionMethods};
 
@@ -340,9 +340,14 @@ pub async fn get_movies_by_ids(ids: Vec<i32>) -> DbResult<Vec<FullMovie>> {
                         |(movie, director)| {
                             // Generate hash from display name for consistency
                             let display_name = if movie.release_year == 0 {
-                                movie.name.clone()
+                                movie
+                                    .name
+                                    .clone()
                             } else {
-                                format!("{} ({})", movie.name, movie.release_year)
+                                format!(
+                                    "{} ({})",
+                                    movie.name, movie.release_year
+                                )
                             };
                             FullMovie {
                                 id: movie.id,
@@ -476,29 +481,46 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> DbResult<FullMovie> {
         }
     };
 
-    let added_on = full_movie.added_on.and_then(|date_str| {
-        // Try parsing as full timestamp first, then fall back to date-only
-        match chrono::NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%d %H:%M:%S%.f") {
-            Ok(dt) => Some(dt),
-            Err(_) => {
-                match NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
-                    Ok(date) => {
-                        match date.and_hms_opt(0, 0, 0) {
-                            Some(dt) => Some(dt),
-                            None => {
-                                error!("Invalid time components for date '{}' in movie '{}'", date_str, full_movie.name);
+    let added_on = full_movie
+        .added_on
+        .and_then(
+            |date_str| {
+                // Try parsing as full timestamp first, then fall back to date-only
+                match chrono::NaiveDateTime::parse_from_str(
+                    &date_str,
+                    "%Y-%m-%d %H:%M:%S%.f",
+                ) {
+                    Ok(dt) => Some(dt),
+                    Err(_) => {
+                        match NaiveDate::parse_from_str(
+                            &date_str, "%Y-%m-%d",
+                        ) {
+                            Ok(date) => {
+                                match date.and_hms_opt(
+                                    0, 0, 0,
+                                ) {
+                                    Some(dt) => Some(dt),
+                                    None => {
+                                        error!(
+                                            "Invalid time components for date '{}' in movie '{}'",
+                                            date_str, full_movie.name
+                                        );
+                                        None
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Failed to parse date '{}' for movie '{}': {}",
+                                    date_str, full_movie.name, e
+                                );
                                 None
                             }
                         }
                     }
-                    Err(e) => {
-                        error!("Failed to parse date '{}' for movie '{}': {}", date_str, full_movie.name, e);
-                        None
-                    }
                 }
-            }
-        }
-    });
+            },
+        );
 
     let new_movie = NewMovie {
         name: full_movie.name,
@@ -534,11 +556,13 @@ pub async fn insert_full_movie(full_movie: FullMovie) -> DbResult<FullMovie> {
     let new_actor_movies: Vec<NewMovieActor> = actor_ids
         .into_iter()
         .enumerate()
-        .map(|(index, actor_id)| NewMovieActor { 
-            movie_id, 
-            actor_id,
-            actor_order: (index + 1) as i32,
-        })
+        .map(
+            |(index, actor_id)| NewMovieActor {
+                movie_id,
+                actor_id,
+                actor_order: (index + 1) as i32,
+            },
+        )
         .collect();
 
     diesel::insert_into(schema::movie_actor::table)
@@ -645,7 +669,11 @@ pub async fn get_recent_movies(limit: i64) -> DbResult<Vec<FullMovie>> {
 ///
 /// # Errors
 /// Returns `DatabaseError` if the database query fails.
-pub async fn get_movies_by_release_year(min_year: i32, max_year: i32, limit: i64) -> DbResult<Vec<FullMovie>> {
+pub async fn get_movies_by_release_year(
+    min_year: i32,
+    max_year: i32,
+    limit: i64,
+) -> DbResult<Vec<FullMovie>> {
     let mut conn = get_database_connection().await?;
 
     // Get the IDs of movies within the year range
@@ -680,7 +708,8 @@ pub async fn get_random_movies(count: i64) -> DbResult<Vec<FullMovie>> {
     let conn = get_database_connection().await?;
     let mut repo = PostgresMovieRepository::new(conn);
     use traits::RandomMovies;
-    repo.get_random(count).await
+    repo.get_random(count)
+        .await
 }
 
 /// Get movies with unknown location from the database.
@@ -694,5 +723,21 @@ pub async fn get_unknown_location_movies(limit: i64) -> DbResult<Vec<FullMovie>>
     let conn = get_database_connection().await?;
     let mut repo = PostgresMovieRepository::new(conn);
     use traits::GetUnknownLocationMovies;
-    repo.get_unknown_location(limit).await
+    repo.get_unknown_location(limit)
+        .await
+}
+
+pub async fn get_unqiue_locations() -> DbResult<Vec<String>> {
+    let mut repo = PostgresMovieRepository::new(get_database_connection().await?);
+    use traits::GetUniqueLocations;
+    repo.unique_locations()
+        .await
+}
+
+pub async fn movies_by_location(location_name: &str) -> DbResult<Vec<FullMovie>> {
+    let mut repo = PostgresMovieRepository::new(get_database_connection().await?);
+    use traits::MoviesByLocation;
+
+    repo.movies_by_location(location_name)
+        .await
 }

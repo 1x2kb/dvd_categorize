@@ -132,6 +132,14 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
     // Create a router for stateless endpoints
     let stateless_router = Router::new()
         .route(
+            "/uniqueLocations()",
+            get(unique_locations),
+        )
+        .route(
+            "/location/{location_name}",
+            get(movies_by_location),
+        )
+        .route(
             "/dvd/{id}",
             get(get_dvd),
         )

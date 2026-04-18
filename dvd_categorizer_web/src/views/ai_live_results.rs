@@ -108,6 +108,63 @@ async fn fetch_random_movies(count: u32) -> Result<Vec<ScoredMovie>, reqwest::Er
     Ok(response)
 }
 
+async fn fetch_unique_locations() -> Result<Vec<String>, reqwest::Error> {
+    let window = web_sys::window().unwrap();
+    let location = window.location();
+    let hostname = location
+        .hostname()
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
+
+    let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+
+    let client = reqwest::Client::new();
+    let response: Vec<String> = client
+        .get(format!("http://{hostname}:{server_port}/uniqueLocations()"))
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    Ok(response)
+}
+
+async fn fetch_movies_by_location(location_name: String) -> Result<Vec<ScoredMovie>, reqwest::Error> {
+    let window = web_sys::window().unwrap();
+    let location = window.location();
+    let hostname = location
+        .hostname()
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
+
+    let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+
+    let encoded: String = location_name
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{:02X}", b),
+        })
+        .collect();
+
+    let client = reqwest::Client::new();
+    let response: Vec<models::FullMovie> = client
+        .get(format!("http://{hostname}:{server_port}/location/{encoded}"))
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    // Wrap FullMovie into ScoredMovie with 0 score for MovieGrid compatibility
+    Ok(response
+        .into_iter()
+        .map(|movie| ScoredMovie {
+            movie,
+            vector_score: 0.0,
+        })
+        .collect())
+}
+
 async fn fetch_unknown_location_movies() -> Result<Vec<ScoredMovie>, reqwest::Error> {
     let window = web_sys::window().unwrap();
     let location = window.location();
@@ -160,6 +217,7 @@ pub fn AiLiveResults() -> Element {
     let mut selected_model = use_signal(|| None::<String>);
     let mut showing_random = use_signal(|| false);
     let mut available_models = use_signal(Vec::<models::AvailableModel>::new);
+    let mut available_locations = use_signal(Vec::<String>::new);
 
     // Fetch available models on component mount
     use_effect(
@@ -182,6 +240,28 @@ pub fn AiLiveResults() -> Element {
         },
     );
 
+    // Fetch unique locations on component mount
+    use_effect(
+        move || {
+            spawn(
+                async move {
+                    match fetch_unique_locations().await {
+                        Ok(mut locations) => {
+                            locations.sort();
+                            available_locations.set(locations);
+                        }
+                        Err(err) => {
+                            log::error!(
+                                "Failed to fetch unique locations: {:#?}",
+                                err
+                            );
+                        }
+                    }
+                },
+            );
+        },
+    );
+
     rsx! {
         div {
             class: "ai-live-results-container",
@@ -189,6 +269,32 @@ pub fn AiLiveResults() -> Element {
             // Browse section
             BrowseBar {
                 is_loading: is_loading(),
+                locations: available_locations(),
+                on_by_location: move |loc: String| {
+                    spawn(async move {
+                        if is_loading() {
+                            return;
+                        }
+
+                        is_loading.set(true);
+                        showing_random.set(false);
+                        movies.set(Arc::new(vec![]));
+                        enhanced_query.set(String::new());
+                        original_query.set(String::new());
+
+                        let result = fetch_movies_by_location(loc.clone()).await;
+                        match result {
+                            Ok(by_location) => {
+                                movies.set(Arc::new(by_location));
+                            }
+                            Err(err) => {
+                                log::error!("Failed to fetch movies for location {}: {:#?}", loc, err);
+                                movies.set(Arc::new(vec![]));
+                            }
+                        }
+                        is_loading.set(false);
+                    });
+                },
                 on_browse: move |_| {
                     spawn(async move {
                         if is_loading() {

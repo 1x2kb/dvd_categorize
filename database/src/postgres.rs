@@ -192,9 +192,14 @@ impl GetMoviesByIds for PostgresMovieRepository {
                 |(((movie, director), actors), genres)| {
                     // Generate hash from display name for consistency
                     let display_name = if movie.release_year == 0 {
-                        movie.name.clone()
+                        movie
+                            .name
+                            .clone()
                     } else {
-                        format!("{} ({})", movie.name, movie.release_year)
+                        format!(
+                            "{} ({})",
+                            movie.name, movie.release_year
+                        )
                     };
                     let full_movie = FullMovie {
                         id: movie.id,
@@ -372,11 +377,13 @@ impl InsertMovie for PostgresMovieRepository {
         let new_actor_movies: Vec<NewMovieActor> = actor_ids
             .into_iter()
             .enumerate()
-            .map(|(index, actor_id)| NewMovieActor { 
-                movie_id, 
-                actor_id,
-                actor_order: (index + 1) as i32,
-            })
+            .map(
+                |(index, actor_id)| NewMovieActor {
+                    movie_id,
+                    actor_id,
+                    actor_order: (index + 1) as i32,
+                },
+            )
             .collect();
 
         diesel::insert_into(schema::movie_actor::table)
@@ -563,6 +570,38 @@ impl SearchMoviesStructured for PostgresMovieRepository {
         )
         .await
         .map_err(DatabaseError::from)
+    }
+}
+
+#[async_trait]
+impl GetUniqueLocations for PostgresMovieRepository {
+    async fn unique_locations(&mut self) -> Result<Vec<String>, DatabaseError> {
+        schema::movie::table
+            .select(schema::movie::location)
+            .distinct()
+            .get_results(&mut self.connection)
+            .await
+            .map_err(DatabaseError::from)
+    }
+}
+
+#[async_trait]
+impl MoviesByLocation for PostgresMovieRepository {
+    async fn movies_by_location(
+        &mut self,
+        location: &str,
+    ) -> Result<Vec<FullMovie>, DatabaseError> {
+        let movie_ids: Vec<i32> = schema::movie::table
+            .select(schema::movie::id)
+            .filter(schema::movie::location.eq(location))
+            .get_results(&mut self.connection)
+            .await
+            .map_err(DatabaseError::from)?;
+
+        GetMoviesByIds::get_by_ids(
+            self, movie_ids,
+        )
+        .await
     }
 }
 
