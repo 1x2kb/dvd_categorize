@@ -48,6 +48,61 @@
     cursor: not-allowed;
 }
 
+/* Location browse group: dropdown + button */
+.location-browse-group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-left: auto;
+    background: #111827;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px solid #374151;
+}
+
+.location-select {
+    padding: 7px 10px;
+    background: #111827;
+    color: #d1d5db;
+    border: 1px solid #374151;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 160px;
+    transition: border-color 0.2s ease;
+}
+
+.location-select:hover:not(:disabled) {
+    border-color: #0891b2;
+}
+
+.location-select:focus {
+    outline: none;
+    border-color: #0891b2;
+    box-shadow: 0 0 0 2px rgba(8, 145, 178, 0.25);
+}
+
+.location-select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.location-select option {
+    background: #111827;
+    color: #d1d5db;
+}
+
+/* Re-skin the "Movies by Location" button with teal to match location group */
+.location-browse-group .browse-button {
+    background: linear-gradient(135deg, #0891b2, #0e7490);
+}
+
+.location-browse-group .browse-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #0e7490, #155e75);
+    box-shadow: 0 4px 8px rgba(8, 145, 178, 0.3);
+}
+
 /* Search section */
 .search-section {
     background: #111827;

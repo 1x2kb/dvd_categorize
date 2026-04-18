@@ -5,7 +5,13 @@ use axum::{
     Json,
 };
 use axum_macros::debug_handler;
-use database::{FullMovie, SearchRequest};
+use database::{
+    traits::{
+        GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies, GetUniqueLocations,
+        GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies,
+    },
+    FullMovie, PostgresMovieRepository, SearchRequest,
+};
 use log::{error, info};
 use models::{CsvInput, ScoredMovie};
 use ollama_rs::error::OllamaError;
@@ -76,29 +82,46 @@ pub async fn get_dvds(State(state): State<CacheState>) -> Json<Option<Vec<FullMo
 #[instrument]
 #[debug_handler]
 pub async fn get_dvd(Path(id): Path<i32>) -> Json<Option<FullMovie>> {
-    Json(
-        database::get_movie(id)
-            .await
-            .ok(),
-    )
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_by_id(id).await.ok(),
+        Err(e) => {
+            error!("Failed to get repo: {}", e);
+            None
+        }
+    };
+    Json(result)
 }
 
 #[instrument]
 #[debug_handler]
 pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
-    Json(
-        database::insert_full_movie(dvd)
-            .await
-            .ok(),
-    )
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.insert(dvd).await.ok(),
+        Err(e) => {
+            error!("Failed to get repo: {}", e);
+            None
+        }
+    };
+    Json(result)
 }
 
 #[instrument]
 #[debug_handler]
 pub async fn chat(
     Json(request): Json<models::ChatRequest>,
-) -> Result<Json<models::ChatResponse>, (StatusCode, String)> {
-    info!("Processing chat request with {} message(s)", request.messages.len());
+) -> Result<
+    Json<models::ChatResponse>,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    info!(
+        "Processing chat request with {} message(s)",
+        request
+            .messages
+            .len()
+    );
 
     // Convert chat history to Ollama format
     let messages: Vec<ollama_rs::generation::chat::ChatMessage> = std::iter::once(
@@ -118,16 +141,28 @@ pub async fn chat(
     .collect();
 
     // Get model name from request or use default
-    let model = request.model.unwrap_or_else(|| "phi3.5".to_string());
+    let model = request
+        .model
+        .unwrap_or_else(|| "phi3.5".to_string());
 
-    info!("Using model: {}", model);
+    info!(
+        "Using model: {}",
+        model
+    );
 
     // Create Ollama client
     let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
     let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
-    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
+    let ollama_url = format!(
+        "http://{}:{}",
+        ollama_host, ollama_port
+    );
 
-    let ollama = ollama_rs::Ollama::from_url(ollama_url.parse().unwrap());
+    let ollama = ollama_rs::Ollama::from_url(
+        ollama_url
+            .parse()
+            .unwrap(),
+    );
 
     // Create chat request
     let chat_request = ollama_rs::generation::chat::request::ChatMessageRequest::new(
@@ -136,18 +171,33 @@ pub async fn chat(
     );
 
     // Send to Ollama
-    match ollama.send_chat_messages(chat_request).await {
+    match ollama
+        .send_chat_messages(chat_request)
+        .await
+    {
         Ok(response) => {
             info!("Successfully generated AI response");
-            Ok(Json(models::ChatResponse {
-                message: response.message.content,
-            }))
+            Ok(
+                Json(
+                    models::ChatResponse {
+                        message: response
+                            .message
+                            .content,
+                    },
+                ),
+            )
         }
         Err(e) => {
-            error!("Failed to generate AI response: {:?}", e);
+            error!(
+                "Failed to generate AI response: {:?}",
+                e
+            );
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to generate AI response: {}", e),
+                format!(
+                    "Failed to generate AI response: {}",
+                    e
+                ),
             ))
         }
     }
@@ -312,7 +362,11 @@ pub async fn parse_csv(
     }
 
     // Refresh the cache with the latest movies
-    match database::get_movies().await {
+    let refresh_result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_all().await,
+        Err(e) => Err(e),
+    };
+    match refresh_result {
         Ok(updated_movies) => {
             info!("Movies saved successfully");
             let mut movies = cache_state
@@ -619,7 +673,11 @@ pub async fn update_movie_location(
     )?;
 
     // Refresh the cache with updated movies
-    match database::get_movies().await {
+    let refresh_result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_all().await,
+        Err(e) => Err(e),
+    };
+    match refresh_result {
         Ok(updated_movies) => {
             let mut movies = state
                 .movies
@@ -729,7 +787,12 @@ pub async fn list_available_models() -> Result<
 pub async fn get_recent_movies() -> Json<Vec<ScoredMovie>> {
     info!("Getting recent movies");
 
-    match database::get_recent_movies(50).await {
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_recent(50).await,
+        Err(e) => Err(e),
+    };
+
+    match result {
         Ok(movies) => {
             info!(
                 "Found {} recent movies",
@@ -759,15 +822,27 @@ pub async fn get_recent_movies() -> Json<Vec<ScoredMovie>> {
 /// Get movies by release year range
 #[instrument]
 #[debug_handler]
-pub async fn get_recent_releases(Query(params): Query<RecentReleasesQuery>) -> Json<Vec<ScoredMovie>> {
+pub async fn get_recent_releases(
+    Query(params): Query<RecentReleasesQuery>,
+) -> Json<Vec<ScoredMovie>> {
     info!(
         "Getting movies released between {} and {} (limit: {})",
-        params.min_year,
-        params.max_year,
-        params.limit
+        params.min_year, params.max_year, params.limit
     );
 
-    match database::get_movies_by_release_year(params.min_year, params.max_year, params.limit).await {
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => {
+            repo.get_by_release_year(
+                params.min_year,
+                params.max_year,
+                params.limit,
+            )
+            .await
+        }
+        Err(e) => Err(e),
+    };
+
+    match result {
         Ok(movies) => {
             info!(
                 "Found {} movies released between {} and {}",
@@ -799,12 +874,18 @@ pub async fn get_recent_releases(Query(params): Query<RecentReleasesQuery>) -> J
 /// Get random movies from the database
 #[instrument]
 #[debug_handler]
-pub async fn get_random_movies(
-    Query(params): Query<RandomMoviesQuery>,
-) -> Json<Vec<ScoredMovie>> {
-    info!("Getting {} random movies", params.count);
+pub async fn get_random_movies(Query(params): Query<RandomMoviesQuery>) -> Json<Vec<ScoredMovie>> {
+    info!(
+        "Getting {} random movies",
+        params.count
+    );
 
-    match database::get_random_movies(params.count).await {
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_random(params.count).await,
+        Err(e) => Err(e),
+    };
+
+    match result {
         Ok(movies) => {
             info!(
                 "Found {} random movies",
@@ -837,7 +918,12 @@ pub async fn get_random_movies(
 pub async fn get_unknown_location_movies() -> Json<Vec<ScoredMovie>> {
     info!("Getting movies with unknown location");
 
-    match database::get_unknown_location_movies(50).await {
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_unknown_location(50).await,
+        Err(e) => Err(e),
+    };
+
+    match result {
         Ok(movies) => {
             info!(
                 "Found {} movies with unknown location",
@@ -862,4 +948,44 @@ pub async fn get_unknown_location_movies() -> Json<Vec<ScoredMovie>> {
             Json(Vec::new())
         }
     }
+}
+
+#[instrument]
+#[debug_handler]
+pub async fn unique_locations() -> Json<Vec<String>> {
+    info!("Getting unique list of all locations");
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.unique_locations().await,
+        Err(e) => Err(e),
+    };
+
+    result
+        .map(Json)
+        .unwrap_or_else(|e| {
+            error!(
+                "Failed to get unique locations: {}",
+                e
+            );
+            Json(Vec::new())
+        })
+}
+
+#[instrument]
+#[debug_handler]
+pub async fn movies_by_location(Path(location_name): Path<String>) -> Json<Vec<FullMovie>> {
+    info!("Getting movies at location: {}", location_name);
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.movies_by_location(&location_name).await,
+        Err(e) => Err(e),
+    };
+
+    result
+        .map(Json)
+        .unwrap_or_else(|e| {
+            error!(
+                "Failed to get movies for location {}: {}",
+                location_name, e
+            );
+            Json(Vec::new())
+        })
 }

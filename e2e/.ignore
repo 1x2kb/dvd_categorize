@@ -1,0 +1,8 @@
+# Hides the entire e2e/ directory from file watchers that use the `ignore`
+# crate (cargo-watch, dx serve, ripgrep, fd, etc). This file is NOT read by
+# git, so files here remain tracked and committable.
+#
+# Purpose: prevent Playwright test files, node_modules, and test-result
+# artifacts from triggering backend (`cargo watch`) and frontend (`dx serve`)
+# rebuilds during local E2E work.
+*

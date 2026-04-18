@@ -1,0 +1,21 @@
+{
+  "name": "dvd-categorize-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end tests for the DVD categorizer application",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:fast": "playwright test --project=fast",
+    "test:ai": "playwright test --project=ai",
+    "test:mock": "playwright test --project=mock",
+    "report": "playwright show-report",
+    "codegen": "playwright codegen http://localhost:8080"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}

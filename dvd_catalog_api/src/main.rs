@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use database::FullMovie;
+use database::{traits::GetAllMovies, FullMovie, PostgresMovieRepository};
 use dotenvy::dotenv;
 use dvd_catalog::*;
 use log::{error, info, warn};
@@ -39,7 +39,11 @@ async fn main() {
     }
 
     // Load movies into cache state on startup
-    let movies = match database::get_movies().await {
+    let load_result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_all().await,
+        Err(e) => Err(e),
+    };
+    let movies = match load_result {
         Ok(movies) => {
             info!(
                 "Successfully loaded {} movies into cache",
@@ -131,6 +135,14 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
 
     // Create a router for stateless endpoints
     let stateless_router = Router::new()
+        .route(
+            "/uniqueLocations()",
+            get(unique_locations),
+        )
+        .route(
+            "/location/{location_name}",
+            get(movies_by_location),
+        )
         .route(
             "/dvd/{id}",
             get(get_dvd),
