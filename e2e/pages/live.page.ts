@@ -78,4 +78,62 @@ export class LivePage {
       this.page.locator('.browse-button', { hasText: 'Loading...' }),
     ).toHaveCount(0, { timeout: 30_000 });
   }
+
+  // Search mode + model selector ----------------------------------------------
+
+  modeButton(name: 'Text' | 'Both' | 'Vector' | 'Structured'): Locator {
+    return this.page.locator('.mode-button', { hasText: new RegExp(`^${name}$`) });
+  }
+
+  async selectMode(name: 'Text' | 'Both' | 'Vector' | 'Structured'): Promise<void> {
+    await this.modeButton(name).click();
+  }
+
+  modelSelect(): Locator {
+    return this.page.locator('select.model-select');
+  }
+
+  /**
+   * Waits for the async `/ai/models` fetch to populate the dropdown with at
+   * least one model beyond the default entry. Requires mode != Text because
+   * the model dropdown is hidden in Text mode.
+   */
+  async waitForModelsLoaded(timeout = 15_000): Promise<void> {
+    await expect
+      .poll(async () => this.modelSelect().locator('option').count(), { timeout })
+      .toBeGreaterThan(1);
+  }
+
+  /**
+   * Returns the names of every non-default model currently in the dropdown.
+   */
+  async availableModels(): Promise<string[]> {
+    const values = await this.modelSelect().locator('option').evaluateAll(
+      (opts) => (opts as HTMLOptionElement[]).map((o) => o.value),
+    );
+    return values.filter((v) => v !== 'default' && v !== '');
+  }
+
+  // Search bar ----------------------------------------------------------------
+
+  searchInput(): Locator {
+    return this.page.locator('input.search-input');
+  }
+
+  searchButton(): Locator {
+    return this.page.locator('button.search-button');
+  }
+
+  async runSearch(query: string): Promise<void> {
+    await this.searchInput().fill(query);
+    await this.searchButton().click();
+  }
+
+  /**
+   * Waits for the search to finish: the search button re-enables and its
+   * label returns from "Searching..." to "Search".
+   */
+  async waitForSearchComplete(timeout = 90_000): Promise<void> {
+    await expect(this.searchButton()).toHaveText('Search', { timeout });
+  }
 }
