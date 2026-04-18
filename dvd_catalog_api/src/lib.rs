@@ -5,7 +5,10 @@ use axum::{
     Json,
 };
 use axum_macros::debug_handler;
-use database::{FullMovie, SearchRequest};
+use database::{
+    traits::{GetUniqueLocations, GetUnknownLocationMovies, MoviesByLocation, RandomMovies},
+    FullMovie, PostgresMovieRepository, SearchRequest,
+};
 use log::{error, info};
 use models::{CsvInput, ScoredMovie};
 use ollama_rs::error::OllamaError;
@@ -849,7 +852,12 @@ pub async fn get_random_movies(Query(params): Query<RandomMoviesQuery>) -> Json<
         params.count
     );
 
-    match database::get_random_movies(params.count).await {
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_random(params.count).await,
+        Err(e) => Err(e),
+    };
+
+    match result {
         Ok(movies) => {
             info!(
                 "Found {} random movies",
@@ -882,7 +890,12 @@ pub async fn get_random_movies(Query(params): Query<RandomMoviesQuery>) -> Json<
 pub async fn get_unknown_location_movies() -> Json<Vec<ScoredMovie>> {
     info!("Getting movies with unknown location");
 
-    match database::get_unknown_location_movies(50).await {
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_unknown_location(50).await,
+        Err(e) => Err(e),
+    };
+
+    match result {
         Ok(movies) => {
             info!(
                 "Found {} movies with unknown location",
@@ -913,12 +926,16 @@ pub async fn get_unknown_location_movies() -> Json<Vec<ScoredMovie>> {
 #[debug_handler]
 pub async fn unique_locations() -> Json<Vec<String>> {
     info!("Getting unique list of all locations");
-    database::get_unqiue_locations()
-        .await
-        .map(|unique_locations| Json(unique_locations))
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.unique_locations().await,
+        Err(e) => Err(e),
+    };
+
+    result
+        .map(Json)
         .unwrap_or_else(|e| {
             error!(
-                "Failed to get movies with unknown location: {}",
+                "Failed to get unique locations: {}",
                 e
             );
             Json(Vec::new())
@@ -929,8 +946,12 @@ pub async fn unique_locations() -> Json<Vec<String>> {
 #[debug_handler]
 pub async fn movies_by_location(Path(location_name): Path<String>) -> Json<Vec<FullMovie>> {
     info!("Getting movies at location: {}", location_name);
-    database::movies_by_location(&location_name)
-        .await
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.movies_by_location(&location_name).await,
+        Err(e) => Err(e),
+    };
+
+    result
         .map(Json)
         .unwrap_or_else(|e| {
             error!(

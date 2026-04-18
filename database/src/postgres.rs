@@ -22,6 +22,12 @@ impl PostgresMovieRepository {
         Self { connection }
     }
 
+    /// Builds a repository using the `DATABASE_URL` environment variable.
+    pub async fn from_env() -> Result<Self, DatabaseError> {
+        let connection = crate::get_database_connection().await?;
+        Ok(Self::new(connection))
+    }
+
     pub fn connection_mut(&mut self) -> &mut AsyncPgConnection {
         &mut self.connection
     }
