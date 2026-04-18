@@ -520,6 +520,37 @@ impl GetRecentMovies for PostgresMovieRepository {
 }
 
 #[async_trait]
+impl GetMoviesByReleaseYear for PostgresMovieRepository {
+    async fn get_by_release_year(
+        &mut self,
+        min_year: i32,
+        max_year: i32,
+        limit: i64,
+    ) -> Result<Vec<FullMovie>, DatabaseError> {
+        let movie_ids: Vec<i32> = schema::movie::table
+            .select(schema::movie::id)
+            .filter(schema::movie::release_year.ge(min_year))
+            .filter(schema::movie::release_year.le(max_year))
+            .order(schema::movie::release_year.desc())
+            .limit(limit)
+            .load::<i32>(&mut self.connection)
+            .await?;
+
+        debug!(
+            "Found {} movies released between {} and {}",
+            movie_ids.len(),
+            min_year,
+            max_year
+        );
+
+        GetMoviesByIds::get_by_ids(
+            self, movie_ids,
+        )
+        .await
+    }
+}
+
+#[async_trait]
 impl RandomMovies for PostgresMovieRepository {
     async fn get_random(&mut self, count: i64) -> Result<Vec<FullMovie>, DatabaseError> {
         let movie_ids: Vec<i32> = schema::movie::table

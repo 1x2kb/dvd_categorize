@@ -71,6 +71,16 @@ pub trait RandomMovies: Send + Sync {
 }
 
 #[async_trait]
+pub trait GetMoviesByReleaseYear: Send + Sync {
+    async fn get_by_release_year(
+        &mut self,
+        min_year: i32,
+        max_year: i32,
+        limit: i64,
+    ) -> Result<Vec<FullMovie>, DatabaseError>;
+}
+
+#[async_trait]
 pub trait GetUnknownLocationMovies: Send + Sync {
     async fn get_unknown_location(&mut self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError>;
 }

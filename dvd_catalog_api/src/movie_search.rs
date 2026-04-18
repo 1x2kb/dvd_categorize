@@ -5,7 +5,11 @@ use ai_chat::OllamaClient;
 use axum::extract::Json;
 use axum_macros::debug_handler;
 use categorizer_utilities::strip_punctuation;
-use database::{question::AiAction, FullMovie};
+use database::{
+    question::AiAction,
+    traits::SearchMoviesByEmbedding,
+    FullMovie, PostgresMovieRepository,
+};
 use log::{error, info};
 use ollama_rs::Ollama;
 use tracing::instrument;
@@ -549,12 +553,11 @@ async fn vector_only_search(
     let vector_start = std::time::Instant::now();
     let vector_results = match embedding(&enhanced_query).await {
         Ok(embedding_vec) => {
-            match database::search_movies(
-                embedding_vec,
-                (limit * 2) as i64,
-            )
-            .await
-            {
+            let search_result = match PostgresMovieRepository::from_env().await {
+                Ok(mut repo) => repo.search_by_embedding(embedding_vec, (limit * 2) as i64).await,
+                Err(e) => Err(e),
+            };
+            match search_result {
                 Ok(movies_from_db) => {
                     let ids: Vec<i32> = movies_from_db
                         .into_iter()
@@ -707,12 +710,11 @@ async fn hybrid_both_search(
             let vector_start = std::time::Instant::now();
             match embedding(&enhanced_query_clone).await {
                 Ok(embedding_vec) => {
-                    match database::search_movies(
-                        embedding_vec,
-                        (limit * 2) as i64,
-                    )
-                    .await
-                    {
+                    let search_result = match PostgresMovieRepository::from_env().await {
+                        Ok(mut repo) => repo.search_by_embedding(embedding_vec, (limit * 2) as i64).await,
+                        Err(e) => Err(e),
+                    };
+                    match search_result {
                         Ok(movies_from_db) => {
                             let ids: Vec<i32> = movies_from_db
                                 .into_iter()
@@ -1055,9 +1057,13 @@ async fn extract_entities_from_movies(
 #[instrument]
 #[debug_handler]
 pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
-    let dvds = database::get_movies()
-        .await
-        .unwrap_or_else(|_| Vec::new());
+    let dvds = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => {
+            use database::traits::GetAllMovies;
+            repo.get_all().await.unwrap_or_else(|_| Vec::new())
+        }
+        Err(_) => Vec::new(),
+    };
 
     let (uuid, question, model, temperature) = (
         action.uuid,

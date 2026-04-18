@@ -6,7 +6,10 @@ use axum::{
 };
 use axum_macros::debug_handler;
 use database::{
-    traits::{GetUniqueLocations, GetUnknownLocationMovies, MoviesByLocation, RandomMovies},
+    traits::{
+        GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies, GetUniqueLocations,
+        GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies,
+    },
     FullMovie, PostgresMovieRepository, SearchRequest,
 };
 use log::{error, info};
@@ -79,21 +82,27 @@ pub async fn get_dvds(State(state): State<CacheState>) -> Json<Option<Vec<FullMo
 #[instrument]
 #[debug_handler]
 pub async fn get_dvd(Path(id): Path<i32>) -> Json<Option<FullMovie>> {
-    Json(
-        database::get_movie(id)
-            .await
-            .ok(),
-    )
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_by_id(id).await.ok(),
+        Err(e) => {
+            error!("Failed to get repo: {}", e);
+            None
+        }
+    };
+    Json(result)
 }
 
 #[instrument]
 #[debug_handler]
 pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
-    Json(
-        database::insert_full_movie(dvd)
-            .await
-            .ok(),
-    )
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.insert(dvd).await.ok(),
+        Err(e) => {
+            error!("Failed to get repo: {}", e);
+            None
+        }
+    };
+    Json(result)
 }
 
 #[instrument]
@@ -353,7 +362,11 @@ pub async fn parse_csv(
     }
 
     // Refresh the cache with the latest movies
-    match database::get_movies().await {
+    let refresh_result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_all().await,
+        Err(e) => Err(e),
+    };
+    match refresh_result {
         Ok(updated_movies) => {
             info!("Movies saved successfully");
             let mut movies = cache_state
@@ -660,7 +673,11 @@ pub async fn update_movie_location(
     )?;
 
     // Refresh the cache with updated movies
-    match database::get_movies().await {
+    let refresh_result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_all().await,
+        Err(e) => Err(e),
+    };
+    match refresh_result {
         Ok(updated_movies) => {
             let mut movies = state
                 .movies
@@ -770,7 +787,12 @@ pub async fn list_available_models() -> Result<
 pub async fn get_recent_movies() -> Json<Vec<ScoredMovie>> {
     info!("Getting recent movies");
 
-    match database::get_recent_movies(50).await {
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_recent(50).await,
+        Err(e) => Err(e),
+    };
+
+    match result {
         Ok(movies) => {
             info!(
                 "Found {} recent movies",
@@ -808,13 +830,19 @@ pub async fn get_recent_releases(
         params.min_year, params.max_year, params.limit
     );
 
-    match database::get_movies_by_release_year(
-        params.min_year,
-        params.max_year,
-        params.limit,
-    )
-    .await
-    {
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => {
+            repo.get_by_release_year(
+                params.min_year,
+                params.max_year,
+                params.limit,
+            )
+            .await
+        }
+        Err(e) => Err(e),
+    };
+
+    match result {
         Ok(movies) => {
             info!(
                 "Found {} movies released between {} and {}",
