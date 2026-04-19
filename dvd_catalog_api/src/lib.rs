@@ -8,10 +8,28 @@ use axum_macros::debug_handler;
 use database::{
     traits::{
         GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies, GetUniqueLocations,
-        GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies,
+        GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies, UpdateMovieLocation,
     },
-    FullMovie, PostgresMovieRepository, SearchRequest,
+    FullMovie, SearchRequest,
 };
+#[cfg(not(feature = "mongo-redis"))]
+use database::PostgresMovieRepository;
+#[cfg(feature = "mongo-redis")]
+use database::MongoRedisMovieRepository;
+
+#[cfg(not(feature = "mongo-redis"))]
+type ActiveRepo = PostgresMovieRepository;
+#[cfg(feature = "mongo-redis")]
+type ActiveRepo = MongoRedisMovieRepository;
+
+#[cfg(not(feature = "mongo-redis"))]
+pub(crate) async fn make_repo() -> Result<ActiveRepo, database::DatabaseError> {
+    PostgresMovieRepository::from_env().await
+}
+#[cfg(feature = "mongo-redis")]
+pub(crate) async fn make_repo() -> Result<ActiveRepo, database::DatabaseError> {
+    MongoRedisMovieRepository::new().await
+}
 use log::{error, info};
 use models::{CsvInput, ScoredMovie};
 use ollama_rs::error::OllamaError;
@@ -82,7 +100,7 @@ pub async fn get_dvds(State(state): State<CacheState>) -> Json<Option<Vec<FullMo
 #[instrument]
 #[debug_handler]
 pub async fn get_dvd(Path(id): Path<i32>) -> Json<Option<FullMovie>> {
-    let result = match PostgresMovieRepository::from_env().await {
+    let result = match make_repo().await {
         Ok(mut repo) => repo.get_by_id(id).await.ok(),
         Err(e) => {
             error!("Failed to get repo: {}", e);
@@ -95,7 +113,7 @@ pub async fn get_dvd(Path(id): Path<i32>) -> Json<Option<FullMovie>> {
 #[instrument]
 #[debug_handler]
 pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
-    let result = match PostgresMovieRepository::from_env().await {
+    let result = match make_repo().await {
         Ok(mut repo) => repo.insert(dvd).await.ok(),
         Err(e) => {
             error!("Failed to get repo: {}", e);
@@ -346,23 +364,43 @@ pub async fn parse_csv(
         }
     };
 
-    if let Err(e) = database::insert_full_movies(movies).await {
-        let error = format!(
-            "Failed to insert movies: {}",
-            e
-        );
-        error!(
-            "{}",
-            error
-        );
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            error,
-        ));
+    #[cfg(not(feature = "mongo-redis"))]
+    if let Err(e) = database::insert_full_movies(movies.clone()).await {
+        let error = format!("Failed to insert movies: {}", e);
+        error!("{}", error);
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
+    }
+    #[cfg(feature = "mongo-redis")]
+    {
+        let embeddings: Vec<String> = movies.iter().map(|m| m.embedding_str()).collect();
+        let embeddings = match ai_chat::get_embeddings(embeddings, ai_chat::EMBEDDING_MODEL).await {
+            Ok(e) => e,
+            Err(e) => {
+                let error = format!("Failed to generate embeddings: {}", e);
+                error!("{}", error);
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
+            }
+        };
+        let mut repo = match make_repo().await {
+            Ok(r) => r,
+            Err(e) => {
+                let error = format!("Failed to get repo: {}", e);
+                error!("{}", error);
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
+            }
+        };
+        for (mut movie, emb) in movies.iter().cloned().zip(embeddings.into_iter()) {
+            movie.embedding = Some(emb);
+            if let Err(e) = repo.insert(movie).await {
+                let error = format!("Failed to insert movie: {}", e);
+                error!("{}", error);
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
+            }
+        }
     }
 
     // Refresh the cache with the latest movies
-    let refresh_result = match PostgresMovieRepository::from_env().await {
+    let refresh_result = match make_repo().await {
         Ok(mut repo) => repo.get_all().await,
         Err(e) => Err(e),
     };
@@ -651,29 +689,17 @@ pub async fn update_movie_location(
     );
 
     // Update the database
-    database::update_movie_location(
-        request.movie_id,
-        request.location,
-    )
-    .await
-    .map_err(
-        |e| {
-            error!(
-                "Failed to update movie location: {}",
-                e
-            );
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "Failed to update movie location: {}",
-                    e
-                ),
-            )
-        },
-    )?;
+    match make_repo().await {
+        Ok(mut repo) => repo.update_location(request.movie_id, request.location).await,
+        Err(e) => Err(e),
+    }
+    .map_err(|e| {
+        error!("Failed to update movie location: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to update movie location: {}", e))
+    })?;
 
     // Refresh the cache with updated movies
-    let refresh_result = match PostgresMovieRepository::from_env().await {
+    let refresh_result = match make_repo().await {
         Ok(mut repo) => repo.get_all().await,
         Err(e) => Err(e),
     };
@@ -787,7 +813,7 @@ pub async fn list_available_models() -> Result<
 pub async fn get_recent_movies() -> Json<Vec<ScoredMovie>> {
     info!("Getting recent movies");
 
-    let result = match PostgresMovieRepository::from_env().await {
+    let result = match make_repo().await {
         Ok(mut repo) => repo.get_recent(50).await,
         Err(e) => Err(e),
     };
@@ -830,15 +856,8 @@ pub async fn get_recent_releases(
         params.min_year, params.max_year, params.limit
     );
 
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
-            repo.get_by_release_year(
-                params.min_year,
-                params.max_year,
-                params.limit,
-            )
-            .await
-        }
+    let result = match make_repo().await {
+        Ok(mut repo) => repo.get_by_release_year(params.min_year, params.max_year, params.limit).await,
         Err(e) => Err(e),
     };
 
@@ -880,7 +899,7 @@ pub async fn get_random_movies(Query(params): Query<RandomMoviesQuery>) -> Json<
         params.count
     );
 
-    let result = match PostgresMovieRepository::from_env().await {
+    let result = match make_repo().await {
         Ok(mut repo) => repo.get_random(params.count).await,
         Err(e) => Err(e),
     };
@@ -918,7 +937,7 @@ pub async fn get_random_movies(Query(params): Query<RandomMoviesQuery>) -> Json<
 pub async fn get_unknown_location_movies() -> Json<Vec<ScoredMovie>> {
     info!("Getting movies with unknown location");
 
-    let result = match PostgresMovieRepository::from_env().await {
+    let result = match make_repo().await {
         Ok(mut repo) => repo.get_unknown_location(50).await,
         Err(e) => Err(e),
     };
@@ -954,7 +973,7 @@ pub async fn get_unknown_location_movies() -> Json<Vec<ScoredMovie>> {
 #[debug_handler]
 pub async fn unique_locations() -> Json<Vec<String>> {
     info!("Getting unique list of all locations");
-    let result = match PostgresMovieRepository::from_env().await {
+    let result = match make_repo().await {
         Ok(mut repo) => repo.unique_locations().await,
         Err(e) => Err(e),
     };
@@ -974,7 +993,7 @@ pub async fn unique_locations() -> Json<Vec<String>> {
 #[debug_handler]
 pub async fn movies_by_location(Path(location_name): Path<String>) -> Json<Vec<FullMovie>> {
     info!("Getting movies at location: {}", location_name);
-    let result = match PostgresMovieRepository::from_env().await {
+    let result = match make_repo().await {
         Ok(mut repo) => repo.movies_by_location(&location_name).await,
         Err(e) => Err(e),
     };

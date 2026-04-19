@@ -9,6 +9,11 @@ name = "dvd_catalog"
 path = "./src/lib.rs"
 
 
+[features]
+postgres = ["database/postgres"]
+mongo-redis = ["database/mongo-redis"]
+mongo-core = ["database/mongo-core"]
+
 [dependencies]
 axum = "0.8.9"
 axum-macros = "0.5.1"

@@ -7,12 +7,19 @@ readme = "README.md"
 
 [features]
 testing = ["rand"]
+postgres = ["diesel", "diesel-async", "pgvector", "models/postgres"]
+mongo-core = ["mongodb", "bson"]
+mongo-redis = ["mongo-core", "redis"]
 
 [dependencies]
+mongodb = { version = "3.2", optional = true }
+bson = { version = "2.13", features = ["uuid-1", "chrono-0_4"], optional = true }
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"], optional = true }
+futures = "0.3"
 async-trait = "0.1"
 chrono = "0.4"
-diesel = { version = "^2.2.4" }
-diesel-async = { version = "0.8.0", features = ["postgres"] }
+diesel = { version = "^2.2.4", optional = true }
+diesel-async = { version = "0.8.0", features = ["postgres"], optional = true }
 dotenvy = "0.15"
 rand = { version = "0.10", optional = true }
 tokio.workspace = true
@@ -20,6 +27,6 @@ serde.workspace = true
 log.workspace = true
 env_logger.workspace = true
 tracing.workspace = true
-models = { path = "../models", features = ["postgres", "ai"] }
-pgvector = { version = "0.4.0", features = ["diesel"] }
+models = { path = "../models", features = ["ai"] }
+pgvector = { version = "0.4.0", features = ["diesel"], optional = true }
 ai_chat = { path = "../ai_chat" }

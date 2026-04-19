@@ -5,7 +5,11 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use database::{traits::GetAllMovies, FullMovie, PostgresMovieRepository};
+use database::{traits::GetAllMovies, FullMovie};
+#[cfg(not(feature = "mongo-redis"))]
+use database::PostgresMovieRepository;
+#[cfg(feature = "mongo-redis")]
+use database::MongoRedisMovieRepository;
 use dotenvy::dotenv;
 use dvd_catalog::*;
 use log::{error, info, warn};
@@ -39,7 +43,13 @@ async fn main() {
     }
 
     // Load movies into cache state on startup
+    #[cfg(not(feature = "mongo-redis"))]
     let load_result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_all().await,
+        Err(e) => Err(e),
+    };
+    #[cfg(feature = "mongo-redis")]
+    let load_result = match MongoRedisMovieRepository::new().await {
         Ok(mut repo) => repo.get_all().await,
         Err(e) => Err(e),
     };

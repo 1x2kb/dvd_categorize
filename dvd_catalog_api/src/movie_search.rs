@@ -8,8 +8,9 @@ use categorizer_utilities::strip_punctuation;
 use database::{
     question::AiAction,
     traits::SearchMoviesByEmbedding,
-    FullMovie, PostgresMovieRepository,
+    FullMovie,
 };
+use crate::make_repo;
 use log::{error, info};
 use ollama_rs::Ollama;
 use tracing::instrument;
@@ -553,7 +554,7 @@ async fn vector_only_search(
     let vector_start = std::time::Instant::now();
     let vector_results = match embedding(&enhanced_query).await {
         Ok(embedding_vec) => {
-            let search_result = match PostgresMovieRepository::from_env().await {
+            let search_result = match make_repo().await {
                 Ok(mut repo) => repo.search_by_embedding(embedding_vec, (limit * 2) as i64).await,
                 Err(e) => Err(e),
             };
@@ -710,7 +711,7 @@ async fn hybrid_both_search(
             let vector_start = std::time::Instant::now();
             match embedding(&enhanced_query_clone).await {
                 Ok(embedding_vec) => {
-                    let search_result = match PostgresMovieRepository::from_env().await {
+                    let search_result = match make_repo().await {
                         Ok(mut repo) => repo.search_by_embedding(embedding_vec, (limit * 2) as i64).await,
                         Err(e) => Err(e),
                     };
@@ -843,14 +844,10 @@ async fn structured_query_search(
                 structured_query
             );
 
-            match database::get_database_connection().await {
-                Ok(mut conn) => {
-                    match database::structured_search::search_movies_structured(
-                        &structured_query,
-                        &mut conn,
-                    )
-                    .await
-                    {
+            use database::traits::SearchMoviesStructured;
+            match make_repo().await {
+                Ok(mut repo) => {
+                    match repo.search_structured(&structured_query).await {
                         Ok(movies) => {
                             info!(
                                 "Structured search found {} movies in {:.2?}",
@@ -858,49 +855,27 @@ async fn structured_query_search(
                                 start_time.elapsed()
                             );
 
-                            let results: Vec<(
-                                i32,
-                                f32,
-                            )> = movies
+                            let results: Vec<(i32, f32)> = movies
                                 .into_iter()
                                 .take(limit)
                                 .enumerate()
-                                .map(
-                                    |(rank, movie)| {
-                                        let score = 1.0 / (1.0 + rank as f32);
-                                        (
-                                            movie.id, score,
-                                        )
-                                    },
-                                )
+                                .map(|(rank, movie)| {
+                                    let score = 1.0 / (1.0 + rank as f32);
+                                    (movie.id, score)
+                                })
                                 .collect();
 
-                            (
-                                results,
-                                structured_query_str,
-                            )
+                            (results, structured_query_str)
                         }
                         Err(e) => {
-                            error!(
-                                "Structured search database error: {:?}",
-                                e
-                            );
-                            (
-                                Vec::new(),
-                                query.to_string(),
-                            )
+                            error!("Structured search database error: {:?}", e);
+                            (Vec::new(), query.to_string())
                         }
                     }
                 }
                 Err(e) => {
-                    error!(
-                        "Failed to get database connection: {:?}",
-                        e
-                    );
-                    (
-                        Vec::new(),
-                        query.to_string(),
-                    )
+                    error!("Failed to get repo: {:?}", e);
+                    (Vec::new(), query.to_string())
                 }
             }
         }
@@ -1057,7 +1032,7 @@ async fn extract_entities_from_movies(
 #[instrument]
 #[debug_handler]
 pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
-    let dvds = match PostgresMovieRepository::from_env().await {
+    let dvds = match make_repo().await {
         Ok(mut repo) => {
             use database::traits::GetAllMovies;
             repo.get_all().await.unwrap_or_else(|_| Vec::new())

@@ -3,6 +3,7 @@ volumes:
   ollama_data: # Note that this must be created manually. Prevents it from being deleted on docker compose down -v since models are very large files.
     external: true
   redis_data:
+  mongo_data:
 
 services:
   postgres-prod:
@@ -47,12 +48,30 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  mongodb-prod:
+    image: mongo:8
+    ports:
+      - "0.0.0.0:27018:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   redis-prod:
-    image: redis:alpine
+    image: redis/redis-stack-server:latest
     ports:
       - "0.0.0.0:6380:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   diesel_migrate-prod:
@@ -77,8 +96,15 @@ services:
         condition: service_completed_successfully
       postgres-prod:
         condition: service_healthy
+      mongodb-prod:
+        condition: service_healthy
+      redis-prod:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres-prod:5432/app_db
+      MONGODB_URL: mongodb://mongodb-prod:27017
+      MONGODB_DATABASE: dvd_catalog
+      REDIS_URL: redis://redis-prod:6379
       RUST_LOG: ${RUST_LOG:-info}
       server_host: 0.0.0.0
       server_port: 3000

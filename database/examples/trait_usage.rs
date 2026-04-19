@@ -1,3 +1,4 @@
+#[cfg(feature = "postgres")]
 use database::{
     get_database_connection, GetMovieById, GetRecentMovies, MockEmbeddingProvider,
     MockMovieRepository, PostgresMovieRepository, SearchMoviesStructured, StructuredQuery,

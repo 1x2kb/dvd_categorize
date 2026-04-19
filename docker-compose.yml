@@ -56,8 +56,15 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgres://app_user:strongpassword@postgres:5432/app_db
+      MONGODB_URL: mongodb://mongodb:27017
+      MONGODB_DATABASE: dvd_catalog
+      REDIS_URL: redis://redis:6379
       RUST_LOG: "info,dvd_catalog=debug,database=debug,ai_chat=debug,models=debug,csv_utils=debug,categorizer_utilities=debug"
       server_host: ${SERVER_HOST:-0.0.0.0}
       server_port: ${SERVER_PORT:-3000}
@@ -74,12 +81,30 @@ services:
     volumes:
       - ./:/app
 
+  mongodb:
+    image: mongo:8
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   redis:
-    image: redis:alpine
+    image: redis/redis-stack-server:latest
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   diesel_migrate:
@@ -106,5 +131,6 @@ volumes:
   postgres_data:
   redis_data:
   pgdata:
+  mongo_data:
   ollama_data: # Note that this must be created manually. Prevents it from being deleted on docker compose down -v since models are very large files.
     external: true 
