@@ -20,7 +20,7 @@ e2e-mock:
 e2e-headed:
 	cd $(E2E_DIR) && npm run test:headed
 
-e2e-ui:
+e2e-ui: e2e-install
 	cd $(E2E_DIR) && npm run test:ui
 
 e2e-report:
