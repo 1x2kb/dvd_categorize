@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_grapher::BarGraph;
+use dioxus_grapher::{BarGraph, XAxisMode, AutoOptions};
 use models::BarChartData;
 
 #[component]
@@ -17,7 +17,7 @@ pub fn YearChart(
     rsx! {
         div {
             class: "chart-section",
-            h2 { "Top 15 Years by Movie Count" }
+            h2 { "Top 15 Release Years by Movie Count" }
             BarGraph {
                 data: chart_data,
                 width,
@@ -25,7 +25,7 @@ pub fn YearChart(
                 bar_color: "#0891b2".to_string(),
                 x_label: "Year".to_string(),
                 y_label: "Movies".to_string(),
-                skip_labels: 1,
+                x_mode: XAxisMode::Auto(AutoOptions { skip_labels: 1 }),
             }
         }
     }

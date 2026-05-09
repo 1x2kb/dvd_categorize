@@ -2,8 +2,9 @@ use crate::components::movie_grid::MovieGrid;
 use crate::components::browse_bar::BrowseBar;
 use crate::components::search_mode_selector::SearchModeSelector;
 use crate::components::search_bar::SearchBar;
+use crate::components::YearChart;
 use dioxus::prelude::*;
-use models::{ScoredMovie, SearchRequest};
+use models::{ScoredMovie, SearchRequest, BarChartData};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -216,6 +217,11 @@ pub fn AiLiveResults() -> Element {
     let mut original_query = use_signal(String::new);
     let mut selected_model = use_signal(|| None::<String>);
     let mut showing_random = use_signal(|| false);
+    let mut showing_recent_movies = use_signal(|| false);
+    let mut year_data = use_signal(|| BarChartData {
+        labels: vec![],
+        values: vec![],
+    });
     let mut available_models = use_signal(Vec::<models::AvailableModel>::new);
     let mut available_locations = use_signal(Vec::<String>::new);
 
@@ -278,6 +284,8 @@ pub fn AiLiveResults() -> Element {
 
                         is_loading.set(true);
                         showing_random.set(false);
+                        showing_recent_movies.set(false);
+                        year_data.set(BarChartData { labels: vec![], values: vec![] });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -303,6 +311,8 @@ pub fn AiLiveResults() -> Element {
 
                         is_loading.set(true);
                         showing_random.set(false);
+                        showing_recent_movies.set(false);
+                        year_data.set(BarChartData { labels: vec![], values: vec![] });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -328,6 +338,7 @@ pub fn AiLiveResults() -> Element {
 
                         is_loading.set(true);
                         showing_random.set(false);
+                        showing_recent_movies.set(true);
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -342,6 +353,24 @@ pub fn AiLiveResults() -> Element {
                                 movies.set(Arc::new(vec![]));
                             }
                         }
+
+                        // Fetch year stats
+                        let window = web_sys::window().unwrap();
+                        let location = window.location();
+                        let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+                        let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+                        
+                        match reqwest::get(format!("http://{hostname}:{server_port}/stats/movies-by-year")).await {
+                            Ok(resp) => {
+                                if let Ok(data) = resp.json::<BarChartData>().await {
+                                    year_data.set(data);
+                                }
+                            }
+                            Err(err) => {
+                                log::error!("Failed to fetch year stats: {:#?}", err);
+                            }
+                        }
+
                         is_loading.set(false);
                     });
                 },
@@ -353,6 +382,8 @@ pub fn AiLiveResults() -> Element {
 
                         is_loading.set(true);
                         showing_random.set(true);
+                        showing_recent_movies.set(false);
+                        year_data.set(BarChartData { labels: vec![], values: vec![] });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -378,6 +409,8 @@ pub fn AiLiveResults() -> Element {
 
                         is_loading.set(true);
                         showing_random.set(false);
+                        showing_recent_movies.set(false);
+                        year_data.set(BarChartData { labels: vec![], values: vec![] });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -455,6 +488,16 @@ pub fn AiLiveResults() -> Element {
                     span {
                         style: "color: #0891b2; font-weight: 600; font-size: 14px;",
                         "🎲 Showing 3 random movies"
+                    }
+                }
+            }
+
+            // Year chart for recent movies
+            if showing_recent_movies() && !year_data().labels.is_empty() {
+                div {
+                    style: "margin: 16px 0;",
+                    YearChart {
+                        data: year_data,
                     }
                 }
             }
