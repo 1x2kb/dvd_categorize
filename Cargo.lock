@@ -1781,6 +1781,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dioxus_grapher"
+version = "0.1.0"
+dependencies = [
+ "dioxus",
+]
+
+[[package]]
 name = "dirs"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1937,6 +1944,7 @@ dependencies = [
  "chrono",
  "console_error_panic_hook",
  "dioxus",
+ "dioxus_grapher",
  "dotenvy",
  "gloo-timers 0.4.0",
  "log",
