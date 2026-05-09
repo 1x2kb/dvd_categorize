@@ -81,6 +81,9 @@ pub use vector_similarity::VectorSimilarity;
 pub mod roled_message;
 pub use roled_message::*;
 
+pub mod stats;
+pub use stats::*;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatRequest {
     pub messages: Vec<RoledMessage>,

@@ -970,22 +970,189 @@ pub async fn unique_locations() -> Json<Vec<String>> {
         })
 }
 
+/// Get stats overview
 #[instrument]
 #[debug_handler]
-pub async fn movies_by_location(Path(location_name): Path<String>) -> Json<Vec<FullMovie>> {
-    info!("Getting movies at location: {}", location_name);
+pub async fn stats_overview() -> Json<models::StatsOverview> {
+    info!("Getting stats overview");
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.movies_by_location(&location_name).await,
-        Err(e) => Err(e),
+        Ok(mut repo) => repo.get_all().await,
+        Err(e) => {
+            error!("Failed to create repository: {}", e);
+            return Json(models::StatsOverview {
+                total_movies: 0,
+                total_directors: 0,
+                total_actors: 0,
+            });
+        }
     };
 
-    result
-        .map(Json)
-        .unwrap_or_else(|e| {
-            error!(
-                "Failed to get movies for location {}: {}",
-                location_name, e
-            );
-            Json(Vec::new())
-        })
+    match result {
+        Ok(movies) => {
+            use std::collections::HashSet;
+            
+            let total_movies = movies.len();
+            let total_directors = movies.iter()
+                .filter_map(|m| m.director.as_ref())
+                .map(|d| d.name.clone())
+                .collect::<HashSet<_>>()
+                .len();
+            let total_actors = movies.iter()
+                .flat_map(|m| &m.actors)
+                .map(|a| a.name.clone())
+                .collect::<HashSet<_>>()
+                .len();
+            
+            Json(models::StatsOverview {
+                total_movies,
+                total_directors,
+                total_actors,
+            })
+        }
+        Err(e) => {
+            error!("Failed to get movies: {}", e);
+            Json(models::StatsOverview {
+                total_movies: 0,
+                total_directors: 0,
+                total_actors: 0,
+            })
+        }
+    }
+}
+
+/// Get movies by year data (top 15 years by count)
+#[instrument]
+#[debug_handler]
+pub async fn stats_movies_by_year() -> Json<models::BarChartData> {
+    info!("Getting movies by year stats");
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_all().await,
+        Err(e) => {
+            error!("Failed to create repository: {}", e);
+            return Json(models::BarChartData {
+                labels: vec![],
+                values: vec![],
+            });
+        }
+    };
+
+    match result {
+        Ok(movies) => {
+            use std::collections::HashMap;
+            
+            let mut year_counts: HashMap<i32, usize> = HashMap::new();
+            for movie in movies {
+                if movie.release_year > 0 {
+                    *year_counts.entry(movie.release_year).or_insert(0) += 1;
+                }
+            }
+            
+            let mut year_data: Vec<(i32, usize)> = year_counts.into_iter().collect();
+            // Sort by count descending and take top 15
+            year_data.sort_by(|(_, a), (_, b)| b.cmp(a));
+            year_data.truncate(15);
+            // Re-sort by year for display
+            year_data.sort_by_key(|(year, _)| *year);
+            
+            let labels: Vec<String> = year_data.iter().map(|(y, _)| y.to_string()).collect();
+            let values: Vec<f64> = year_data.iter().map(|(_, c)| *c as f64).collect();
+            
+            Json(models::BarChartData { labels, values })
+        }
+        Err(e) => {
+            error!("Failed to get movies: {}", e);
+            Json(models::BarChartData {
+                labels: vec![],
+                values: vec![],
+            })
+        }
+    }
+}
+
+/// Get genre distribution data (top 10)
+#[instrument]
+#[debug_handler]
+pub async fn stats_genres() -> Json<models::PieChartData> {
+    info!("Getting genre distribution stats");
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_all().await,
+        Err(e) => {
+            error!("Failed to create repository: {}", e);
+            return Json(models::PieChartData { data: vec![] });
+        }
+    };
+
+    match result {
+        Ok(movies) => {
+            use std::collections::HashMap;
+            
+            let mut genre_counts: HashMap<String, usize> = HashMap::new();
+            for movie in movies {
+                for genre in &movie.genres {
+                    *genre_counts.entry(genre.clone()).or_insert(0) += 1;
+                }
+            }
+            
+            let mut data: Vec<(String, f64)> = genre_counts
+                .into_iter()
+                .map(|(genre, count)| (genre, count as f64))
+                .collect();
+            
+            // Sort by count descending and take top 10
+            data.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+            data.truncate(10);
+            
+            Json(models::PieChartData { data })
+        }
+        Err(e) => {
+            error!("Failed to get movies: {}", e);
+            Json(models::PieChartData { data: vec![] })
+        }
+    }
+}
+
+/// Get top actors data
+#[instrument]
+#[debug_handler]
+pub async fn stats_top_actors() -> Json<models::BarChartData> {
+    info!("Getting top actors stats");
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.get_all().await,
+        Err(e) => {
+            error!("Failed to create repository: {}", e);
+            return Json(models::BarChartData {
+                labels: vec![],
+                values: vec![],
+            });
+        }
+    };
+
+    match result {
+        Ok(movies) => {
+            use std::collections::HashMap;
+            
+            let mut actor_counts: HashMap<String, usize> = HashMap::new();
+            for movie in movies {
+                for actor in &movie.actors {
+                    *actor_counts.entry(actor.name.clone()).or_insert(0) += 1;
+                }
+            }
+            
+            let mut actor_data: Vec<(String, usize)> = actor_counts.into_iter().collect();
+            actor_data.sort_by(|(_, a), (_, b)| b.cmp(a));
+            actor_data.truncate(10);
+            
+            let labels: Vec<String> = actor_data.iter().map(|(name, _)| name.clone()).collect();
+            let values: Vec<f64> = actor_data.iter().map(|(_, count)| *count as f64).collect();
+            
+            Json(models::BarChartData { labels, values })
+        }
+        Err(e) => {
+            error!("Failed to get movies: {}", e);
+            Json(models::BarChartData {
+                labels: vec![],
+                values: vec![],
+            })
+        }
+    }
 }
