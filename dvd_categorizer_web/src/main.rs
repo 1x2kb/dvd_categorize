@@ -11,6 +11,7 @@ use dotenvy::dotenv;
 use log::error;
 pub use views::insert_media::InsertMedia;
 pub use views::model_pull::ModelPull;
+pub use views::stats::Stats;
 pub use views::{ai_chat::AiChat, ai_live_results::AiLiveResults, movies_list::MoviesList};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -29,6 +30,8 @@ enum Route {
     InsertMedia {},
     #[route("/ai/models")]
     ModelPull {},
+    #[route("/stats")]
+    Stats {},
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
@@ -38,6 +41,7 @@ const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 const MOVIE_GRID_CSS: Asset = asset!("/assets/movie_grid.css");
 const CHAT_CSS: Asset = asset!("/assets/chat.css");
 const AI_LIVE_RESULTS_CSS: Asset = asset!("/assets/ai_live_results.css");
+const STATS_CSS: Asset = asset!("/assets/stats.css");
 
 fn main() {
     console_error_panic_hook::set_once();
@@ -100,6 +104,7 @@ fn App() -> Element {
         document::Link { rel: "stylesheet", href: MOVIE_GRID_CSS }
         document::Link { rel: "stylesheet", href: CHAT_CSS }
         document::Link { rel: "stylesheet", href: AI_LIVE_RESULTS_CSS }
+        document::Link { rel: "stylesheet", href: STATS_CSS }
         Router::<Route> {}
     }
 }
@@ -125,6 +130,9 @@ pub fn Hero() -> Element {
                 }
                 Link {
                     to: Route::ModelPull {}, "Models"
+                }
+                Link {
+                    to: Route::Stats {}, "Stats"
                 }
             }
         }
@@ -163,6 +171,9 @@ fn Navbar() -> Element {
             }
             Link {
                     to: Route::ModelPull {}, "Models"
+            }
+            Link {
+                    to: Route::Stats {}, "Stats"
             }
         }
 
