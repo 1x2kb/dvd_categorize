@@ -71,7 +71,7 @@ pub fn SearchModeSelector(props: SearchModeSelectorProps) -> Element {
                         },
 
                         option { value: "default", "Default" }
-                        for model in props.available_models.read().iter() {
+                        for model in (props.available_models)().iter() {
                             option {
                                 value: "{model.name}",
                                 "{model.name}"

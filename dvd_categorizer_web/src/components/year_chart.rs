@@ -6,10 +6,12 @@ use models::BarChartData;
 pub fn YearChart(
     data: ReadSignal<BarChartData>,
 ) -> Element {
-    let chart_data: Vec<(String, f64)> = data()
+    let data_value = data();
+    let chart_data: Vec<(String, f64)> = data_value
         .labels
-        .into_iter()
-        .zip(data().values.into_iter())
+        .iter()
+        .cloned()
+        .zip(data_value.values.iter().cloned())
         .collect();
     
     rsx! {

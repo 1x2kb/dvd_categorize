@@ -447,6 +447,11 @@ pub fn AiLiveResults() -> Element {
                     input_value: input_value(),
                     on_input_change: move |value| input_value.set(value),
                     on_search: move |_| {
+                        let query = input_value();
+                        let disable_enh = disable_enhancement();
+                        let mode = search_mode();
+                        let model = selected_model();
+                        
                         spawn(async move {
                             if is_loading() {
                                 return;
@@ -454,9 +459,11 @@ pub fn AiLiveResults() -> Element {
 
                             is_loading.set(true);
                             showing_random.set(false);
+                            showing_recent_movies.set(false);
+                            year_data.set(BarChartData { labels: vec![], values: vec![] });
                             movies.set(Arc::new(vec![]));
 
-                            let result = send_search_request(input_value(), disable_enhancement(), search_mode(), selected_model()).await;
+                            let result = send_search_request(query, disable_enh, mode, model).await;
                             match result {
                                 Ok(response) => {
                                     movies.set(Arc::new(response.results));
@@ -493,7 +500,7 @@ pub fn AiLiveResults() -> Element {
             }
 
             // Year chart for recent movies
-            if showing_recent_movies() && !year_data().labels.is_empty() {
+            if showing_recent_movies() {
                 div {
                     style: "margin: 16px 0;",
                     YearChart {

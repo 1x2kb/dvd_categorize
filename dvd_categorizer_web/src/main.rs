@@ -12,7 +12,7 @@ use log::error;
 pub use views::insert_media::InsertMedia;
 pub use views::model_pull::ModelPull;
 pub use views::stats::Stats;
-pub use views::{ai_chat::AiChat, ai_live_results::AiLiveResults, movies_list::MoviesList};
+pub use views::{ai_chat::AiChat, ai_live_results::AiLiveResults};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
@@ -20,8 +20,6 @@ enum Route {
     #[layout(Navbar)]
     #[route("/")]
     Home {},
-    #[route("/movies/list")]
-    MoviesList {},
     #[route("/ai/chat")]
     AiChat {},
     #[route("/ai/live")]
@@ -117,9 +115,6 @@ pub fn Hero() -> Element {
             img { src: HEADER_SVG, id: "header" }
             div { id: "links",
                 Link {
-                    to: Route::MoviesList {}, "List"
-                }
-                Link {
                     to: Route::AiChat {  }, "Chat"
                 }
                 Link {
@@ -155,10 +150,6 @@ fn Navbar() -> Element {
             Link {
                 to: Route::Home {},
                 "Home"
-            }
-            Link {
-                to: Route::MoviesList {  },
-                "List"
             }
             Link {
                 to: Route::AiChat {  }, "Chat"
