@@ -115,4 +115,19 @@
     .chart-section {
         padding: 1rem;
     }
+
+    .chart-section h2 {
+        font-size: 1.25rem;
+    }
+
+    /* Bar charts scroll horizontally on mobile */
+    .year-chart-responsive svg,
+    .actor-chart-responsive svg {
+        min-width: 800px;
+    }
+
+    /* Pie chart scales down on mobile */
+    .genre-chart-responsive {
+        max-width: 100% !important;
+    }
 }
