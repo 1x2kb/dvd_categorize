@@ -140,6 +140,10 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
             get(unique_locations),
         )
         .route(
+            "/location/{location}",
+            get(get_movies_by_location),
+        )
+        .route(
             "/dvd/{id}",
             get(get_dvd),
         )

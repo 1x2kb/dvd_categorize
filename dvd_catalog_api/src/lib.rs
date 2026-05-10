@@ -970,6 +970,27 @@ pub async fn unique_locations() -> Json<Vec<String>> {
         })
 }
 
+#[instrument]
+#[debug_handler]
+pub async fn get_movies_by_location(Path(location): Path<String>) -> Json<Vec<FullMovie>> {
+    info!("Getting movies for location: {}", location);
+    let result = match PostgresMovieRepository::from_env().await {
+        Ok(mut repo) => repo.movies_by_location(&location).await,
+        Err(e) => Err(e),
+    };
+
+    match result {
+        Ok(movies) => {
+            info!("Found {} movies for location '{}'", movies.len(), location);
+            Json(movies)
+        }
+        Err(e) => {
+            error!("Failed to get movies by location: {}", e);
+            Json(Vec::new())
+        }
+    }
+}
+
 /// Get stats overview
 #[instrument]
 #[debug_handler]
