@@ -487,7 +487,7 @@ pub enum SearchMode {
 
 /// Structured query criteria parsed from natural language
 /// Used for dynamic Diesel query building
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, schemars::JsonSchema)]
 pub struct StructuredQuery {
     #[serde(default)]
     pub actors: Vec<String>,

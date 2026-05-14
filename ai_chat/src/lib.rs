@@ -32,6 +32,7 @@ pub mod embedding;
 pub mod live_ui;
 mod prompts;
 pub mod query_enhancement;
+pub mod schema;
 pub mod structured_query_parser;
 
 use std::sync::Arc;
@@ -126,7 +127,8 @@ pub async fn find_related_keys(
     let chat_request = ChatMessageRequest::new(
         DEFAULT_SMALL_MODEL.to_string(),
         messages,
-    );
+    )
+    .format(schema::dvd_filters_schema());
 
     let response = ollama
         .send_chat_messages(chat_request)
@@ -140,14 +142,7 @@ pub async fn find_related_keys(
             .content
     );
 
-    serde_json::from_str(
-        extract_enclosed_content(
-            &response
-                .message
-                .content,
-        ),
-    )
-    .map_err(|e| e.to_string())
+    serde_json::from_str(&response.message.content).map_err(|e| e.to_string())
 }
 
 async fn bot_message(dvds: &[FullMovie], ollama: Arc<OllamaClient>) -> Result<String, String> {
@@ -241,26 +236,6 @@ pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::Oll
         .collect();
 
     Ok(response)
-}
-
-/// Extracts JSON content from a string by finding the outermost braces
-///
-/// # Arguments
-///
-/// * `s` - String potentially containing JSON
-///
-/// # Returns
-///
-/// The substring containing the JSON object, or the original string if no braces found
-fn extract_enclosed_content(s: &str) -> &str {
-    if let Some(start) = s.find('{') {
-        if let Some(end) = s.rfind('}') {
-            if end >= start {
-                return &s[start..=end];
-            }
-        }
-    }
-    s
 }
 
 /// Lists all available Ollama models
