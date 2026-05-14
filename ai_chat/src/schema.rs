@@ -10,3 +10,9 @@ pub fn dvd_filters_schema() -> FormatType {
 pub fn structured_query_schema() -> FormatType {
     FormatType::StructuredJson(Box::new(JsonStructure::new::<StructuredQuery>()))
 }
+
+/// Generate JSON schema for actor array (Vec<String>)
+/// Used by actor_reorder crate to enforce valid JSON array responses
+pub fn actor_array_schema() -> FormatType {
+    FormatType::StructuredJson(Box::new(JsonStructure::new::<Vec<String>>()))
+}

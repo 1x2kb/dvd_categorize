@@ -189,7 +189,8 @@ Output Format:
             ModelOptions::default()
                 .num_ctx(32768)
                 .temperature(0.3)
-        );
+        )
+        .format(ai_chat::schema::actor_array_schema());
 
     let response = ollama
         .send_chat_messages(request)
@@ -198,9 +199,7 @@ Output Format:
 
     let content = response.message.content.trim();
 
-    let json_content = extract_json_array(content);
-
-    let reordered: Vec<String> = serde_json::from_str(json_content)
+    let reordered: Vec<String> = serde_json::from_str(content)
         .map_err(|e| format!("Failed to parse JSON response: {}. Response was: {}", e, content))?;
     
     // Validate only standard English characters - reject accented chars and Chinese
@@ -246,17 +245,6 @@ Output Format:
     }
     
     Ok(reordered)
-}
-
-fn extract_json_array(s: &str) -> &str {
-    if let Some(start) = s.find('[') {
-        if let Some(end) = s.rfind(']') {
-            if end >= start {
-                return &s[start..=end];
-            }
-        }
-    }
-    s
 }
 
 fn read_and_parse_csv_dry_run(args: &Args) -> Result<Vec<FullMovie>, Box<dyn std::error::Error>> {

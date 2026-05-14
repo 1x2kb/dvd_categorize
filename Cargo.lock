@@ -6,6 +6,7 @@ version = 4
 name = "actor_reorder"
 version = "1.0.0"
 dependencies = [
+ "ai_chat",
  "clap",
  "csv",
  "csv_utils",
