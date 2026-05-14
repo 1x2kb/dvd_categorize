@@ -26,6 +26,14 @@ export class LivePage {
     return this.page.locator('.browse-label', { hasText: /browse/i });
   }
 
+  /**
+   * Returns the loading indicator (red dot/spinner) within a specific browse button.
+   * Checks for button with "Loading..." text.
+   */
+  browseButtonLoadingIndicator(label: string): Locator {
+    return this.page.locator('button.browse-button', { hasText: 'Loading...' });
+  }
+
   browseRecentlyAdded(): Locator {
     return this.page.getByRole('button', { name: 'Recently Added' });
   }
@@ -67,6 +75,36 @@ export class LivePage {
 
   movieCards(): Locator {
     return this.page.locator('.movie-card');
+  }
+
+  /**
+   * Returns the title element within a movie card.
+   */
+  movieCardTitle(card: Locator): Locator {
+    return card.locator('.movie-title');
+  }
+
+  /**
+   * Returns the description element within a movie card.
+   */
+  movieCardDescription(card: Locator): Locator {
+    return card.locator('.movie-description');
+  }
+
+  /**
+   * Returns the actors info row within a movie card.
+   */
+  movieCardActors(card: Locator): Locator {
+    return card.locator('.movie-info-row:has-text("Cast:") .movie-info-value');
+  }
+
+  /**
+   * Verifies all expected sub-components exist in a movie card.
+   */
+  async expectMovieCardComplete(card: Locator): Promise<void> {
+    await expect(this.movieCardTitle(card)).toBeVisible();
+    await expect(this.movieCardDescription(card)).toBeVisible();
+    await expect(this.movieCardActors(card)).toBeVisible();
   }
 
   /**

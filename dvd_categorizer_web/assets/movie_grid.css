@@ -15,9 +15,9 @@
 /* Grid layouts */
 .movie-grid {
     display: grid;
-    gap: 20px;
+    gap: 1.25rem;
     max-width: 60vw;
-    margin: 0 auto;
+    margin: 1.25rem auto 0;
     grid-auto-rows: 1fr;
 }
 

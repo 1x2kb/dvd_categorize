@@ -7,9 +7,7 @@ import { LivePage } from '@pages/live.page';
  * These buttons hit plain DB endpoints (random, recent, unknown-location)
  * and do not call Ollama. Safe to run in the `fast` project.
  *
- * Tolerant assertions: we require the loading state to clear and no page
- * error, but do not require a specific number of results. The dev DB may
- * legitimately have zero movies at some location filters.
+ * Verifies results load with complete movie cards (title, description, actors).
  */
 test.describe('browse bar', () => {
   const cases: Array<{ label: string; click: (p: LivePage) => Promise<void> }> = [
@@ -20,15 +18,22 @@ test.describe('browse bar', () => {
   ];
 
   for (const { label, click } of cases) {
-    test(`clicking "${label}" completes without error`, async ({ page }) => {
+    test(`clicking "${label}" loads results with complete movie card`, async ({ page }) => {
       const live = new LivePage(page);
       await live.goto();
 
       await click(live);
+
+      // Wait for loading to complete (button re-enables, "Loading..." clears)
       await live.waitForIdle();
 
       // No unhandled error banner.
       await expect(page.getByText(/failed to load|error occurred/i)).toHaveCount(0);
+
+      // Results should appear with complete movie card (title, description, actors).
+      const firstCard = live.movieCards().first();
+      await expect(firstCard).toBeVisible({ timeout: 10_000 });
+      await live.expectMovieCardComplete(firstCard);
     });
   }
 });

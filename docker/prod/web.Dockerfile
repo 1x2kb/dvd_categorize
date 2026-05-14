@@ -4,7 +4,7 @@ FROM rust:latest AS builder
 WORKDIR /app
 
 # Install dioxus CLI (match runtime dioxus version in Cargo.lock)
-RUN cargo install --locked dioxus-cli --version 0.7.5
+RUN cargo install --locked dioxus-cli --version 0.7.9
 
 # Copy all source code
 COPY . .
