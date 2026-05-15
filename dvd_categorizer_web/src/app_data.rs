@@ -5,4 +5,5 @@ use models::RoledMessage;
 #[derive(Clone)]
 pub struct AppData {
     pub ai_chat: Signal<Option<Vec<RoledMessage>>>,
+    pub chat_session_id: Signal<Option<String>>,
 }

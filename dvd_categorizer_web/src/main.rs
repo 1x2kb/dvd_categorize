@@ -41,7 +41,7 @@ const STATS_CSS: Asset = asset!("/assets/stats.css");
 fn main() {
     console_error_panic_hook::set_once();
     wasm_logger::init(wasm_logger::Config::default());
-    
+
     if let Err(e) = dotenv() {
         error!(
             "Error loading .env file: {}",
@@ -59,6 +59,7 @@ fn App() -> Element {
     let app_data = use_signal(
         || AppData {
             ai_chat: Signal::new(None),
+            chat_session_id: Signal::new(None),
         },
     );
 

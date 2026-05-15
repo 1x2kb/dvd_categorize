@@ -29,6 +29,98 @@ impl PostgresMovieRepository {
         let pool = crate::get_connection_pool().await?;
         Ok(Self::new(pool))
     }
+
+    // Chat history methods
+    
+    pub async fn create_chat_session(&self) -> Result<uuid::Uuid, DatabaseError> {
+        use models::{NewChatSession, schema::chat_sessions};
+        
+        let session_id = uuid::Uuid::new_v4();
+        let new_session = NewChatSession { session_id };
+        
+        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
+            diesel::ConnectionError::BadConnection(e.to_string())
+        ))?;
+        
+        diesel::insert_into(chat_sessions::table)
+            .values(&new_session)
+            .execute(&mut conn)
+            .await?;
+        
+        Ok(session_id)
+    }
+    
+    pub async fn get_chat_history(
+        &self,
+        session_id: uuid::Uuid,
+    ) -> Result<Vec<models::ChatMessage>, DatabaseError> {
+        use models::schema::chat_messages;
+        
+        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
+            diesel::ConnectionError::BadConnection(e.to_string())
+        ))?;
+        
+        chat_messages::table
+            .filter(chat_messages::session_id.eq(session_id))
+            .order(chat_messages::created_at.asc())
+            .load(&mut conn)
+            .await
+            .map_err(Into::into)
+    }
+    
+    pub async fn save_chat_message(
+        &self,
+        message: models::NewChatMessage,
+    ) -> Result<(), DatabaseError> {
+        use models::schema::{chat_messages, chat_sessions};
+        
+        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
+            diesel::ConnectionError::BadConnection(e.to_string())
+        ))?;
+        
+        diesel::insert_into(chat_messages::table)
+            .values(&message)
+            .execute(&mut conn)
+            .await?;
+        
+        // Update session timestamp
+        diesel::update(chat_sessions::table)
+            .filter(chat_sessions::session_id.eq(message.session_id))
+            .set(chat_sessions::updated_at.eq(diesel::dsl::now))
+            .execute(&mut conn)
+            .await?;
+        
+        Ok(())
+    }
+    
+    pub async fn list_chat_sessions(
+        &self,
+    ) -> Result<Vec<models::ChatSession>, DatabaseError> {
+        use models::schema::chat_sessions;
+        
+        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
+            diesel::ConnectionError::BadConnection(e.to_string())
+        ))?;
+        
+        chat_sessions::table
+            .order(chat_sessions::updated_at.desc())
+            .load(&mut conn)
+            .await
+            .map_err(Into::into)
+    }
+    
+    pub async fn search_structured(
+        &self,
+        query: &models::StructuredQuery,
+    ) -> Result<Vec<FullMovie>, DatabaseError> {
+        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
+            diesel::ConnectionError::BadConnection(e.to_string())
+        ))?;
+        
+        crate::structured_search::search_movies_structured(query, &mut conn)
+            .await
+            .map_err(Into::into)
+    }
 }
 
 // Movie trait implementations

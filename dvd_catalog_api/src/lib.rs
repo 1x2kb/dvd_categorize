@@ -29,6 +29,11 @@ pub struct CacheState {
     pub movies: Arc<tokio::sync::RwLock<Vec<FullMovie>>>,
 }
 
+#[derive(Clone)]
+pub struct DbState {
+    pub pool: database::PostgresMovieRepository,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct RandomMoviesQuery {
     #[serde(default = "default_count")]
@@ -204,10 +209,86 @@ pub async fn chat(
     }
 }
 
-/// SSE streaming chat endpoint
-#[instrument]
-#[debug_handler]
+/// Extract movie search query from user message using Ollama
+async fn extract_movie_query(message: &str) -> Option<models::StructuredQuery> {
+    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
+    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
+    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
+    let ollama = ollama_rs::Ollama::from_url(ollama_url.parse().unwrap());
+
+    let prompt = format!(
+        r#"Extract movie search parameters from this message. Return JSON with these fields (all optional):
+- title_keywords: array of title keyword strings
+- actors: array of actor name strings  
+- genres: array of genre strings
+- directors: array of director name strings
+- description_keywords: array of description/plot keyword strings
+
+If message is NOT about searching/finding movies, return {{"is_movie_query": false}}.
+If it IS about movies, return {{"is_movie_query": true, ...other fields...}}.
+
+Message: "{}"
+
+Return only valid JSON, no explanation."#,
+        message
+    );
+
+    let chat_request = ollama_rs::generation::chat::request::ChatMessageRequest::new(
+        "phi3.5".to_string(),
+        vec![ollama_rs::generation::chat::ChatMessage::user(prompt)],
+    );
+
+    match ollama.send_chat_messages(chat_request).await {
+        Ok(response) => {
+            let json_str = response.message.content.trim();
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
+                if value.get("is_movie_query").and_then(|v| v.as_bool()) == Some(false) {
+                    return None;
+                }
+                
+                // Parse into StructuredQuery
+                let query = models::StructuredQuery {
+                    title_keywords: value.get("title_keywords")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .unwrap_or_default(),
+                    actors: value.get("actors")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .unwrap_or_default(),
+                    genres: value.get("genres")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .unwrap_or_default(),
+                    directors: value.get("directors")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .unwrap_or_default(),
+                    description_keywords: value.get("description_keywords")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .unwrap_or_default(),
+                };
+                
+                // Only return if has some criteria
+                if !query.title_keywords.is_empty() || !query.actors.is_empty() || !query.genres.is_empty() 
+                    || !query.directors.is_empty() || !query.description_keywords.is_empty() {
+                    return Some(query);
+                }
+            }
+            None
+        }
+        Err(e) => {
+            error!("Failed to extract movie query: {:?}", e);
+            None
+        }
+    }
+}
+
+/// SSE streaming chat endpoint with RAG
+#[instrument(skip(db_state))]
 pub async fn chat_stream(
+    State(db_state): State<DbState>,
     Json(request): Json<models::ChatRequest>,
 ) -> impl IntoResponse {
     info!(
@@ -215,12 +296,72 @@ pub async fn chat_stream(
         request.messages.len()
     );
 
-    // Convert chat history to Ollama format
+    // Get or create session
+    let session_id = match request.session_id.and_then(|s| uuid::Uuid::parse_str(&s).ok()) {
+        Some(id) => id,
+        None => match db_state.pool.create_chat_session().await {
+            Ok(id) => id,
+            Err(e) => {
+                error!("Failed to create session: {:?}", e);
+                let error_stream = async_stream::stream! {
+                    yield Ok::<Event, std::convert::Infallible>(Event::default()
+                        .event("error")
+                        .data("Failed to create session"));
+                };
+                return Sse::new(error_stream).keep_alive(axum::response::sse::KeepAlive::default()).into_response();
+            }
+        }
+    };
+
+    // Load history from DB
+    let history_messages = db_state.pool.get_chat_history(session_id).await.unwrap_or_default();
+    
+    // RAG: Extract movie query from user message
+    let user_message = request.messages.first().map(|m| m.message.as_str()).unwrap_or("");
+    let movie_context = if let Some(query) = extract_movie_query(user_message).await {
+        info!("Detected movie query: {:?}", query);
+        
+        // Search movies from DB using structured query  
+        let results = db_state.pool.search_structured(&query).await.unwrap_or_default();
+        
+        if results.is_empty() {
+            "\n\nNo movies found matching the query.".to_string()
+        } else {
+            let movie_list = results.iter()
+                .take(10)
+                .map(|m| format!("- {} ({}) - Directed by {}, Starring: {}", 
+                    m.name, 
+                    m.release_year,
+                    m.director.as_ref().map(|d| d.name.as_str()).unwrap_or("Unknown"),
+                    m.actors.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
+                ))
+                .collect::<Vec<_>>()
+                .join("\n");
+            
+            format!("\n\nAvailable movies matching your query:\n{}", movie_list)
+        }
+    } else {
+        String::new()
+    };
+    
+    // Build system prompt with optional movie context
+    let system_prompt = format!(
+        "You are a friendly and knowledgeable assistant. You can help with any topic the user asks about. \
+         Be conversational, helpful, and concise.{}",
+        movie_context
+    );
+    
+    // Convert chat history to Ollama format (system + history + new messages)
     let messages: Vec<ollama_rs::generation::chat::ChatMessage> = std::iter::once(
-        ollama_rs::generation::chat::ChatMessage::system(
-            "You are a friendly and knowledgeable assistant. You can help with any topic the user asks about. \
-             Be conversational, helpful, and concise.".to_string()
-        )
+        ollama_rs::generation::chat::ChatMessage::system(system_prompt)
+    )
+    .chain(
+        history_messages.iter().map(|msg| {
+            match msg.role.as_str() {
+                "user" => ollama_rs::generation::chat::ChatMessage::user(msg.content.clone()),
+                _ => ollama_rs::generation::chat::ChatMessage::assistant(msg.content.clone()),
+            }
+        })
     )
     .chain(
         request.messages.iter().map(|msg| {
@@ -249,6 +390,17 @@ pub async fn chat_stream(
         messages,
     );
 
+    // Save user messages to DB
+    for msg in &request.messages {
+        if let Err(e) = db_state.pool.save_chat_message(models::NewChatMessage {
+            session_id,
+            role: "user".to_string(),
+            content: msg.message.clone(),
+        }).await {
+            error!("Failed to save user message: {:?}", e);
+        }
+    }
+
     // Get Ollama stream
     let ollama_stream = match ollama.send_chat_messages_stream(chat_request).await {
         Ok(stream) => stream,
@@ -264,15 +416,22 @@ pub async fn chat_stream(
         }
     };
 
-    // Convert to SSE stream
+    // Clone for saving
+    let db_pool = db_state.pool.clone();
+    
+    // Convert to SSE stream with response accumulation
     let sse_stream = async_stream::stream! {
         tokio::pin!(ollama_stream);
+        let mut accumulated_response = String::new();
         
         while let Some(chunk) = ollama_stream.next().await {
             match chunk {
                 Ok(response) => {
-                    // Send content chunk
+                    // Accumulate content
                     if !response.message.content.is_empty() {
+                        accumulated_response.push_str(&response.message.content);
+                        
+                        // Send content chunk
                         yield Ok::<Event, std::convert::Infallible>(Event::default()
                             .event("message")
                             .data(response.message.content));
@@ -280,6 +439,22 @@ pub async fn chat_stream(
                     
                     // Send done event on final chunk
                     if response.done {
+                        // Save AI response to DB
+                        if !accumulated_response.is_empty() {
+                            if let Err(e) = db_pool.save_chat_message(models::NewChatMessage {
+                                session_id,
+                                role: "assistant".to_string(),
+                                content: accumulated_response.clone(),
+                            }).await {
+                                error!("Failed to save AI response: {:?}", e);
+                            }
+                        }
+                        
+                        // Send session ID
+                        yield Ok::<Event, std::convert::Infallible>(Event::default()
+                            .event("session")
+                            .data(session_id.to_string()));
+                        
                         yield Ok::<Event, std::convert::Infallible>(Event::default()
                             .event("done")
                             .data(""));

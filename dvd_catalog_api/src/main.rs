@@ -39,10 +39,8 @@ async fn main() {
     }
 
     // Load movies into cache state on startup
-    let load_result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.get_all().await,
-        Err(e) => Err(e),
-    };
+    let db_pool = PostgresMovieRepository::from_env().await.expect("Failed to create DB pool");
+    let load_result = db_pool.get_all().await;
     let movies = match load_result {
         Ok(movies) => {
             info!(
@@ -61,7 +59,7 @@ async fn main() {
     };
 
     // Create the router with the initial movie data
-    let app = init_router(movies);
+    let app = init_router(movies, db_pool);
 
     let connection = get_host();
     info!(
@@ -99,10 +97,15 @@ fn get_host() -> String {
     format!("{host}:{port}")
 }
 
-fn init_router(movies: Vec<FullMovie>) -> Router {
+fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Router {
     // Create state with the provided movies wrapped in Arc<RwLock<>>
     let state = CacheState {
         movies: Arc::new(tokio::sync::RwLock::new(movies)),
+    };
+
+    // Create DB state for chat history
+    let db_state = DbState {
+        pool: db_pool,
     };
 
     // Create a router for endpoints that need CacheState
@@ -120,10 +123,6 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
             post(chat),
         )
         .route(
-            "/ai/chat/stream",
-            post(chat_stream),
-        )
-        .route(
             "/movie/location",
             post(update_movie_location),
         )
@@ -136,6 +135,14 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
             get(export_csv),
         )
         .with_state(state);
+
+    // Create router for chat streaming with DB state
+    let chat_stream_router = Router::new()
+        .route(
+            "/ai/chat/stream",
+            post(chat_stream),
+        )
+        .with_state(db_state);
 
     // Create a router for stateless endpoints
     let stateless_router = Router::new()
@@ -203,6 +210,7 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
     // Merge the routers
     Router::new()
         .merge(stateful_router)
+        .merge(chat_stream_router)
         .merge(stateless_router)
         .layer(
             CorsLayer::new()

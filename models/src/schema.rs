@@ -15,6 +15,32 @@ diesel::table! {
     use diesel::sql_types::*;
     use pgvector::sql_types::*;
 
+    chat_messages (id) {
+        id -> Int4,
+        session_id -> Uuid,
+        #[max_length = 20]
+        role -> Varchar,
+        content -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use pgvector::sql_types::*;
+
+    chat_sessions (id) {
+        id -> Int4,
+        session_id -> Uuid,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use pgvector::sql_types::*;
+
     director (id) {
         id -> Int4,
         #[max_length = 100]
@@ -70,4 +96,11 @@ diesel::joinable!(movie_actor -> movie (movie_id));
 diesel::joinable!(movie_genre -> movie (movie_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    actor,director,movie,movie_actor,movie_genre,);
+    actor,
+    chat_messages,
+    chat_sessions,
+    director,
+    movie,
+    movie_actor,
+    movie_genre,
+);

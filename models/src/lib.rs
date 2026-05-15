@@ -89,6 +89,8 @@ pub use query_spec::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     pub messages: Vec<RoledMessage>,
     pub model: Option<String>,
 }
@@ -96,6 +98,43 @@ pub struct ChatRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
     pub message: String,
+}
+
+#[cfg(feature = "postgres")]
+#[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::chat_sessions, check_for_backend(diesel::pg::Pg)))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatSession {
+    pub id: i32,
+    pub session_id: uuid::Uuid,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
+}
+
+#[cfg(feature = "postgres")]
+#[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::chat_sessions, check_for_backend(diesel::pg::Pg)))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewChatSession {
+    pub session_id: uuid::Uuid,
+}
+
+#[cfg(feature = "postgres")]
+#[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::chat_messages, check_for_backend(diesel::pg::Pg)))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub id: i32,
+    pub session_id: uuid::Uuid,
+    pub role: String,
+    pub content: String,
+    pub created_at: chrono::NaiveDateTime,
+}
+
+#[cfg(feature = "postgres")]
+#[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::chat_messages, check_for_backend(diesel::pg::Pg)))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewChatMessage {
+    pub session_id: uuid::Uuid,
+    pub role: String,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

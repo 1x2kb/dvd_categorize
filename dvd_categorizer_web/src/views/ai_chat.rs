@@ -32,9 +32,11 @@ async fn send_streaming_message(
 
     streaming_response.set(String::new());
 
-    let messages = app_data.read().ai_chat.read().clone().unwrap_or_default();
+    // Only send new message - backend loads history from DB
+    let session_id = app_data.read().chat_session_id.read().clone();
     let chat_request = ChatRequest {
-        messages,
+        session_id,
+        messages: vec![user_message.clone()],
         model: Some("phi3.5".to_string()),
     };
 
@@ -134,14 +136,22 @@ async fn send_streaming_message(
             buffer.push_str(text);
             
             // Process complete SSE lines
+            let mut current_event = String::new();
             while let Some(newline_pos) = buffer.find('\n') {
                 let line = buffer[..newline_pos].trim().to_string();
                 buffer.drain(..=newline_pos);
                 
-                if line.starts_with("data: ") {
+                if line.starts_with("event: ") {
+                    current_event = line[7..].to_string();
+                } else if line.starts_with("data: ") {
                     let data = &line[6..];
-                    accumulated.push_str(data);
-                    streaming_response.set(accumulated.clone());
+                    
+                    if current_event == "message" {
+                        accumulated.push_str(data);
+                        streaming_response.set(accumulated.clone());
+                    } else if current_event == "session" {
+                        app_data.write().chat_session_id.set(Some(data.to_string()));
+                    }
                 } else if line.starts_with("event: done") {
                     break;
                 } else if line.starts_with("event: error") {
