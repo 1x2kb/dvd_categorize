@@ -1,9 +1,10 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, sse::{Event, Sse}},
     Json,
 };
+use tokio_stream::StreamExt;
 use axum_macros::debug_handler;
 use database::{
     traits::{
@@ -201,6 +202,102 @@ pub async fn chat(
             ))
         }
     }
+}
+
+/// SSE streaming chat endpoint
+#[instrument]
+#[debug_handler]
+pub async fn chat_stream(
+    Json(request): Json<models::ChatRequest>,
+) -> impl IntoResponse {
+    info!(
+        "Processing streaming chat request with {} message(s)",
+        request.messages.len()
+    );
+
+    // Convert chat history to Ollama format
+    let messages: Vec<ollama_rs::generation::chat::ChatMessage> = std::iter::once(
+        ollama_rs::generation::chat::ChatMessage::system(
+            "You are a friendly and knowledgeable assistant. You can help with any topic the user asks about. \
+             Be conversational, helpful, and concise.".to_string()
+        )
+    )
+    .chain(
+        request.messages.iter().map(|msg| {
+            match msg.role {
+                models::Role::User => ollama_rs::generation::chat::ChatMessage::user(msg.message.clone()),
+                models::Role::Ai => ollama_rs::generation::chat::ChatMessage::assistant(msg.message.clone()),
+            }
+        })
+    )
+    .collect();
+
+    // Get model name from request or use default
+    let model = request.model.unwrap_or_else(|| "phi3.5".to_string());
+    info!("Using model: {} for streaming", model);
+
+    // Create Ollama client
+    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
+    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
+    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
+
+    let ollama = ollama_rs::Ollama::from_url(ollama_url.parse().unwrap());
+
+    // Create chat request
+    let chat_request = ollama_rs::generation::chat::request::ChatMessageRequest::new(
+        model.clone(),
+        messages,
+    );
+
+    // Get Ollama stream
+    let ollama_stream = match ollama.send_chat_messages_stream(chat_request).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            error!("Failed to start stream: {:?}", e);
+            // Return error as single SSE event
+            let error_stream = async_stream::stream! {
+                yield Ok::<Event, std::convert::Infallible>(Event::default()
+                    .event("error")
+                    .data(format!("Failed to start stream: {}", e)));
+            };
+            return Sse::new(error_stream).keep_alive(axum::response::sse::KeepAlive::default()).into_response();
+        }
+    };
+
+    // Convert to SSE stream
+    let sse_stream = async_stream::stream! {
+        tokio::pin!(ollama_stream);
+        
+        while let Some(chunk) = ollama_stream.next().await {
+            match chunk {
+                Ok(response) => {
+                    // Send content chunk
+                    if !response.message.content.is_empty() {
+                        yield Ok::<Event, std::convert::Infallible>(Event::default()
+                            .event("message")
+                            .data(response.message.content));
+                    }
+                    
+                    // Send done event on final chunk
+                    if response.done {
+                        yield Ok::<Event, std::convert::Infallible>(Event::default()
+                            .event("done")
+                            .data(""));
+                        break;
+                    }
+                }
+                Err(e) => {
+                    error!("Stream error: {:?}", e);
+                    yield Ok::<Event, std::convert::Infallible>(Event::default()
+                        .event("error")
+                        .data(format!("Stream error: {:?}", e)));
+                    break;
+                }
+            }
+        }
+    };
+
+    Sse::new(sse_stream).keep_alive(axum::response::sse::KeepAlive::default()).into_response()
 }
 
 #[instrument(skip(cache_state), fields(movie_count))]

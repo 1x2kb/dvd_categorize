@@ -10,28 +10,28 @@ use crate::DatabaseError;
 
 #[async_trait]
 pub trait GetMovieById: Send + Sync {
-    async fn get_by_id(&mut self, id: i32) -> Result<FullMovie, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<FullMovie, DatabaseError>;
 }
 
 #[async_trait]
 pub trait GetMoviesByIds: Send + Sync {
-    async fn get_by_ids(&mut self, ids: Vec<i32>) -> Result<Vec<FullMovie>, DatabaseError>;
+    async fn get_by_ids(&self, ids: Vec<i32>) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
 #[async_trait]
 pub trait GetAllMovies: Send + Sync {
-    async fn get_all(&mut self) -> Result<Vec<FullMovie>, DatabaseError>;
+    async fn get_all(&self) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
 #[async_trait]
 pub trait InsertMovie: Send + Sync {
-    async fn insert(&mut self, full_movie: FullMovie) -> Result<FullMovie, DatabaseError>;
+    async fn insert(&self, full_movie: FullMovie) -> Result<FullMovie, DatabaseError>;
 }
 
 #[async_trait]
 pub trait InsertMovies: Send + Sync {
     async fn insert_batch(
-        &mut self,
+        &self,
         movies: &[NewMovie],
     ) -> Result<
         Vec<(
@@ -45,7 +45,7 @@ pub trait InsertMovies: Send + Sync {
 #[async_trait]
 pub trait UpdateMovieLocation: Send + Sync {
     async fn update_location(
-        &mut self,
+        &self,
         movie_id: i32,
         location: String,
     ) -> Result<(), DatabaseError>;
@@ -54,7 +54,7 @@ pub trait UpdateMovieLocation: Send + Sync {
 #[async_trait]
 pub trait SearchMoviesByEmbedding: Send + Sync {
     async fn search_by_embedding(
-        &mut self,
+        &self,
         embedding: Vec<f32>,
         limit: i64,
     ) -> Result<Vec<FullMovie>, DatabaseError>;
@@ -62,18 +62,18 @@ pub trait SearchMoviesByEmbedding: Send + Sync {
 
 #[async_trait]
 pub trait GetRecentMovies: Send + Sync {
-    async fn get_recent(&mut self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError>;
+    async fn get_recent(&self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
 #[async_trait]
 pub trait RandomMovies: Send + Sync {
-    async fn get_random(&mut self, count: i64) -> Result<Vec<FullMovie>, DatabaseError>;
+    async fn get_random(&self, count: i64) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
 #[async_trait]
 pub trait GetMoviesByReleaseYear: Send + Sync {
     async fn get_by_release_year(
-        &mut self,
+        &self,
         min_year: i32,
         max_year: i32,
         limit: i64,
@@ -82,23 +82,23 @@ pub trait GetMoviesByReleaseYear: Send + Sync {
 
 #[async_trait]
 pub trait GetUnknownLocationMovies: Send + Sync {
-    async fn get_unknown_location(&mut self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError>;
+    async fn get_unknown_location(&self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
 #[async_trait]
 pub trait GetUniqueLocations: Send + Sync {
-    async fn unique_locations(&mut self) -> Result<Vec<String>, DatabaseError>;
+    async fn unique_locations(&self) -> Result<Vec<String>, DatabaseError>;
 }
 
 #[async_trait]
 pub trait MoviesByLocation: Send + Sync {
-    async fn movies_by_location(&mut self, location_name: &str) -> Result<Vec<FullMovie>, DatabaseError>;
+    async fn movies_by_location(&self, location_name: &str) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
 #[async_trait]
 pub trait SearchMoviesStructured: Send + Sync {
     async fn search_structured(
-        &mut self,
+        &self,
         query: &StructuredQuery,
     ) -> Result<Vec<FullMovie>, DatabaseError>;
 }
@@ -108,7 +108,7 @@ pub trait SearchMoviesStructured: Send + Sync {
 #[async_trait]
 pub trait InsertActors: Send + Sync {
     async fn insert_batch(
-        &mut self,
+        &self,
         actors: &[NewActor],
     ) -> Result<
         Vec<(
@@ -121,13 +121,13 @@ pub trait InsertActors: Send + Sync {
 
 #[async_trait]
 pub trait GetActorsForMovie: Send + Sync {
-    async fn get_for_movie(&mut self, movie: &Movie) -> Result<Vec<Actor>, DatabaseError>;
+    async fn get_for_movie(&self, movie: &Movie) -> Result<Vec<Actor>, DatabaseError>;
 }
 
 #[async_trait]
 pub trait InsertMovieActorAssociations: Send + Sync {
     async fn insert_movie_associations(
-        &mut self,
+        &self,
         associations: &[NewMovieActor],
     ) -> Result<usize, DatabaseError>;
 }
@@ -137,7 +137,7 @@ pub trait InsertMovieActorAssociations: Send + Sync {
 #[async_trait]
 pub trait InsertDirectors: Send + Sync {
     async fn insert_batch(
-        &mut self,
+        &self,
         directors: &[NewDirector],
     ) -> Result<
         Vec<(
@@ -152,18 +152,18 @@ pub trait InsertDirectors: Send + Sync {
 
 #[async_trait]
 pub trait GetAllGenres: Send + Sync {
-    async fn get_all(&mut self) -> Result<Vec<String>, DatabaseError>;
+    async fn get_all(&self) -> Result<Vec<String>, DatabaseError>;
 }
 
 #[async_trait]
 pub trait GetGenresForMovie: Send + Sync {
-    async fn get_for_movie(&mut self, movie: &Movie) -> Result<Vec<String>, DatabaseError>;
+    async fn get_for_movie(&self, movie: &Movie) -> Result<Vec<String>, DatabaseError>;
 }
 
 #[async_trait]
 pub trait InsertMovieGenreAssociations: Send + Sync {
     async fn insert_movie_associations(
-        &mut self,
+        &self,
         associations: &[NewMovieGenre],
     ) -> Result<usize, DatabaseError>;
 }

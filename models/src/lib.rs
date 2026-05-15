@@ -84,6 +84,9 @@ pub use roled_message::*;
 pub mod stats;
 pub use stats::*;
 
+pub mod query_spec;
+pub use query_spec::*;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatRequest {
     pub messages: Vec<RoledMessage>,

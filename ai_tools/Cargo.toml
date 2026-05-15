@@ -1,0 +1,17 @@
+[package]
+name = "ai_tools"
+version = "1.0.0"
+edition = "2021"
+description = "Tool functions bridging AI chat and database for Ollama function calling"
+
+[dependencies]
+database = { path = "../database" }
+models = { path = "../models", features = ["postgres"] }
+ollama-rs.workspace = true
+diesel = { workspace = true, features = ["postgres"] }
+diesel-async.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars = "1.2"
+log.workspace = true
+tokio.workspace = true

@@ -13,6 +13,9 @@ path = "./src/lib.rs"
 axum = "0.8.9"
 axum-macros = "0.5.1"
 tower-http = { version = "0.6", features = ["cors"] }
+async-stream.workspace = true
+futures-util = "0.3"
+tokio-stream = "0.1"
 log.workspace = true
 env_logger.workspace = true
 tracing.workspace = true

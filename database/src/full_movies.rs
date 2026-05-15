@@ -55,15 +55,13 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
     )
     .await?;
 
+    // TODO: Fix circular dependency - move embedding generation to caller
     let embeddings: Vec<String> = full_movies
         .iter()
         .map(|movie| movie.embedding_str())
         .collect();
-    let embeddings = ai_chat::get_embeddings(
-        embeddings,
-        ai_chat::EMBEDDING_MODEL,
-    )
-    .await?;
+    // let embeddings = ai_chat::get_embeddings(embeddings, ai_chat::EMBEDDING_MODEL).await?;
+    let embeddings: Vec<Vec<f32>> = vec![vec![]; embeddings.len()]; // Stub
 
     let movies: Vec<NewMovie> = full_movies
         .iter_mut()
