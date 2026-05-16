@@ -8,8 +8,10 @@ pub mod stats_overview;
 pub mod year_chart;
 pub mod genre_chart;
 pub mod actor_chart;
+pub mod markdown;
 
 pub use stats_overview::StatsOverviewCard;
 pub use year_chart::YearChart;
 pub use genre_chart::GenreChart;
 pub use actor_chart::ActorChart;
+pub use markdown::Markdown;

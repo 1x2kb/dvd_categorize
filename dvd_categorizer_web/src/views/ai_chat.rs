@@ -4,7 +4,8 @@ use models::{ChatRequest, Role, RoledMessage};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
-use crate::app_data::AppData;
+use crate::app_data::{AppData, ChatSession};
+use crate::components::Markdown;
 
 async fn send_streaming_message(
     message: String,
@@ -184,6 +185,29 @@ pub fn AiChat() -> Element {
     let mut input_value = use_signal(String::new);
     let mut is_loading = use_signal(|| false);
     let mut streaming_response = use_signal(String::new);
+    let mut show_history = use_signal(|| false);
+
+    // Load chat sessions on mount
+    use_effect(move || {
+        spawn(async move {
+            let window = web_sys::window().unwrap();
+            let location = window.location();
+            let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+            let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+            let url = format!("http://{hostname}:{server_port}/ai/chat/sessions");
+
+            match gloo_net::http::Request::get(&url).send().await {
+                Ok(response) => {
+                    if let Ok(sessions) = response.json::<Vec<ChatSession>>().await {
+                        app_data.write().chat_sessions.set(sessions);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to load chat sessions: {:?}", e);
+                }
+            }
+        });
+    });
 
     use_effect(move || {
         if let Some(messages) = app_data.read().ai_chat.read().as_ref() {
@@ -207,6 +231,157 @@ pub fn AiChat() -> Element {
                 class: "chat-header",
                 h2 { "Movie Collection Chat" }
                 p { class: "chat-subtitle", "Ask me anything about your DVD collection" }
+                div { class: "header-actions",
+                    if let Some(session_id) = app_data.read().chat_session_id.read().as_ref() {
+                        div { class: "session-id-display",
+                            "Session: {session_id}"
+                        }
+                    }
+                    button {
+                        class: "history-toggle",
+                        onclick: move |_| {
+                            let new_state = !show_history();
+                            show_history.set(new_state);
+                            
+                            // Toggle body scroll
+                            if let Some(window) = web_sys::window() {
+                                if let Some(document) = window.document() {
+                                    if let Some(body) = document.body() {
+                                        if new_state {
+                                            body.set_class_name("modal-open");
+                                        } else {
+                                            body.set_class_name("");
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            spawn(async move {
+                                let window = web_sys::window().unwrap();
+                                let location = window.location();
+                                let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+                                let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+                                let url = format!("http://{hostname}:{server_port}/ai/chat/sessions");
+
+                                match gloo_net::http::Request::get(&url).send().await {
+                                    Ok(response) => {
+                                        if let Ok(sessions) = response.json::<Vec<ChatSession>>().await {
+                                            app_data.write().chat_sessions.set(sessions);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to load chat sessions: {:?}", e);
+                                    }
+                                }
+                            });
+                        },
+                        "Show History"
+                    }
+                }
+            }
+
+            if *show_history.read() {
+                div {
+                    class: "modal-overlay",
+                    onclick: move |_| {
+                        show_history.set(false);
+                        if let Some(window) = web_sys::window() {
+                            if let Some(document) = window.document() {
+                                if let Some(body) = document.body() {
+                                    body.set_class_name("");
+                                }
+                            }
+                        }
+                    },
+                    div {
+                        class: "modal-content",
+                        onclick: move |e| e.stop_propagation(),
+                        h3 { "Chat History" }
+                        button {
+                            class: "new-chat-btn",
+                            onclick: move |_| {
+                                app_data.write().ai_chat.set(None);
+                                app_data.write().chat_session_id.set(None);
+                                show_history.set(false);
+                                if let Some(window) = web_sys::window() {
+                                    if let Some(document) = window.document() {
+                                        if let Some(body) = document.body() {
+                                            body.set_class_name("");
+                                        }
+                                    }
+                                }
+                            },
+                            "+ New Chat"
+                        }
+                        div { class: "sessions-list",
+                            for session in app_data.read().chat_sessions.read().clone() {
+                                {
+                                    let session_id_str = session.session_id.clone();
+                                    let updated_at_str = session.updated_at.clone();
+                                    let first_query = session.first_query.clone();
+                                    rsx! {
+                                        div {
+                                            key: "{session_id_str}",
+                                            class: "session-item",
+                                            onclick: move |_| {
+                                                let session_id = session_id_str.clone();
+                                                app_data.write().chat_session_id.set(Some(session_id.clone()));
+                                                show_history.set(false);
+                                                
+                                                if let Some(window) = web_sys::window() {
+                                                    if let Some(document) = window.document() {
+                                                        if let Some(body) = document.body() {
+                                                            body.set_class_name("");
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                spawn(async move {
+                                                    let window = web_sys::window().unwrap();
+                                                    let location = window.location();
+                                                    let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+                                                    let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+                                                    let url = format!("http://{hostname}:{server_port}/ai/chat/sessions/{session_id}");
+                                                    
+                                                    match gloo_net::http::Request::get(&url).send().await {
+                                                        Ok(response) => {
+                                                            #[derive(serde::Deserialize)]
+                                                            struct ChatMessage {
+                                                                role: String,
+                                                                content: String,
+                                                            }
+                                                            
+                                                            if let Ok(messages) = response.json::<Vec<ChatMessage>>().await {
+                                                                let roled_messages: Vec<RoledMessage> = messages.iter().map(|m| {
+                                                                    RoledMessage {
+                                                                        message: m.content.clone(),
+                                                                        role: if m.role == "user" { Role::User } else { Role::Ai },
+                                                                    }
+                                                                }).collect();
+                                                                app_data.write().ai_chat.set(Some(roled_messages));
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            error!("Failed to load session history: {:?}", e);
+                                                        }
+                                                    }
+                                                });
+                                            },
+                                            if let Some(query) = first_query {
+                                                div { class: "session-query",
+                                                    "{query}"
+                                                }
+                                            }
+                                            div { class: "session-date",
+                                                "{updated_at_str}"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             div {
@@ -234,7 +409,11 @@ pub fn AiChat() -> Element {
                                 div {
                                     class: "message-bubble",
                                     div { class: "message-role", "{message.role}" }
-                                    div { class: "message-content", "{message.message}" }
+                                    if message.role == Role::Ai {
+                                        Markdown { content: message.message.clone() }
+                                    } else {
+                                        div { class: "message-content", "{message.message}" }
+                                    }
                                 }
                             }
                         }
@@ -245,8 +424,16 @@ pub fn AiChat() -> Element {
                                 div {
                                     class: "message-bubble streaming",
                                     div { class: "message-role", "Ai" }
-                                    div { class: "message-content",
-                                        "{streaming_response}"
+                                    if streaming_response.read().is_empty() {
+                                        div { class: "message-content",
+                                            span { class: "cursor", "▋" }
+                                        }
+                                    } else {
+                                        div { 
+                                            class: "message-content",
+                                            style: "white-space: pre-wrap;",
+                                            "{streaming_response.read()}"
+                                        }
                                         span { class: "cursor", "▋" }
                                     }
                                 }

@@ -142,6 +142,14 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
             "/ai/chat/stream",
             post(chat_stream),
         )
+        .route(
+            "/ai/chat/sessions",
+            get(list_chat_sessions),
+        )
+        .route(
+            "/ai/chat/sessions/{session_id}",
+            get(get_session_history),
+        )
         .with_state(db_state);
 
     // Create a router for stateless endpoints

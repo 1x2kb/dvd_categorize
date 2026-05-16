@@ -16,7 +16,7 @@ use database::{
 use log::{error, info};
 use models::{CsvInput, ScoredMovie};
 use ollama_rs::error::OllamaError;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Instant};
 use tracing::instrument;
 
@@ -347,7 +347,13 @@ pub async fn chat_stream(
     // Build system prompt with optional movie context
     let system_prompt = format!(
         "You are a friendly and knowledgeable assistant. You can help with any topic the user asks about. \
-         Be conversational, helpful, and concise.{}",
+         Be conversational, helpful, and concise. Format your responses using HTML tags ONLY. \
+         Do NOT use any markdown syntax - no **, no *, no backticks (```), no # headings, no - lists. \
+         Use these HTML tags for formatting: <p> for paragraphs, <br> for line breaks, <strong> for bold, <em> for italic, \
+         <ul> and <ol> with <li> for lists, <blockquote> for quotes, <code> for inline code, <pre><code> for code blocks. \
+         Structure your response with proper HTML - wrap text in <p> tags, use <br> for line breaks within paragraphs. \
+         NEVER use these forbidden tags: <script>, <iframe>, <object>, <embed>, <link>, <style>, <form>, <input>, <button>. \
+         Do not use event handlers like onclick, onerror, onload, etc.{}",
         movie_context
     );
     
@@ -427,11 +433,18 @@ pub async fn chat_stream(
         while let Some(chunk) = ollama_stream.next().await {
             match chunk {
                 Ok(response) => {
+                    // Log chunk content for debugging
+                    if response.message.content.is_empty() {
+                        info!("Received empty chunk from Ollama");
+                    } else {
+                        info!("Chunk content: {:?}", response.message.content);
+                    }
+                    
                     // Accumulate content
                     if !response.message.content.is_empty() {
                         accumulated_response.push_str(&response.message.content);
                         
-                        // Send content chunk
+                        // Send content chunk as-is (markdown parser will handle formatting)
                         yield Ok::<Event, std::convert::Infallible>(Event::default()
                             .event("message")
                             .data(response.message.content));
@@ -1400,6 +1413,87 @@ pub async fn stats_genres() -> Json<models::PieChartData> {
         Err(e) => {
             error!("Failed to get movies: {}", e);
             Json(models::PieChartData { data: vec![] })
+        }
+    }
+}
+
+/// Chat session with first query preview
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatSessionWithPreview {
+    pub id: i32,
+    pub session_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub first_query: Option<String>,
+}
+
+/// List all chat sessions ordered by most recent
+#[instrument(skip(db_state))]
+#[debug_handler]
+pub async fn list_chat_sessions(
+    State(db_state): State<DbState>,
+) -> Result<Json<Vec<ChatSessionWithPreview>>, (StatusCode, String)> {
+    info!("Listing chat sessions");
+    
+    match db_state.pool.list_chat_sessions().await {
+        Ok(sessions) => {
+            info!("Found {} chat sessions", sessions.len());
+            
+            let mut sessions_with_preview = Vec::new();
+            for session in sessions {
+                let first_query = db_state.pool.get_chat_history(session.session_id)
+                    .await
+                    .ok()
+                    .and_then(|messages| {
+                        messages.iter()
+                            .find(|m| m.role == "user")
+                            .map(|m| m.content.clone())
+                    });
+                
+                sessions_with_preview.push(ChatSessionWithPreview {
+                    id: session.id,
+                    session_id: session.session_id.to_string(),
+                    created_at: session.created_at.to_string(),
+                    updated_at: session.updated_at.to_string(),
+                    first_query,
+                });
+            }
+            
+            Ok(Json(sessions_with_preview))
+        }
+        Err(e) => {
+            error!("Failed to list chat sessions: {:?}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to list chat sessions: {}", e),
+            ))
+        }
+    }
+}
+
+/// Get chat history for a specific session
+#[instrument(skip(db_state))]
+#[debug_handler]
+pub async fn get_session_history(
+    State(db_state): State<DbState>,
+    Path(session_id): Path<String>,
+) -> Result<Json<Vec<models::ChatMessage>>, (StatusCode, String)> {
+    info!("Getting chat history for session: {}", session_id);
+    
+    let session_uuid = uuid::Uuid::parse_str(&session_id)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid session ID: {}", e)))?;
+    
+    match db_state.pool.get_chat_history(session_uuid).await {
+        Ok(messages) => {
+            info!("Found {} messages for session {}", messages.len(), session_id);
+            Ok(Json(messages))
+        }
+        Err(e) => {
+            error!("Failed to get chat history: {:?}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to get chat history: {}", e),
+            ))
         }
     }
 }

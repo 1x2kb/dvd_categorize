@@ -60,6 +60,7 @@ fn App() -> Element {
         || AppData {
             ai_chat: Signal::new(None),
             chat_session_id: Signal::new(None),
+            chat_sessions: Signal::new(Vec::new()),
         },
     );
 
