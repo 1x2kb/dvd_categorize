@@ -45,6 +45,7 @@ dependencies = [
  "log",
  "models",
  "ollama-rs",
+ "prompts",
  "serde",
  "serde_json",
  "tokio",

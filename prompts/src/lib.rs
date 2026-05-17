@@ -1,5 +1,15 @@
 //! Default system prompts for AI chat modes.
 
+pub mod datapoints;
+pub mod movie_id_matcher;
+pub mod rag_answer;
+pub mod user_library;
+
+pub use datapoints::*;
+pub use movie_id_matcher::*;
+pub use rag_answer::*;
+pub use user_library::*;
+
 /// Default system prompt for RAG (Retrieval Augmented Generation) mode.
 /// Used in streaming chat endpoint where movies are injected into context.
 pub const DEFAULT_RAG_PROMPT: &str = r#"You are a helpful assistant for a personal DVD movie collection. \

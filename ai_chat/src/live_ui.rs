@@ -7,7 +7,8 @@ use ollama_rs::{
     models::ModelOptions,
 };
 
-use crate::{prompts, OllamaClient};
+use crate::OllamaClient;
+use prompts;
 
 /// Trait for AI chat functionality to enable dependency injection and testing
 pub trait AiChatProvider {

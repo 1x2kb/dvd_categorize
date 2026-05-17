@@ -359,176 +359,6 @@ pub async fn chat(
     }
 }
 
-/// Extract movie search query from user message using Ollama
-async fn extract_movie_query(message: &str) -> Option<models::StructuredQuery> {
-    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
-    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
-    let ollama_url = format!(
-        "http://{}:{}",
-        ollama_host, ollama_port
-    );
-    let ollama = ollama_rs::Ollama::from_url(
-        ollama_url
-            .parse()
-            .unwrap(),
-    );
-
-    let prompt = format!(
-        r#"Extract movie search parameters from this message. Return JSON with these fields (all optional):
-- title_keywords: array of title keyword strings
-- actors: array of actor name strings  
-- genres: array of genre strings
-- directors: array of director name strings
-- description_keywords: array of description/plot keyword strings
-
-If message is NOT about searching/finding movies, return {{"is_movie_query": false}}.
-If it IS about movies, return {{"is_movie_query": true, ...other fields...}}.
-
-Message: "{}"
-
-Return only valid JSON, no explanation."#,
-        message
-    );
-
-    let chat_request = ollama_rs::generation::chat::request::ChatMessageRequest::new(
-        "qwen2.5:3b".to_string(),
-        vec![ollama_rs::generation::chat::ChatMessage::user(prompt)],
-    );
-
-    match ollama
-        .send_chat_messages(chat_request)
-        .await
-    {
-        Ok(response) => {
-            let json_str = response
-                .message
-                .content
-                .trim();
-            if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
-                if value
-                    .get("is_movie_query")
-                    .and_then(|v| v.as_bool())
-                    == Some(false)
-                {
-                    return None;
-                }
-
-                // Parse into StructuredQuery
-                let query = models::StructuredQuery {
-                    title_keywords: value
-                        .get("title_keywords")
-                        .and_then(|v| v.as_array())
-                        .map(
-                            |arr| {
-                                arr.iter()
-                                    .filter_map(
-                                        |v| {
-                                            v.as_str()
-                                                .map(String::from)
-                                        },
-                                    )
-                                    .collect()
-                            },
-                        )
-                        .unwrap_or_default(),
-                    actors: value
-                        .get("actors")
-                        .and_then(|v| v.as_array())
-                        .map(
-                            |arr| {
-                                arr.iter()
-                                    .filter_map(
-                                        |v| {
-                                            v.as_str()
-                                                .map(String::from)
-                                        },
-                                    )
-                                    .collect()
-                            },
-                        )
-                        .unwrap_or_default(),
-                    genres: value
-                        .get("genres")
-                        .and_then(|v| v.as_array())
-                        .map(
-                            |arr| {
-                                arr.iter()
-                                    .filter_map(
-                                        |v| {
-                                            v.as_str()
-                                                .map(String::from)
-                                        },
-                                    )
-                                    .collect()
-                            },
-                        )
-                        .unwrap_or_default(),
-                    directors: value
-                        .get("directors")
-                        .and_then(|v| v.as_array())
-                        .map(
-                            |arr| {
-                                arr.iter()
-                                    .filter_map(
-                                        |v| {
-                                            v.as_str()
-                                                .map(String::from)
-                                        },
-                                    )
-                                    .collect()
-                            },
-                        )
-                        .unwrap_or_default(),
-                    description_keywords: value
-                        .get("description_keywords")
-                        .and_then(|v| v.as_array())
-                        .map(
-                            |arr| {
-                                arr.iter()
-                                    .filter_map(
-                                        |v| {
-                                            v.as_str()
-                                                .map(String::from)
-                                        },
-                                    )
-                                    .collect()
-                            },
-                        )
-                        .unwrap_or_default(),
-                };
-
-                // Only return if has some criteria
-                if !query
-                    .title_keywords
-                    .is_empty()
-                    || !query
-                        .actors
-                        .is_empty()
-                    || !query
-                        .genres
-                        .is_empty()
-                    || !query
-                        .directors
-                        .is_empty()
-                    || !query
-                        .description_keywords
-                        .is_empty()
-                {
-                    return Some(query);
-                }
-            }
-            None
-        }
-        Err(e) => {
-            error!(
-                "Failed to extract movie query: {:?}",
-                e
-            );
-            None
-        }
-    }
-}
-
 /// SSE streaming chat endpoint with RAG
 #[instrument(skip(db_state))]
 pub async fn chat_stream(
@@ -578,7 +408,7 @@ pub async fn chat_stream(
         .await
         .unwrap_or_default();
 
-    // RAG: Extract movie query from user message
+    // RAG: Extract movie query from user message using new 2-step flow
     let user_message = request
         .messages
         .first()
@@ -589,60 +419,47 @@ pub async fn chat_stream(
             },
         )
         .unwrap_or("");
-    let movie_context = if let Some(query) = extract_movie_query(user_message).await {
-        info!(
-            "Detected movie query: {:?}",
-            query
-        );
 
-        // Search movies from DB using structured query
-        let results = db_state
-            .pool
-            .search_structured(&query)
-            .await
-            .unwrap_or_default();
+    let movie_context = if let Some(extracted) = ai_chat::rag::extract_rag_query(
+        user_message,
+        request
+            .model
+            .as_deref(),
+    )
+    .await
+    {
+        if extracted.is_movie_query {
+            info!(
+                "RAG: Extracted query - actors: {:?}, directors: {:?}, genres: {:?}, title_kw: {:?}, desc_kw: {:?}",
+                extracted.structured_query.actors,
+                extracted.structured_query.directors,
+                extracted.structured_query.genres,
+                extracted.structured_query.title_keywords,
+                extracted.structured_query.description_keywords
+            );
 
-        if results.is_empty() {
-            "\n\nNo movies found matching the query.".to_string()
+            // Search movies from DB using structured query
+            let results = db_state
+                .pool
+                .search_structured(&extracted.structured_query)
+                .await
+                .unwrap_or_default();
+
+            info!(
+                "RAG search returned {} movies, injecting {} into context",
+                results.len(),
+                results
+                    .len()
+                    .min(15)
+            );
+
+            ai_chat::rag::format_movies_for_context(&results)
         } else {
-            let movie_list = results
-                .iter()
-                .take(10)
-                .map(
-                    |m| {
-                        format!(
-                            "- {} ({}) - Directed by {}, Starring: {}",
-                            m.name,
-                            m.release_year,
-                            m.director
-                                .as_ref()
-                                .map(
-                                    |d| d
-                                        .name
-                                        .as_str()
-                                )
-                                .unwrap_or("Unknown"),
-                            m.actors
-                                .iter()
-                                .map(
-                                    |a| a
-                                        .name
-                                        .as_str()
-                                )
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )
-                    },
-                )
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            format!(
-                "\n\nAvailable movies matching your query:\n{}",
-                movie_list
-            )
+            info!("RAG: User query is not a movie search query");
+            String::new()
         }
     } else {
+        error!("RAG: Failed to extract query from user message");
         String::new()
     };
 
@@ -652,7 +469,14 @@ pub async fn chat_stream(
     // Use custom prompt if provided, otherwise fall back to default with movie context.
     let system_prompt = request
         .system_prompt
-        .unwrap_or_else(|| format!("{}\n\n{}", DEFAULT_RAG_PROMPT, movie_context));
+        .unwrap_or_else(
+            || {
+                format!(
+                    "{}\n\n{}",
+                    DEFAULT_RAG_PROMPT, movie_context
+                )
+            },
+        );
 
     // Convert chat history to Ollama format (system + history + new messages)
     let messages: Vec<ollama_rs::generation::chat::ChatMessage> =

@@ -30,10 +30,13 @@
 
 pub mod embedding;
 pub mod live_ui;
-mod prompts;
 pub mod query_enhancement;
+pub mod rag;
 pub mod schema;
 pub mod structured_query_parser;
+
+// Re-export all prompts from the prompts crate
+pub use prompts::*;
 
 use std::sync::Arc;
 
@@ -47,7 +50,6 @@ use ollama_rs::{
     models::ModelOptions,
     Ollama,
 };
-use prompts::USER_LIBRARY_PROMPT;
 use tracing::{instrument, Level};
 
 pub use embedding::*;
