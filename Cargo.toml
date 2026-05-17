@@ -9,7 +9,7 @@ members = [
     "csv_utils",
     "actor_reorder",
     "dioxus_grapher",
-    # "ai_tools",  # Excluded until diesel updates queries to be Sync.
+    "ai_tools",
 ]
 
 resolver = "2"

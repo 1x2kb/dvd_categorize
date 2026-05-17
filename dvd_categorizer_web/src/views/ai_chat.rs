@@ -1,14 +1,125 @@
 use dioxus::prelude::*;
 use log::error;
-use models::{ChatRequest, Role, RoledMessage};
+use models::{AvailableModel, AvailableModelsResponse, ChatRequest, ChatResponse, Role, RoledMessage};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 use crate::app_data::{AppData, ChatSession};
 use crate::components::Markdown;
 
+/// Send a chat message to the non-streaming tool-enabled `/ai/chat` endpoint.
+/// The LLM may invoke tools (filter_by_actor / genre / director, get_movie_details)
+/// that self-call the API. Returns a single response — no streaming UI.
+async fn send_tool_message(
+    message: String,
+    model: String,
+    mut app_data: Signal<AppData>,
+    mut is_loading: Signal<bool>,
+) {
+    let window = web_sys::window().unwrap();
+    let location = window.location();
+    let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+    let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+
+    let user_message = RoledMessage {
+        message: message.clone(),
+        role: Role::User,
+    };
+
+    app_data.write().ai_chat.with_mut(|chat| {
+        if let Some(chat) = chat {
+            chat.push(user_message.clone());
+        } else {
+            *chat = Some(vec![user_message.clone()]);
+        }
+    });
+
+    let session_id = app_data.read().chat_session_id.read().clone();
+    let chat_request = ChatRequest {
+        session_id,
+        messages: vec![user_message],
+        model: Some(model),
+    };
+
+    let url = format!("http://{hostname}:{server_port}/ai/chat");
+    let request = match gloo_net::http::Request::post(&url)
+        .header("Content-Type", "application/json")
+        .json(&chat_request)
+    {
+        Ok(req) => req,
+        Err(e) => {
+            error!("Failed to build tool chat request: {:?}", e);
+            is_loading.set(false);
+            return;
+        }
+    };
+
+    match request.send().await {
+        Ok(response) => {
+            if !response.ok() {
+                error!("Tool chat returned status {}", response.status());
+                let error_message = RoledMessage {
+                    message: format!("AI service returned error {}", response.status()),
+                    role: Role::Ai,
+                };
+                app_data.write().ai_chat.with_mut(|chat| {
+                    if let Some(chat) = chat {
+                        chat.push(error_message);
+                    }
+                });
+                is_loading.set(false);
+                return;
+            }
+
+            match response.json::<ChatResponse>().await {
+                Ok(parsed) => {
+                    if let Some(sid) = parsed.session_id {
+                        app_data.write().chat_session_id.set(Some(sid));
+                    }
+                    let ai_message = RoledMessage {
+                        message: parsed.message,
+                        role: Role::Ai,
+                    };
+                    app_data.write().ai_chat.with_mut(|chat| {
+                        if let Some(chat) = chat {
+                            chat.push(ai_message);
+                        }
+                    });
+                }
+                Err(e) => {
+                    error!("Failed to parse tool chat response: {:?}", e);
+                    let error_message = RoledMessage {
+                        message: "Failed to parse AI response".to_string(),
+                        role: Role::Ai,
+                    };
+                    app_data.write().ai_chat.with_mut(|chat| {
+                        if let Some(chat) = chat {
+                            chat.push(error_message);
+                        }
+                    });
+                }
+            }
+        }
+        Err(e) => {
+            error!("Tool chat fetch failed: {:?}", e);
+            let error_message = RoledMessage {
+                message: "Failed to connect to AI service".to_string(),
+                role: Role::Ai,
+            };
+            app_data.write().ai_chat.with_mut(|chat| {
+                if let Some(chat) = chat {
+                    chat.push(error_message);
+                }
+            });
+        }
+    }
+
+    is_loading.set(false);
+}
+
 async fn send_streaming_message(
     message: String,
+    model: String,
     mut app_data: Signal<AppData>,
     mut streaming_response: Signal<String>,
     mut is_loading: Signal<bool>,
@@ -38,7 +149,7 @@ async fn send_streaming_message(
     let chat_request = ChatRequest {
         session_id,
         messages: vec![user_message.clone()],
-        model: Some("phi3.5".to_string()),
+        model: Some(model),
     };
 
     // Use fetch API for streaming
@@ -186,6 +297,32 @@ pub fn AiChat() -> Element {
     let mut is_loading = use_signal(|| false);
     let mut streaming_response = use_signal(String::new);
     let mut show_history = use_signal(|| false);
+    // false = streaming RAG (`/ai/chat/stream`), true = non-streaming tool-enabled (`/ai/chat`)
+    let mut tool_mode = use_signal(|| false);
+    let mut selected_model = use_signal(|| "phi3.5".to_string());
+    let mut available_models = use_signal(Vec::<AvailableModel>::new);
+
+    // Fetch available models on mount
+    use_effect(move || {
+        spawn(async move {
+            let window = web_sys::window().unwrap();
+            let location = window.location();
+            let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+            let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+            let url = format!("http://{hostname}:{server_port}/ai/models");
+
+            match gloo_net::http::Request::get(&url).send().await {
+                Ok(response) => {
+                    if let Ok(parsed) = response.json::<AvailableModelsResponse>().await {
+                        available_models.set(parsed.models);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to load available models: {:?}", e);
+                }
+            }
+        });
+    });
 
     // Load chat sessions on mount
     use_effect(move || {
@@ -235,6 +372,42 @@ pub fn AiChat() -> Element {
                     if let Some(session_id) = app_data.read().chat_session_id.read().as_ref() {
                         div { class: "session-id-display",
                             "Session: {session_id}"
+                        }
+                    }
+                    div { class: "chat-mode-toggle",
+                        button {
+                            class: if !tool_mode() { "mode-btn active" } else { "mode-btn" },
+                            disabled: *is_loading.read(),
+                            onclick: move |_| tool_mode.set(false),
+                            title: "Streaming RAG — pre-injects matching movies into the prompt",
+                            "RAG"
+                        }
+                        button {
+                            class: if tool_mode() { "mode-btn active" } else { "mode-btn" },
+                            disabled: *is_loading.read(),
+                            onclick: move |_| tool_mode.set(true),
+                            title: "Tool calling — LLM picks tools to query the collection",
+                            "Tools"
+                        }
+                    }
+                    div { class: "model-selector-container",
+                        span { class: "model-label", "Model:" }
+                        select {
+                            class: "model-select",
+                            disabled: *is_loading.read(),
+                            value: "{selected_model}",
+                            onchange: move |evt| selected_model.set(evt.value()),
+                            // Always include the current default so it stays selectable even if /ai/models hasn't loaded yet
+                            if !available_models.read().iter().any(|m| m.name == *selected_model.read()) {
+                                option { value: "{selected_model}", "{selected_model}" }
+                            }
+                            for model in available_models.read().iter() {
+                                option {
+                                    key: "{model.name}",
+                                    value: "{model.name}",
+                                    "{model.name}"
+                                }
+                            }
                         }
                     }
                     button {
@@ -463,7 +636,12 @@ pub fn AiChat() -> Element {
                             input_value.set(String::new());
                             is_loading.set(true);
 
-                            spawn(send_streaming_message(message, app_data, streaming_response, is_loading));
+                            let model = selected_model.read().clone();
+                            if tool_mode() {
+                                spawn(send_tool_message(message, model, app_data, is_loading));
+                            } else {
+                                spawn(send_streaming_message(message, model, app_data, streaming_response, is_loading));
+                            }
                         }
                     }
                 }
@@ -479,7 +657,12 @@ pub fn AiChat() -> Element {
                         input_value.set(String::new());
                         is_loading.set(true);
 
-                        spawn(send_streaming_message(message, app_data, streaming_response, is_loading));
+                        let model = selected_model.read().clone();
+                        if tool_mode() {
+                            spawn(send_tool_message(message, model, app_data, is_loading));
+                        } else {
+                            spawn(send_streaming_message(message, model, app_data, streaming_response, is_loading));
+                        }
                     },
                     if *is_loading.read() {
                         "Sending..."

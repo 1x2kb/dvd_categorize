@@ -111,99 +111,162 @@ pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
     Json(result)
 }
 
-#[instrument]
+/// Non-streaming chat endpoint with tool calling.
+///
+/// Uses `ollama_rs::coordinator::Coordinator` so the model can invoke
+/// `ai_tools` (filter-by-actor / genre / director, get-movie-details) which
+/// self-call this same API over HTTP. Session + history persisted to DB —
+/// mirrors the streaming endpoint but produces a single JSON response.
+#[instrument(skip(db_state, request), fields(messages = request.messages.len()))]
 #[debug_handler]
 pub async fn chat(
+    State(db_state): State<DbState>,
     Json(request): Json<models::ChatRequest>,
-) -> Result<
-    Json<models::ChatResponse>,
-    (
-        StatusCode,
-        String,
-    ),
-> {
+) -> Result<Json<models::ChatResponse>, (StatusCode, String)> {
     info!(
-        "Processing chat request with {} message(s)",
-        request
-            .messages
-            .len()
+        "Processing tool-enabled chat request with {} message(s)",
+        request.messages.len()
     );
 
-    // Convert chat history to Ollama format
-    let messages: Vec<ollama_rs::generation::chat::ChatMessage> = std::iter::once(
-        ollama_rs::generation::chat::ChatMessage::system(
-            "You are a friendly and knowledgeable assistant. You can help with any topic the user asks about. \
-             Be conversational, helpful, and concise.".to_string()
-        )
-    )
-    .chain(
-        request.messages.iter().map(|msg| {
-            match msg.role {
-                models::Role::User => ollama_rs::generation::chat::ChatMessage::user(msg.message.clone()),
-                models::Role::Ai => ollama_rs::generation::chat::ChatMessage::assistant(msg.message.clone()),
+    // Get or create session
+    let session_id = match request
+        .session_id
+        .as_ref()
+        .and_then(|s| uuid::Uuid::parse_str(s).ok())
+    {
+        Some(id) => id,
+        None => db_state.pool.create_chat_session().await.map_err(|e| {
+            error!("Failed to create session: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to create session: {}", e),
+            )
+        })?,
+    };
+
+    // Load existing history from DB and seed the Coordinator's history
+    let history_messages = db_state
+        .pool
+        .get_chat_history(session_id)
+        .await
+        .unwrap_or_default();
+
+    // Tool-mode system prompt: results/recommendations scoped to user's library,
+    // but the AI may enrich answers with real-world knowledge about those movies.
+    // External movie references only when user explicitly requests them.
+    let system_prompt = "You are a helpful assistant for a personal DVD movie collection. \
+        When the user asks about their movies, actors, genres, or directors, \
+        ALWAYS call the appropriate tool first (filter_by_actor, filter_by_genre, \
+        filter_by_director, get_movie_details) to retrieve data from their collection. \
+        You may use your own knowledge to enrich answers — e.g. describe a movie's plot, \
+        discuss a director's style, or explain an actor's career — but any specific movie \
+        titles you mention or recommend must come from the tool results unless the user \
+        explicitly asks for suggestions outside their collection \
+        (e.g. 'recommend something I don't own' or 'what should I buy next'). \
+        If a tool returns no results, tell the user the collection has no matching movies. \
+        Format responses with HTML only (<p>, <strong>, <em>, <ul>, <li>, <br>). \
+        Do NOT use markdown. Do NOT use <script>, <iframe>, <style>, <form>, or event handlers.";
+
+    // Seed the Coordinator's history with prior turns from DB (system prompt first).
+    // New messages are passed as the `chat()` argument — coordinator's
+    // send_chat_messages_with_history merges them in. Do NOT add new messages to
+    // this history vec or they will be sent twice.
+    let mut history: Vec<ollama_rs::generation::chat::ChatMessage> =
+        vec![ollama_rs::generation::chat::ChatMessage::system(
+            system_prompt.to_string(),
+        )];
+    for m in &history_messages {
+        let msg = match m.role.as_str() {
+            "user" => ollama_rs::generation::chat::ChatMessage::user(m.content.clone()),
+            _ => ollama_rs::generation::chat::ChatMessage::assistant(m.content.clone()),
+        };
+        history.push(msg);
+    }
+
+    // New messages for this turn — passed to coordinator, NOT pre-added to history.
+    let new_messages: Vec<ollama_rs::generation::chat::ChatMessage> = request
+        .messages
+        .iter()
+        .map(|msg| match msg.role {
+            models::Role::User => {
+                ollama_rs::generation::chat::ChatMessage::user(msg.message.clone())
+            }
+            models::Role::Ai => {
+                ollama_rs::generation::chat::ChatMessage::assistant(msg.message.clone())
             }
         })
-    )
-    .collect();
+        .collect();
 
-    // Get model name from request or use default
+    // Capture user content for DB persistence after the call
+    let user_content_for_db: Vec<String> = request
+        .messages
+        .iter()
+        .filter(|m| m.role == models::Role::User)
+        .map(|m| m.message.clone())
+        .collect();
+
     let model = request
         .model
+        .clone()
         .unwrap_or_else(|| "phi3.5".to_string());
+    info!("Using model: {}", model);
 
-    info!(
-        "Using model: {}",
-        model
-    );
-
-    // Create Ollama client
+    // Ollama client
     let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
     let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
-    let ollama_url = format!(
-        "http://{}:{}",
-        ollama_host, ollama_port
-    );
+    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
+    let ollama = ollama_rs::Ollama::from_url(ollama_url.parse().unwrap());
 
-    let ollama = ollama_rs::Ollama::from_url(
-        ollama_url
-            .parse()
-            .unwrap(),
-    );
+    // Build coordinator with all tools — each tool shares one ApiClient (cheap clone)
+    let api_client = ai_tools::ApiClient::from_env();
+    let mut coordinator = ollama_rs::coordinator::Coordinator::new(ollama, model, history)
+        .add_tool(ai_tools::FilterByActorTool::new(api_client.clone()))
+        .add_tool(ai_tools::FilterByGenreTool::new(api_client.clone()))
+        .add_tool(ai_tools::FilterByDirectorTool::new(api_client.clone()))
+        .add_tool(ai_tools::GetMovieDetailsTool::new(api_client));
 
-    // Create chat request
-    let chat_request = ollama_rs::generation::chat::request::ChatMessageRequest::new(
-        model.clone(),
-        messages,
-    );
-
-    // Send to Ollama
-    match ollama
-        .send_chat_messages(chat_request)
-        .await
-    {
+    match coordinator.chat(new_messages).await {
         Ok(response) => {
-            info!("Successfully generated AI response");
-            Ok(
-                Json(
-                    models::ChatResponse {
-                        message: response
-                            .message
-                            .content,
-                    },
-                ),
-            )
+            let content = response.message.content;
+            info!("Successfully generated AI response ({} chars)", content.len());
+
+            // Persist user turn(s) then assistant response — only after successful LLM call
+            for user_content in &user_content_for_db {
+                if let Err(e) = db_state
+                    .pool
+                    .save_chat_message(models::NewChatMessage {
+                        session_id,
+                        role: "user".to_string(),
+                        content: user_content.clone(),
+                    })
+                    .await
+                {
+                    error!("Failed to save user message: {:?}", e);
+                }
+            }
+
+            if let Err(e) = db_state
+                .pool
+                .save_chat_message(models::NewChatMessage {
+                    session_id,
+                    role: "assistant".to_string(),
+                    content: content.clone(),
+                })
+                .await
+            {
+                error!("Failed to save AI response: {:?}", e);
+            }
+
+            Ok(Json(models::ChatResponse {
+                message: content,
+                session_id: Some(session_id.to_string()),
+            }))
         }
         Err(e) => {
-            error!(
-                "Failed to generate AI response: {:?}",
-                e
-            );
+            error!("Failed to generate AI response: {:?}", e);
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "Failed to generate AI response: {}",
-                    e
-                ),
+                format!("Failed to generate AI response: {}", e),
             ))
         }
     }
@@ -344,16 +407,19 @@ pub async fn chat_stream(
         String::new()
     };
     
-    // Build system prompt with optional movie context
+    // RAG-mode system prompt: collection-focused with injected movie context.
+    // Allows discussion of movies outside the library only when context suggests it
+    // (e.g. buy recommendations based on existing collection).
     let system_prompt = format!(
-        "You are a friendly and knowledgeable assistant. You can help with any topic the user asks about. \
-         Be conversational, helpful, and concise. Format your responses using HTML tags ONLY. \
-         Do NOT use any markdown syntax - no **, no *, no backticks (```), no # headings, no - lists. \
-         Use these HTML tags for formatting: <p> for paragraphs, <br> for line breaks, <strong> for bold, <em> for italic, \
-         <ul> and <ol> with <li> for lists, <blockquote> for quotes, <code> for inline code, <pre><code> for code blocks. \
-         Structure your response with proper HTML - wrap text in <p> tags, use <br> for line breaks within paragraphs. \
-         NEVER use these forbidden tags: <script>, <iframe>, <object>, <embed>, <link>, <style>, <form>, <input>, <button>. \
-         Do not use event handlers like onclick, onerror, onload, etc.{}",
+        "You are a helpful assistant for a personal DVD movie collection. \
+         Answer questions about the user's collection based on the movie data provided below. \
+         If asked about movies not in their collection (e.g. 'what should I buy next'), \
+         you may make external recommendations informed by what they already own. \
+         Be conversational and concise. Format responses using HTML tags ONLY. \
+         Do NOT use markdown (no **, no *, no backticks, no # headings, no - bullet syntax). \
+         Allowed tags: <p>, <br>, <strong>, <em>, <ul>, <ol>, <li>, <blockquote>, <code>, <pre>. \
+         Forbidden tags: <script>, <iframe>, <object>, <embed>, <link>, <style>, <form>, <input>, <button>. \
+         No event handlers (onclick, onerror, onload, etc.).{}",
         movie_context
     );
     
@@ -1494,6 +1560,31 @@ pub async fn get_session_history(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to get chat history: {}", e),
             ))
+        }
+    }
+}
+
+/// Structured search endpoint — filter by actors, genres, directors, title/description keywords.
+/// Used by `ai_tools` over HTTP so tools avoid diesel-async (which isn't Sync for ollama-rs).
+#[instrument(skip(db_state, query), fields(actors = query.actors.len(), genres = query.genres.len(), directors = query.directors.len()))]
+#[debug_handler]
+pub async fn structured_search(
+    State(db_state): State<DbState>,
+    Json(query): Json<models::StructuredQuery>,
+) -> Json<Vec<FullMovie>> {
+    info!(
+        "Structured search: actors={:?} genres={:?} directors={:?} title={:?} desc={:?}",
+        query.actors, query.genres, query.directors, query.title_keywords, query.description_keywords
+    );
+
+    match db_state.pool.search_structured(&query).await {
+        Ok(movies) => {
+            info!("Structured search returned {} movies", movies.len());
+            Json(movies)
+        }
+        Err(e) => {
+            error!("Structured search failed: {}", e);
+            Json(Vec::new())
         }
     }
 }

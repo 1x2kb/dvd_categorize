@@ -2,14 +2,12 @@
 name = "ai_tools"
 version = "1.0.0"
 edition = "2021"
-description = "Tool functions bridging AI chat and database for Ollama function calling"
+description = "Ollama Tool implementations that self-call dvd_catalog_api over HTTP"
 
 [dependencies]
-database = { path = "../database" }
-models = { path = "../models", features = ["postgres"] }
+models = { path = "../models" }
 ollama-rs.workspace = true
-diesel = { workspace = true, features = ["postgres"] }
-diesel-async.workspace = true
+reqwest = { version = "0.12", features = ["json"] }
 serde.workspace = true
 serde_json.workspace = true
 schemars = "1.2"

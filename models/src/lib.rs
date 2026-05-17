@@ -98,6 +98,8 @@ pub struct ChatRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 #[cfg(feature = "postgres")]

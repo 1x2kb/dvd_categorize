@@ -29,6 +29,7 @@ models = { path = "../models", features = [
 ] }
 dotenvy.workspace = true
 ai_chat = { path = "../ai_chat" }
+ai_tools = { path = "../ai_tools" }
 ollama-rs.workspace = true
 csv_utils = { path = "../csv_utils" }
 categorizer_utilities = { path = "../categorizer_utilities" }

@@ -119,10 +119,6 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
             post(get_matching_movies),
         )
         .route(
-            "/ai/chat",
-            post(chat),
-        )
-        .route(
             "/movie/location",
             post(update_movie_location),
         )
@@ -136,8 +132,12 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
         )
         .with_state(state);
 
-    // Create router for chat streaming with DB state
+    // Create router for chat (tool-enabled non-streaming) and streaming, both need DbState
     let chat_stream_router = Router::new()
+        .route(
+            "/ai/chat",
+            post(chat),
+        )
         .route(
             "/ai/chat/stream",
             post(chat_stream),
@@ -149,6 +149,10 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
         .route(
             "/ai/chat/sessions/{session_id}",
             get(get_session_history),
+        )
+        .route(
+            "/dvd/structured-search",
+            post(structured_search),
         )
         .with_state(db_state);
 

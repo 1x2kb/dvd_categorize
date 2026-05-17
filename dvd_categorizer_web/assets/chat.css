@@ -48,6 +48,40 @@
     transform: translateY(-1px);
 }
 
+/* Chat Mode Toggle (RAG vs Tools) */
+.chat-mode-toggle {
+    display: inline-flex;
+    border: 1px solid #0891b2;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.chat-mode-toggle .mode-btn {
+    background: transparent;
+    color: #9ca3af;
+    border: none;
+    padding: 8px 14px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+.chat-mode-toggle .mode-btn:hover:not(:disabled):not(.active) {
+    background: #1f2937;
+    color: #e5e7eb;
+}
+
+.chat-mode-toggle .mode-btn.active {
+    background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+    color: white;
+}
+
+.chat-mode-toggle .mode-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 /* Chat Messages Area */
 .chat-messages {
     flex: 1;
