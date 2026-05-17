@@ -255,7 +255,7 @@ pub async fn chat(
     let model = request
         .model
         .clone()
-        .unwrap_or_else(|| "phi3.5".to_string());
+        .unwrap_or_else(|| "qwen2.5:3b".to_string());
     info!(
         "Using model: {}",
         model
@@ -391,7 +391,7 @@ Return only valid JSON, no explanation."#,
     );
 
     let chat_request = ollama_rs::generation::chat::request::ChatMessageRequest::new(
-        "phi3.5".to_string(),
+        "qwen2.5:3b".to_string(),
         vec![ollama_rs::generation::chat::ChatMessage::user(prompt)],
     );
 
@@ -700,7 +700,7 @@ pub async fn chat_stream(
     // Get model name from request or use default
     let model = request
         .model
-        .unwrap_or_else(|| "phi3.5".to_string());
+        .unwrap_or_else(|| "qwen2.5:3b".to_string());
     info!(
         "Using model: {} for streaming",
         model

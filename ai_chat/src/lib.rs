@@ -57,8 +57,8 @@ pub use query_enhancement::*;
 pub use embedding::EMBEDDING_MODEL;
 
 // AI Model constants
-const DEFAULT_CHAT_MODEL: &str = "phi3.5";
-const DEFAULT_SMALL_MODEL: &str = "phi3.5";
+const DEFAULT_CHAT_MODEL: &str = "qwen2.5:3b";
+const DEFAULT_SMALL_MODEL: &str = "qwen2.5:3b";
 const DEFAULT_OLLAMA_HOST: &str = "ollama";
 const DEFAULT_OLLAMA_PORT: &str = "11434";
 const DEFAULT_CONTEXT_WINDOW: u64 = 64000;
@@ -309,7 +309,7 @@ pub async fn list_models() -> Result<Vec<models::AvailableModel>, String> {
 ///
 /// # Arguments
 ///
-/// * `model_name` - The name of the model to pull (e.g., "phi3.5", "nomic-embed-text")
+/// * `model_name` - The name of the model to pull (e.g., "qwen2.5:3b", "nomic-embed-text")
 ///
 /// # Returns
 ///

@@ -24,7 +24,7 @@ impl AiChatProvider for OllamaClient {
             .ai_action
             .model
             .as_deref()
-            .unwrap_or("phi3.5");
+            .unwrap_or("qwen2.5:3b");
 
         let num_ctx = std::env::var("OLLAMA_NUM_CTX")
             .unwrap_or_else(|_| "8000".to_string())
