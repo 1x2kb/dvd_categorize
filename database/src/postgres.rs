@@ -442,26 +442,6 @@ impl InsertMovie for PostgresMovieRepository {
             .collect::<Vec<_>>()
             .join(",");
 
-        let embedding = format!(
-            "{}-{} and has genres {} with actors {} and directed by {}",
-            &full_movie.name,
-            &full_movie
-                .description
-                .as_ref()
-                .unwrap_or(&"".to_string()),
-            genres,
-            actors,
-            full_movie
-                .director
-                .as_ref()
-                .map(
-                    |director| director
-                        .name
-                        .as_str()
-                )
-                .unwrap_or("")
-        );
-
         let director_id: Option<i32> = match full_movie.director {
             Some(director) => {
                 let new_director = NewDirector {

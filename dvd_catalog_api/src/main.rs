@@ -33,9 +33,7 @@ async fn main() {
     // Only load .env file in debug mode (development)
     #[cfg(debug_assertions)]
     {
-        dotenv()
-            .ok()
-            .expect("Failed to run env reader");
+        dotenv().expect("Failed to run env reader");
     }
 
     // Load movies into cache state on startup

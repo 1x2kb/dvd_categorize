@@ -120,7 +120,7 @@ fn sanitize_html(html: &str) -> String {
             .to_lowercase()
             .find(attr)
         {
-            if let Some(quote_end) = sanitized[start..].find(|c| c == '"' || c == '\'') {
+            if let Some(quote_end) = sanitized[start..].find(['"', '\'']) {
                 let quote_char = sanitized
                     .chars()
                     .nth(start + quote_end)

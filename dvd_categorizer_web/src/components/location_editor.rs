@@ -147,7 +147,7 @@ pub fn LocationEditor(props: LocationEditorProps) -> Element {
                         disabled: is_saving(),
                         onkeydown: move |evt| {
                             if evt.key() == Key::Enter && !is_saving() {
-                                let on_updated = props.on_location_updated.clone();
+                                let on_updated = props.on_location_updated;
                                 let movie_id = props.movie_id;
                                 spawn(async move {
                                     is_saving.set(true);
@@ -179,7 +179,7 @@ pub fn LocationEditor(props: LocationEditorProps) -> Element {
                     button {
                         class: "location-save-button",
                         onclick: move |_| {
-                            let on_updated = props.on_location_updated.clone();
+                            let on_updated = props.on_location_updated;
                             let movie_id = props.movie_id;
                             spawn(async move {
                                 is_saving.set(true);

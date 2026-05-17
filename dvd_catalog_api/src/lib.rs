@@ -93,7 +93,7 @@ pub async fn get_dvds(State(state): State<CacheState>) -> Json<Option<Vec<FullMo
 #[debug_handler]
 pub async fn get_dvd(Path(id): Path<i32>) -> Json<Option<FullMovie>> {
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo
+        Ok(repo) => repo
             .get_by_id(id)
             .await
             .ok(),
@@ -112,7 +112,7 @@ pub async fn get_dvd(Path(id): Path<i32>) -> Json<Option<FullMovie>> {
 #[debug_handler]
 pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo
+        Ok(repo) => repo
             .insert(dvd)
             .await
             .ok(),
@@ -825,7 +825,7 @@ pub async fn parse_csv(
 
     // Refresh the cache with the latest movies
     let refresh_result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.get_all()
                 .await
         }
@@ -1139,7 +1139,7 @@ pub async fn update_movie_location(
 
     // Refresh the cache with updated movies
     let refresh_result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.get_all()
                 .await
         }
@@ -1256,7 +1256,7 @@ pub async fn get_recent_movies() -> Json<Vec<ScoredMovie>> {
     info!("Getting recent movies");
 
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.get_recent(50)
                 .await
         }
@@ -1302,7 +1302,7 @@ pub async fn get_recent_releases(
     );
 
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.get_by_release_year(
                 params.min_year,
                 params.max_year,
@@ -1352,7 +1352,7 @@ pub async fn get_random_movies(Query(params): Query<RandomMoviesQuery>) -> Json<
     );
 
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.get_random(params.count)
                 .await
         }
@@ -1393,7 +1393,7 @@ pub async fn get_unknown_location_movies() -> Json<Vec<ScoredMovie>> {
     info!("Getting movies with unknown location");
 
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.get_unknown_location(50)
                 .await
         }
@@ -1432,7 +1432,7 @@ pub async fn get_unknown_location_movies() -> Json<Vec<ScoredMovie>> {
 pub async fn unique_locations() -> Json<Vec<String>> {
     info!("Getting unique list of all locations");
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.unique_locations()
                 .await
         }
@@ -1460,7 +1460,7 @@ pub async fn get_movies_by_location(Path(location): Path<String>) -> Json<Vec<Fu
         location
     );
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.movies_by_location(&location)
                 .await
         }
@@ -1492,7 +1492,7 @@ pub async fn get_movies_by_location(Path(location): Path<String>) -> Json<Vec<Fu
 pub async fn stats_overview() -> Json<models::StatsOverview> {
     info!("Getting stats overview");
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.get_all()
                 .await
         }
@@ -1574,7 +1574,7 @@ pub async fn stats_overview() -> Json<models::StatsOverview> {
 pub async fn stats_movies_by_year() -> Json<models::BarChartData> {
     info!("Getting movies by year stats");
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.get_all()
                 .await
         }
@@ -1649,7 +1649,7 @@ pub async fn stats_movies_by_year() -> Json<models::BarChartData> {
 pub async fn stats_genres() -> Json<models::PieChartData> {
     info!("Getting genre distribution stats");
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.get_all()
                 .await
         }
@@ -1906,7 +1906,7 @@ pub async fn structured_search(
 pub async fn stats_top_actors() -> Json<models::BarChartData> {
     info!("Getting top actors stats");
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.get_all()
                 .await
         }

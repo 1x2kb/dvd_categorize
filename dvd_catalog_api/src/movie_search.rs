@@ -562,7 +562,7 @@ async fn vector_only_search(
     let vector_results = match embedding(&enhanced_query).await {
         Ok(embedding_vec) => {
             let search_result = match PostgresMovieRepository::from_env().await {
-                Ok(mut repo) => {
+                Ok(repo) => {
                     repo.search_by_embedding(
                         embedding_vec,
                         (limit * 2) as i64,
@@ -725,7 +725,7 @@ async fn hybrid_both_search(
             match embedding(&enhanced_query_clone).await {
                 Ok(embedding_vec) => {
                     let search_result = match PostgresMovieRepository::from_env().await {
-                        Ok(mut repo) => {
+                        Ok(repo) => {
                             repo.search_by_embedding(
                                 embedding_vec,
                                 (limit * 2) as i64,
@@ -1078,7 +1078,7 @@ async fn extract_entities_from_movies(
 #[debug_handler]
 pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
     let dvds = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             use database::traits::GetAllMovies;
             repo.get_all()
                 .await

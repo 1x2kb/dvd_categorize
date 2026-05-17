@@ -229,7 +229,7 @@ async fn send_streaming_message(
     };
 
     // Use fetch API for streaming
-    let mut opts = web_sys::RequestInit::new();
+    let opts = web_sys::RequestInit::new();
     opts.set_method("POST");
     opts.set_mode(web_sys::RequestMode::Cors);
 
@@ -375,9 +375,7 @@ async fn send_streaming_message(
 
                 if line.starts_with("event: ") {
                     current_event = line[7..].to_string();
-                } else if line.starts_with("data: ") {
-                    let data = &line[6..];
-
+                } else if let Some(data) = line.strip_prefix("data: ") {
                     if current_event == "message" {
                         accumulated.push_str(data);
                         streaming_response.set(accumulated.clone());
@@ -423,7 +421,7 @@ pub fn AiChat() -> Element {
     let mut app_data = consume_context::<Signal<AppData>>();
     let mut input_value = use_signal(String::new);
     let mut is_loading = use_signal(|| false);
-    let mut streaming_response = use_signal(String::new);
+    let streaming_response = use_signal(String::new);
     let mut show_history = use_signal(|| false);
     // false = streaming RAG (`/ai/chat/stream`), true = non-streaming tool-enabled (`/ai/chat`)
     let mut tool_mode = use_signal(|| false);

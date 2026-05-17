@@ -84,7 +84,7 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
 
     let movies: Vec<NewMovie> = full_movies
         .iter_mut()
-        .zip(embeddings.into_iter())
+        .zip(embeddings)
         .map(
             |(movie, embedding)| NewMovie {
                 name: movie

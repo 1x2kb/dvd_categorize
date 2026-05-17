@@ -161,7 +161,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                         key: "{movie_id}-{location}",
                         movie_id: movie_id,
                         initial_location: location.clone(),
-                        on_location_updated: props.on_location_updated.clone()
+                        on_location_updated: props.on_location_updated
                     }
                 }
             }
@@ -193,7 +193,7 @@ pub fn MovieGrid(props: MovieGridProps) -> Element {
                     key: "{scored_movie.movie.key_hash}",
                     scored_movie: scored_movie.clone(),
                     search_mode: props.search_mode,
-                    on_location_updated: props.on_location_updated.clone()
+                    on_location_updated: props.on_location_updated
                 }
             }
         }

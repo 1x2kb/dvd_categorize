@@ -923,7 +923,7 @@ fn log_actor_reordering(movie: &FullMovie, reordered_actors: &[String], csv_row:
 fn update_movie_actors(movie: &mut FullMovie, reordered_actors: Vec<String>, csv_row: usize) {
     movie.actors = reordered_actors
         .into_iter()
-        .map(|name| models::Actor::from(name))
+        .map(models::Actor::from)
         .collect();
     info!(
         "  CSV row {} ({}): Successfully reordered actors",

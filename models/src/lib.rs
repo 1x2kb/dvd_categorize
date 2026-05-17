@@ -331,7 +331,7 @@ impl FullMovie {
                     .parse::<i32>()
                 {
                     // Validate it's a reasonable year (1800-2100)
-                    if year >= 1800 && year <= 2100 {
+                    if (1800..=2100).contains(&year) {
                         let name = full_name[..last_paren]
                             .trim()
                             .to_string();
