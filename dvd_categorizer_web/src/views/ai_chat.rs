@@ -1,6 +1,9 @@
 use dioxus::prelude::*;
 use log::error;
-use models::{AvailableModel, AvailableModelsResponse, ChatRequest, ChatResponse, Role, RoledMessage};
+use models::{
+    AvailableModel, AvailableModelsResponse, ChatRequest, ChatResponse, Role, RoledMessage,
+};
+use prompts::{DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
@@ -12,13 +15,16 @@ use crate::components::Markdown;
 /// that self-call the API. Returns a single response — no streaming UI.
 async fn send_tool_message(
     message: String,
-    model: String,
+    model_signal: Signal<String>,
+    prompt_signal: Signal<String>,
     mut app_data: Signal<AppData>,
     mut is_loading: Signal<bool>,
 ) {
     let window = web_sys::window().unwrap();
     let location = window.location();
-    let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+    let hostname = location
+        .hostname()
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
     let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
 
     let user_message = RoledMessage {
@@ -26,91 +32,148 @@ async fn send_tool_message(
         role: Role::User,
     };
 
-    app_data.write().ai_chat.with_mut(|chat| {
-        if let Some(chat) = chat {
-            chat.push(user_message.clone());
-        } else {
-            *chat = Some(vec![user_message.clone()]);
-        }
-    });
+    app_data
+        .write()
+        .ai_chat
+        .with_mut(
+            |chat| {
+                if let Some(chat) = chat {
+                    chat.push(user_message.clone());
+                } else {
+                    *chat = Some(vec![user_message.clone()]);
+                }
+            },
+        );
 
-    let session_id = app_data.read().chat_session_id.read().clone();
+    let session_id = app_data
+        .read()
+        .chat_session_id
+        .read()
+        .clone();
     let chat_request = ChatRequest {
         session_id,
         messages: vec![user_message],
-        model: Some(model),
+        model: Some(model_signal()),
+        system_prompt: Some(prompt_signal()),
     };
 
     let url = format!("http://{hostname}:{server_port}/ai/chat");
     let request = match gloo_net::http::Request::post(&url)
-        .header("Content-Type", "application/json")
+        .header(
+            "Content-Type",
+            "application/json",
+        )
         .json(&chat_request)
     {
         Ok(req) => req,
         Err(e) => {
-            error!("Failed to build tool chat request: {:?}", e);
+            error!(
+                "Failed to build tool chat request: {:?}",
+                e
+            );
             is_loading.set(false);
             return;
         }
     };
 
-    match request.send().await {
+    match request
+        .send()
+        .await
+    {
         Ok(response) => {
             if !response.ok() {
-                error!("Tool chat returned status {}", response.status());
+                error!(
+                    "Tool chat returned status {}",
+                    response.status()
+                );
                 let error_message = RoledMessage {
-                    message: format!("AI service returned error {}", response.status()),
+                    message: format!(
+                        "AI service returned error {}",
+                        response.status()
+                    ),
                     role: Role::Ai,
                 };
-                app_data.write().ai_chat.with_mut(|chat| {
-                    if let Some(chat) = chat {
-                        chat.push(error_message);
-                    }
-                });
+                app_data
+                    .write()
+                    .ai_chat
+                    .with_mut(
+                        |chat| {
+                            if let Some(chat) = chat {
+                                chat.push(error_message);
+                            }
+                        },
+                    );
                 is_loading.set(false);
                 return;
             }
 
-            match response.json::<ChatResponse>().await {
+            match response
+                .json::<ChatResponse>()
+                .await
+            {
                 Ok(parsed) => {
                     if let Some(sid) = parsed.session_id {
-                        app_data.write().chat_session_id.set(Some(sid));
+                        app_data
+                            .write()
+                            .chat_session_id
+                            .set(Some(sid));
                     }
                     let ai_message = RoledMessage {
                         message: parsed.message,
                         role: Role::Ai,
                     };
-                    app_data.write().ai_chat.with_mut(|chat| {
-                        if let Some(chat) = chat {
-                            chat.push(ai_message);
-                        }
-                    });
+                    app_data
+                        .write()
+                        .ai_chat
+                        .with_mut(
+                            |chat| {
+                                if let Some(chat) = chat {
+                                    chat.push(ai_message);
+                                }
+                            },
+                        );
                 }
                 Err(e) => {
-                    error!("Failed to parse tool chat response: {:?}", e);
+                    error!(
+                        "Failed to parse tool chat response: {:?}",
+                        e
+                    );
                     let error_message = RoledMessage {
                         message: "Failed to parse AI response".to_string(),
                         role: Role::Ai,
                     };
-                    app_data.write().ai_chat.with_mut(|chat| {
-                        if let Some(chat) = chat {
-                            chat.push(error_message);
-                        }
-                    });
+                    app_data
+                        .write()
+                        .ai_chat
+                        .with_mut(
+                            |chat| {
+                                if let Some(chat) = chat {
+                                    chat.push(error_message);
+                                }
+                            },
+                        );
                 }
             }
         }
         Err(e) => {
-            error!("Tool chat fetch failed: {:?}", e);
+            error!(
+                "Tool chat fetch failed: {:?}",
+                e
+            );
             let error_message = RoledMessage {
                 message: "Failed to connect to AI service".to_string(),
                 role: Role::Ai,
             };
-            app_data.write().ai_chat.with_mut(|chat| {
-                if let Some(chat) = chat {
-                    chat.push(error_message);
-                }
-            });
+            app_data
+                .write()
+                .ai_chat
+                .with_mut(
+                    |chat| {
+                        if let Some(chat) = chat {
+                            chat.push(error_message);
+                        }
+                    },
+                );
         }
     }
 
@@ -119,48 +182,64 @@ async fn send_tool_message(
 
 async fn send_streaming_message(
     message: String,
-    model: String,
+    model_signal: Signal<String>,
+    prompt_signal: Signal<String>,
     mut app_data: Signal<AppData>,
     mut streaming_response: Signal<String>,
     mut is_loading: Signal<bool>,
 ) {
     let window = web_sys::window().unwrap();
     let location = window.location();
-    let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+    let hostname = location
+        .hostname()
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
     let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
 
-    let user_message = RoledMessage { 
-        message: message.clone(), 
-        role: Role::User 
+    let user_message = RoledMessage {
+        message: message.clone(),
+        role: Role::User,
     };
 
-    app_data.write().ai_chat.with_mut(|chat| {
-        if let Some(chat) = chat {
-            chat.push(user_message.clone());
-        } else {
-            *chat = Some(vec![user_message.clone()]);
-        }
-    });
+    app_data
+        .write()
+        .ai_chat
+        .with_mut(
+            |chat| {
+                if let Some(chat) = chat {
+                    chat.push(user_message.clone());
+                } else {
+                    *chat = Some(vec![user_message.clone()]);
+                }
+            },
+        );
 
     streaming_response.set(String::new());
 
     // Only send new message - backend loads history from DB
-    let session_id = app_data.read().chat_session_id.read().clone();
+    let session_id = app_data
+        .read()
+        .chat_session_id
+        .read()
+        .clone();
     let chat_request = ChatRequest {
         session_id,
         messages: vec![user_message.clone()],
-        model: Some(model),
+        model: Some(model_signal()),
+        system_prompt: Some(prompt_signal()),
     };
 
     // Use fetch API for streaming
     let mut opts = web_sys::RequestInit::new();
     opts.set_method("POST");
     opts.set_mode(web_sys::RequestMode::Cors);
-    
+
     let body = match serde_json::to_string(&chat_request) {
         Ok(json) => json,
         Err(e) => {
-            error!("Failed to serialize request: {}", e);
+            error!(
+                "Failed to serialize request: {}",
+                e
+            );
             is_loading.set(false);
             return;
         }
@@ -173,14 +252,26 @@ async fn send_streaming_message(
     ) {
         Ok(req) => req,
         Err(e) => {
-            error!("Failed to create request: {:?}", e);
+            error!(
+                "Failed to create request: {:?}",
+                e
+            );
             is_loading.set(false);
             return;
         }
     };
 
-    if let Err(e) = request.headers().set("Content-Type", "application/json") {
-        error!("Failed to set headers: {:?}", e);
+    if let Err(e) = request
+        .headers()
+        .set(
+            "Content-Type",
+            "application/json",
+        )
+    {
+        error!(
+            "Failed to set headers: {:?}",
+            e
+        );
         is_loading.set(false);
         return;
     }
@@ -188,25 +279,38 @@ async fn send_streaming_message(
     let resp_value = match JsFuture::from(window.fetch_with_request(&request)).await {
         Ok(v) => v,
         Err(e) => {
-            error!("Fetch failed: {:?}", e);
-            let error_message = RoledMessage { 
-                message: "Failed to connect to AI service".to_string(), 
-                role: Role::Ai 
+            error!(
+                "Fetch failed: {:?}",
+                e
+            );
+            let error_message = RoledMessage {
+                message: "Failed to connect to AI service".to_string(),
+                role: Role::Ai,
             };
-            app_data.write().ai_chat.with_mut(|chat| {
-                if let Some(chat) = chat {
-                    chat.push(error_message);
-                }
-            });
+            app_data
+                .write()
+                .ai_chat
+                .with_mut(
+                    |chat| {
+                        if let Some(chat) = chat {
+                            chat.push(error_message);
+                        }
+                    },
+                );
             is_loading.set(false);
             return;
         }
     };
 
-    let resp: web_sys::Response = resp_value.dyn_into().unwrap();
-    
+    let resp: web_sys::Response = resp_value
+        .dyn_into()
+        .unwrap();
+
     if !resp.ok() {
-        error!("Response not OK: {}", resp.status());
+        error!(
+            "Response not OK: {}",
+            resp.status()
+        );
         is_loading.set(false);
         return;
     }
@@ -230,39 +334,58 @@ async fn send_streaming_message(
         let chunk = match JsFuture::from(reader.read()).await {
             Ok(c) => c,
             Err(e) => {
-                error!("Read error: {:?}", e);
+                error!(
+                    "Read error: {:?}",
+                    e
+                );
                 break;
             }
         };
 
-        let done = js_sys::Reflect::get(&chunk, &"done".into()).unwrap();
-        if done.as_bool().unwrap_or(false) {
+        let done = js_sys::Reflect::get(
+            &chunk,
+            &"done".into(),
+        )
+        .unwrap();
+        if done
+            .as_bool()
+            .unwrap_or(false)
+        {
             break;
         }
 
-        let value = js_sys::Reflect::get(&chunk, &"value".into()).unwrap();
+        let value = js_sys::Reflect::get(
+            &chunk,
+            &"value".into(),
+        )
+        .unwrap();
         let uint8_array = js_sys::Uint8Array::new(&value);
         let bytes = uint8_array.to_vec();
-        
+
         if let Ok(text) = std::str::from_utf8(&bytes) {
             buffer.push_str(text);
-            
+
             // Process complete SSE lines
             let mut current_event = String::new();
             while let Some(newline_pos) = buffer.find('\n') {
-                let line = buffer[..newline_pos].trim().to_string();
+                let line = buffer[..newline_pos]
+                    .trim()
+                    .to_string();
                 buffer.drain(..=newline_pos);
-                
+
                 if line.starts_with("event: ") {
                     current_event = line[7..].to_string();
                 } else if line.starts_with("data: ") {
                     let data = &line[6..];
-                    
+
                     if current_event == "message" {
                         accumulated.push_str(data);
                         streaming_response.set(accumulated.clone());
                     } else if current_event == "session" {
-                        app_data.write().chat_session_id.set(Some(data.to_string()));
+                        app_data
+                            .write()
+                            .chat_session_id
+                            .set(Some(data.to_string()));
                     }
                 } else if line.starts_with("event: done") {
                     break;
@@ -276,17 +399,22 @@ async fn send_streaming_message(
 
     // Save final message
     if !accumulated.is_empty() {
-        let ai_message = RoledMessage { 
-            message: accumulated, 
-            role: Role::Ai 
+        let ai_message = RoledMessage {
+            message: accumulated,
+            role: Role::Ai,
         };
-        app_data.write().ai_chat.with_mut(|chat| {
-            if let Some(chat) = chat {
-                chat.push(ai_message);
-            }
-        });
+        app_data
+            .write()
+            .ai_chat
+            .with_mut(
+                |chat| {
+                    if let Some(chat) = chat {
+                        chat.push(ai_message);
+                    }
+                },
+            );
     }
-    
+
     is_loading.set(false);
 }
 
@@ -301,69 +429,114 @@ pub fn AiChat() -> Element {
     let mut tool_mode = use_signal(|| false);
     let mut selected_model = use_signal(|| "phi3.5".to_string());
     let mut available_models = use_signal(Vec::<AvailableModel>::new);
+    let mut show_prompt_editor = use_signal(|| false);
+    let mut rag_prompt = use_signal(|| DEFAULT_RAG_PROMPT.to_string());
+    let mut tool_prompt = use_signal(|| DEFAULT_TOOL_PROMPT.to_string());
 
     // Fetch available models on mount
-    use_effect(move || {
-        spawn(async move {
-            let window = web_sys::window().unwrap();
-            let location = window.location();
-            let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
-            let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
-            let url = format!("http://{hostname}:{server_port}/ai/models");
+    use_effect(
+        move || {
+            spawn(
+                async move {
+                    let window = web_sys::window().unwrap();
+                    let location = window.location();
+                    let hostname = location
+                        .hostname()
+                        .unwrap_or_else(|_| "127.0.0.1".to_string());
+                    let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+                    let url = format!("http://{hostname}:{server_port}/ai/models");
 
-            match gloo_net::http::Request::get(&url).send().await {
-                Ok(response) => {
-                    if let Ok(parsed) = response.json::<AvailableModelsResponse>().await {
-                        available_models.set(parsed.models);
+                    match gloo_net::http::Request::get(&url)
+                        .send()
+                        .await
+                    {
+                        Ok(response) => {
+                            if let Ok(parsed) = response
+                                .json::<AvailableModelsResponse>()
+                                .await
+                            {
+                                available_models.set(parsed.models);
+                            }
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to load available models: {:?}",
+                                e
+                            );
+                        }
                     }
-                }
-                Err(e) => {
-                    error!("Failed to load available models: {:?}", e);
-                }
-            }
-        });
-    });
+                },
+            );
+        },
+    );
 
     // Load chat sessions on mount
-    use_effect(move || {
-        spawn(async move {
-            let window = web_sys::window().unwrap();
-            let location = window.location();
-            let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
-            let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
-            let url = format!("http://{hostname}:{server_port}/ai/chat/sessions");
+    use_effect(
+        move || {
+            spawn(
+                async move {
+                    let window = web_sys::window().unwrap();
+                    let location = window.location();
+                    let hostname = location
+                        .hostname()
+                        .unwrap_or_else(|_| "127.0.0.1".to_string());
+                    let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+                    let url = format!("http://{hostname}:{server_port}/ai/chat/sessions");
 
-            match gloo_net::http::Request::get(&url).send().await {
-                Ok(response) => {
-                    if let Ok(sessions) = response.json::<Vec<ChatSession>>().await {
-                        app_data.write().chat_sessions.set(sessions);
+                    match gloo_net::http::Request::get(&url)
+                        .send()
+                        .await
+                    {
+                        Ok(response) => {
+                            if let Ok(sessions) = response
+                                .json::<Vec<ChatSession>>()
+                                .await
+                            {
+                                app_data
+                                    .write()
+                                    .chat_sessions
+                                    .set(sessions);
+                            }
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to load chat sessions: {:?}",
+                                e
+                            );
+                        }
                     }
-                }
-                Err(e) => {
-                    error!("Failed to load chat sessions: {:?}", e);
-                }
-            }
-        });
-    });
+                },
+            );
+        },
+    );
 
-    use_effect(move || {
-        if let Some(messages) = app_data.read().ai_chat.read().as_ref() {
-            if !messages.is_empty() {
-                if let Some(window) = web_sys::window() {
-                    if let Some(document) = window.document() {
-                        if let Some(container) = document.get_element_by_id("chat-messages-container") {
-                            container.set_scroll_top(container.scroll_height());
+    use_effect(
+        move || {
+            if let Some(messages) = app_data
+                .read()
+                .ai_chat
+                .read()
+                .as_ref()
+            {
+                if !messages.is_empty() {
+                    if let Some(window) = web_sys::window() {
+                        if let Some(document) = window.document() {
+                            if let Some(container) =
+                                document.get_element_by_id("chat-messages-container")
+                            {
+                                container.set_scroll_top(container.scroll_height());
+                            }
                         }
                     }
                 }
             }
-        }
-    });
+        },
+    );
 
     rsx! {
         div {
             class: "chat-container",
-            
+
             div {
                 class: "chat-header",
                 h2 { "Movie Collection Chat" }
@@ -415,7 +588,7 @@ pub fn AiChat() -> Element {
                         onclick: move |_| {
                             let new_state = !show_history();
                             show_history.set(new_state);
-                            
+
                             // Toggle body scroll
                             if let Some(window) = web_sys::window() {
                                 if let Some(document) = window.document() {
@@ -428,7 +601,7 @@ pub fn AiChat() -> Element {
                                     }
                                 }
                             }
-                            
+
                             spawn(async move {
                                 let window = web_sys::window().unwrap();
                                 let location = window.location();
@@ -449,6 +622,72 @@ pub fn AiChat() -> Element {
                             });
                         },
                         "Show History"
+                    }
+                    button {
+                        class: "prompt-toggle",
+                        onclick: move |_| show_prompt_editor.set(!show_prompt_editor()),
+                        "Edit Prompts"
+                    }
+                }
+            }
+
+            if *show_prompt_editor.read() {
+                div {
+                    class: "prompt-editor-panel",
+                    div { class: "prompt-editor-header",
+                        h3 { "System Prompts" }
+                        button {
+                            class: "close-prompt-editor",
+                            onclick: move |_| show_prompt_editor.set(false),
+                            "×"
+                        }
+                    }
+                    div { class: "prompt-tabs",
+                        button {
+                            class: if !tool_mode() { "prompt-tab active" } else { "prompt-tab" },
+                            onclick: move |_| tool_mode.set(false),
+                            "RAG Prompt"
+                        }
+                        button {
+                            class: if tool_mode() { "prompt-tab active" } else { "prompt-tab" },
+                            onclick: move |_| tool_mode.set(true),
+                            "Tool Prompt"
+                        }
+                    }
+                    if !tool_mode() {
+                        div { class: "prompt-textarea-container",
+                            label { "RAG Mode System Prompt:" }
+                            textarea {
+                                class: "prompt-textarea",
+                                value: "{rag_prompt}",
+                                rows: "15",
+                                oninput: move |evt| rag_prompt.set(evt.value()),
+                            }
+                            div { class: "prompt-actions",
+                                button {
+                                    class: "reset-prompt-btn",
+                                    onclick: move |_| rag_prompt.set(DEFAULT_RAG_PROMPT.to_string()),
+                                    "Reset to Default"
+                                }
+                            }
+                        }
+                    } else {
+                        div { class: "prompt-textarea-container",
+                            label { "Tool Mode System Prompt:" }
+                            textarea {
+                                class: "prompt-textarea",
+                                value: "{tool_prompt}",
+                                rows: "15",
+                                oninput: move |evt| tool_prompt.set(evt.value()),
+                            }
+                            div { class: "prompt-actions",
+                                button {
+                                    class: "reset-prompt-btn",
+                                    onclick: move |_| tool_prompt.set(DEFAULT_TOOL_PROMPT.to_string()),
+                                    "Reset to Default"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -500,7 +739,7 @@ pub fn AiChat() -> Element {
                                                 let session_id = session_id_str.clone();
                                                 app_data.write().chat_session_id.set(Some(session_id.clone()));
                                                 show_history.set(false);
-                                                
+
                                                 if let Some(window) = web_sys::window() {
                                                     if let Some(document) = window.document() {
                                                         if let Some(body) = document.body() {
@@ -508,14 +747,14 @@ pub fn AiChat() -> Element {
                                                         }
                                                     }
                                                 }
-                                                
+
                                                 spawn(async move {
                                                     let window = web_sys::window().unwrap();
                                                     let location = window.location();
                                                     let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
                                                     let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
                                                     let url = format!("http://{hostname}:{server_port}/ai/chat/sessions/{session_id}");
-                                                    
+
                                                     match gloo_net::http::Request::get(&url).send().await {
                                                         Ok(response) => {
                                                             #[derive(serde::Deserialize)]
@@ -523,7 +762,7 @@ pub fn AiChat() -> Element {
                                                                 role: String,
                                                                 content: String,
                                                             }
-                                                            
+
                                                             if let Ok(messages) = response.json::<Vec<ChatMessage>>().await {
                                                                 let roled_messages: Vec<RoledMessage> = messages.iter().map(|m| {
                                                                     RoledMessage {
@@ -560,7 +799,7 @@ pub fn AiChat() -> Element {
             div {
                 class: "chat-messages",
                 id: "chat-messages-container",
-                
+
                 if let Some(messages) = app_data.read().ai_chat.read().as_ref() {
                     if messages.is_empty() {
                         div {
@@ -590,7 +829,7 @@ pub fn AiChat() -> Element {
                                 }
                             }
                         }
-                        
+
                         if *is_loading.read() {
                             div {
                                 class: "message-wrapper ai-message",
@@ -602,7 +841,7 @@ pub fn AiChat() -> Element {
                                             span { class: "cursor", "▋" }
                                         }
                                     } else {
-                                        div { 
+                                        div {
                                             class: "message-content",
                                             style: "white-space: pre-wrap;",
                                             "{streaming_response.read()}"
@@ -627,7 +866,7 @@ pub fn AiChat() -> Element {
                     onkeypress: move |event| {
                         if event.key() == Key::Enter {
                             event.prevent_default();
-                            
+
                             let message = input_value.read().trim().to_string();
                             if message.is_empty() || *is_loading.read() {
                                 return;
@@ -636,11 +875,10 @@ pub fn AiChat() -> Element {
                             input_value.set(String::new());
                             is_loading.set(true);
 
-                            let model = selected_model.read().clone();
                             if tool_mode() {
-                                spawn(send_tool_message(message, model, app_data, is_loading));
+                                spawn(send_tool_message(message, selected_model, tool_prompt, app_data, is_loading));
                             } else {
-                                spawn(send_streaming_message(message, model, app_data, streaming_response, is_loading));
+                                spawn(send_streaming_message(message, selected_model, rag_prompt, app_data, streaming_response, is_loading));
                             }
                         }
                     }
@@ -657,11 +895,10 @@ pub fn AiChat() -> Element {
                         input_value.set(String::new());
                         is_loading.set(true);
 
-                        let model = selected_model.read().clone();
                         if tool_mode() {
-                            spawn(send_tool_message(message, model, app_data, is_loading));
+                            spawn(send_tool_message(message, selected_model, tool_prompt, app_data, is_loading));
                         } else {
-                            spawn(send_streaming_message(message, model, app_data, streaming_response, is_loading));
+                            spawn(send_streaming_message(message, selected_model, rag_prompt, app_data, streaming_response, is_loading));
                         }
                     },
                     if *is_loading.read() {

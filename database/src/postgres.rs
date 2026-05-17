@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use chrono::NaiveDate;
 use diesel::prelude::*;
-use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use diesel_async::pooled_connection::deadpool::Pool;
+use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use log::debug;
 use models::{
     schema, Actor, Director, FullMovie, Movie, MovieActor, MovieGenre, NewActor, NewDirector,
@@ -31,35 +31,51 @@ impl PostgresMovieRepository {
     }
 
     // Chat history methods
-    
+
     pub async fn create_chat_session(&self) -> Result<uuid::Uuid, DatabaseError> {
-        use models::{NewChatSession, schema::chat_sessions};
-        
+        use models::{schema::chat_sessions, NewChatSession};
+
         let session_id = uuid::Uuid::new_v4();
         let new_session = NewChatSession { session_id };
-        
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         diesel::insert_into(chat_sessions::table)
             .values(&new_session)
             .execute(&mut conn)
             .await?;
-        
+
         Ok(session_id)
     }
-    
+
     pub async fn get_chat_history(
         &self,
         session_id: uuid::Uuid,
     ) -> Result<Vec<models::ChatMessage>, DatabaseError> {
         use models::schema::chat_messages;
-        
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         chat_messages::table
             .filter(chat_messages::session_id.eq(session_id))
             .order(chat_messages::created_at.asc())
@@ -67,59 +83,83 @@ impl PostgresMovieRepository {
             .await
             .map_err(Into::into)
     }
-    
+
     pub async fn save_chat_message(
         &self,
         message: models::NewChatMessage,
     ) -> Result<(), DatabaseError> {
         use models::schema::{chat_messages, chat_sessions};
-        
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         diesel::insert_into(chat_messages::table)
             .values(&message)
             .execute(&mut conn)
             .await?;
-        
+
         // Update session timestamp
         diesel::update(chat_sessions::table)
             .filter(chat_sessions::session_id.eq(message.session_id))
             .set(chat_sessions::updated_at.eq(diesel::dsl::now))
             .execute(&mut conn)
             .await?;
-        
+
         Ok(())
     }
-    
-    pub async fn list_chat_sessions(
-        &self,
-    ) -> Result<Vec<models::ChatSession>, DatabaseError> {
+
+    pub async fn list_chat_sessions(&self) -> Result<Vec<models::ChatSession>, DatabaseError> {
         use models::schema::chat_sessions;
-        
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         chat_sessions::table
             .order(chat_sessions::updated_at.desc())
             .load(&mut conn)
             .await
             .map_err(Into::into)
     }
-    
+
     pub async fn search_structured(
         &self,
         query: &models::StructuredQuery,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
-        crate::structured_search::search_movies_structured(query, &mut conn)
+        let mut conn = self
+            .pool
+            .get()
             .await
-            .map_err(Into::into)
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
+        crate::structured_search::search_movies_structured(
+            query, &mut conn,
+        )
+        .await
+        .map_err(Into::into)
     }
 }
 
@@ -128,10 +168,18 @@ impl PostgresMovieRepository {
 #[async_trait]
 impl GetAllMovies for PostgresMovieRepository {
     async fn get_all(&self) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         let movies = schema::movie::table
             .left_join(schema::director::table)
             .select((
@@ -178,10 +226,18 @@ impl GetAllMovies for PostgresMovieRepository {
 #[async_trait]
 impl GetMovieById for PostgresMovieRepository {
     async fn get_by_id(&self, id: i32) -> Result<FullMovie, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         let (movie, director) = schema::movie::table
             .find(id)
             .left_join(schema::director::table)
@@ -196,13 +252,11 @@ impl GetMovieById for PostgresMovieRepository {
             .await?;
 
         let actors = crate::actors_for_movie(
-            &movie,
-            &mut conn,
+            &movie, &mut conn,
         )
         .await;
         let genres = crate::genres_for_movie(
-            &movie,
-            &mut conn,
+            &movie, &mut conn,
         )
         .await;
 
@@ -221,9 +275,17 @@ impl GetMoviesByIds for PostgresMovieRepository {
             return Ok(Vec::new());
         }
 
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
 
         // Get base movie data with directors (1:1 relationship via LEFT JOIN)
         let movies_with_directors = schema::movie::table
@@ -348,10 +410,18 @@ impl GetMoviesByIds for PostgresMovieRepository {
 #[async_trait]
 impl InsertMovie for PostgresMovieRepository {
     async fn insert(&self, full_movie: FullMovie) -> Result<FullMovie, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         let actors: String = full_movie
             .actors
             .iter()
@@ -523,10 +593,18 @@ impl InsertMovies for PostgresMovieRepository {
         )>,
         DatabaseError,
     > {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         diesel::insert_into(schema::movie::table)
             .values(new_movies)
             .on_conflict((
@@ -552,10 +630,18 @@ impl UpdateMovieLocation for PostgresMovieRepository {
         movie_id: i32,
         new_location: String,
     ) -> Result<(), DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         diesel::update(schema::movie::table.find(movie_id))
             .set(schema::movie::location.eq(new_location))
             .execute(&mut conn)
@@ -573,10 +659,18 @@ impl SearchMoviesByEmbedding for PostgresMovieRepository {
         embedding: Vec<f32>,
         limit: i64,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         let movie_ids: Vec<i32> = schema::movie::table
             .select(schema::movie::id)
             .filter(schema::movie::embedding.is_not_null())
@@ -603,10 +697,18 @@ impl SearchMoviesByEmbedding for PostgresMovieRepository {
 #[async_trait]
 impl GetRecentMovies for PostgresMovieRepository {
     async fn get_recent(&self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         let movie_ids: Vec<i32> = schema::movie::table
             .select(schema::movie::id)
             .order(schema::movie::added_on.desc())
@@ -634,10 +736,18 @@ impl GetMoviesByReleaseYear for PostgresMovieRepository {
         max_year: i32,
         limit: i64,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         let movie_ids: Vec<i32> = schema::movie::table
             .select(schema::movie::id)
             .filter(schema::movie::release_year.ge(min_year))
@@ -664,10 +774,18 @@ impl GetMoviesByReleaseYear for PostgresMovieRepository {
 #[async_trait]
 impl RandomMovies for PostgresMovieRepository {
     async fn get_random(&self, count: i64) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         let movie_ids: Vec<i32> = schema::movie::table
             .select(schema::movie::id)
             .order(diesel::dsl::sql::<diesel::sql_types::Integer>("RANDOM()"))
@@ -690,10 +808,18 @@ impl RandomMovies for PostgresMovieRepository {
 #[async_trait]
 impl GetUnknownLocationMovies for PostgresMovieRepository {
     async fn get_unknown_location(&self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         let movie_ids: Vec<i32> = schema::movie::table
             .select(schema::movie::id)
             .filter(schema::movie::location.eq("Unknown"))
@@ -720,13 +846,20 @@ impl SearchMoviesStructured for PostgresMovieRepository {
         &self,
         query: &StructuredQuery,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         structured_search::search_movies_structured(
-            query,
-            &mut conn,
+            query, &mut conn,
         )
         .await
         .map_err(DatabaseError::from)
@@ -736,10 +869,18 @@ impl SearchMoviesStructured for PostgresMovieRepository {
 #[async_trait]
 impl GetUniqueLocations for PostgresMovieRepository {
     async fn unique_locations(&self) -> Result<Vec<String>, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         schema::movie::table
             .select(schema::movie::location)
             .distinct()
@@ -751,14 +892,19 @@ impl GetUniqueLocations for PostgresMovieRepository {
 
 #[async_trait]
 impl MoviesByLocation for PostgresMovieRepository {
-    async fn movies_by_location(
-        &self,
-        location: &str,
-    ) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+    async fn movies_by_location(&self, location: &str) -> Result<Vec<FullMovie>, DatabaseError> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         let movie_ids: Vec<i32> = schema::movie::table
             .select(schema::movie::id)
             .filter(schema::movie::location.eq(location))
@@ -782,7 +928,7 @@ impl PostgresActorRepository {
     pub fn new(pool: Pool<AsyncPgConnection>) -> Self {
         Self { pool }
     }
-    
+
     pub async fn from_env() -> Result<Self, DatabaseError> {
         let pool = crate::get_connection_pool().await?;
         Ok(Self::new(pool))
@@ -803,10 +949,18 @@ impl InsertActors for PostgresActorRepository {
         )>,
         DatabaseError,
     > {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         diesel::insert_into(schema::actor::table)
             .values(actors)
             .on_conflict(schema::actor::name)
@@ -828,14 +982,21 @@ impl InsertActors for PostgresActorRepository {
 #[async_trait]
 impl GetActorsForMovie for PostgresActorRepository {
     async fn get_for_movie(&self, movie: &Movie) -> Result<Vec<Actor>, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         Ok(
             crate::actors_for_movie(
-                movie,
-                &mut conn,
+                movie, &mut conn,
             )
             .await,
         )
@@ -848,10 +1009,18 @@ impl InsertMovieActorAssociations for PostgresActorRepository {
         &self,
         movie_actors: &[NewMovieActor],
     ) -> Result<usize, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         diesel::insert_into(schema::movie_actor::table)
             .values(movie_actors)
             .on_conflict((
@@ -874,7 +1043,7 @@ impl PostgresDirectorRepository {
     pub fn new(pool: Pool<AsyncPgConnection>) -> Self {
         Self { pool }
     }
-    
+
     pub async fn from_env() -> Result<Self, DatabaseError> {
         let pool = crate::get_connection_pool().await?;
         Ok(Self::new(pool))
@@ -897,10 +1066,18 @@ impl InsertDirectors for PostgresDirectorRepository {
     > {
         use schema::director::dsl::*;
 
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         let mut result = Vec::with_capacity(directors.len());
 
         for new_director in directors {
@@ -934,7 +1111,7 @@ impl PostgresGenreRepository {
     pub fn new(pool: Pool<AsyncPgConnection>) -> Self {
         Self { pool }
     }
-    
+
     pub async fn from_env() -> Result<Self, DatabaseError> {
         let pool = crate::get_connection_pool().await?;
         Ok(Self::new(pool))
@@ -948,10 +1125,18 @@ impl GetAllGenres for PostgresGenreRepository {
     async fn get_all(&self) -> Result<Vec<String>, DatabaseError> {
         use schema::movie_genre::dsl::*;
 
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         movie_genre
             .select(genre)
             .distinct()
@@ -964,14 +1149,21 @@ impl GetAllGenres for PostgresGenreRepository {
 #[async_trait]
 impl GetGenresForMovie for PostgresGenreRepository {
     async fn get_for_movie(&self, movie: &Movie) -> Result<Vec<String>, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         Ok(
             crate::genres_for_movie(
-                movie,
-                &mut conn,
+                movie, &mut conn,
             )
             .await,
         )
@@ -984,10 +1176,18 @@ impl InsertMovieGenreAssociations for PostgresGenreRepository {
         &self,
         movie_genres: &[NewMovieGenre],
     ) -> Result<usize, DatabaseError> {
-        let mut conn = self.pool.get().await.map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-        
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )?;
+
         diesel::insert_into(schema::movie_genre::table)
             .values(movie_genres)
             .on_conflict((

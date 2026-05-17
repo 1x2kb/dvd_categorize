@@ -379,6 +379,139 @@ body.modal-open {
     overflow: hidden;
 }
 
+/* Prompt Editor Panel */
+.prompt-editor-panel {
+    background: #1f2937;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 2px solid #0891b2;
+}
+
+.prompt-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.prompt-editor-header h3 {
+    color: #0891b2;
+    font-size: 1.2rem;
+    margin: 0;
+    font-weight: 600;
+}
+
+.close-prompt-editor {
+    background: transparent;
+    color: #9ca3af;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0 8px;
+    transition: color 0.2s;
+}
+
+.close-prompt-editor:hover {
+    color: #e5e7eb;
+}
+
+.prompt-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.prompt-tab {
+    background: #374151;
+    color: #9ca3af;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.prompt-tab:hover {
+    background: #4b5563;
+    color: #e5e7eb;
+}
+
+.prompt-tab.active {
+    background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+    color: white;
+}
+
+.prompt-textarea-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.prompt-textarea-container label {
+    color: #d1d5db;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.prompt-textarea {
+    background: #111827;
+    color: #e5e7eb;
+    border: 1px solid #374151;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 0.9rem;
+    font-family: 'Courier New', monospace;
+    resize: vertical;
+    min-height: 200px;
+    transition: border-color 0.2s;
+}
+
+.prompt-textarea:focus {
+    outline: none;
+    border-color: #0891b2;
+}
+
+.prompt-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.reset-prompt-btn {
+    background: #374151;
+    color: #d1d5db;
+    border: 1px solid #4b5563;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.reset-prompt-btn:hover {
+    background: #4b5563;
+    color: #e5e7eb;
+}
+
+.prompt-toggle {
+    background: linear-gradient(135deg, #374151 0%, #4b5563 100%);
+    color: #d1d5db;
+    border: 1px solid #4b5563;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.prompt-toggle:hover {
+    background: linear-gradient(135deg, #4b5563 0%, #6b7280 100%);
+    color: #e5e7eb;
+}
+
 /* Chat History Sidebar */
 .chat-history-sidebar {
     background: #1f2937;

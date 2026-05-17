@@ -36,18 +36,37 @@ impl ApiClient {
     /// Build an `ApiClient` from the `DVD_CATALOG_API_URL` env var,
     /// falling back to `http://localhost:3000`.
     pub fn from_env() -> Self {
-        let base_url = std::env::var("DVD_CATALOG_API_URL")
-            .unwrap_or_else(|_| DEFAULT_API_URL.to_string());
+        let base_url =
+            std::env::var("DVD_CATALOG_API_URL").unwrap_or_else(|_| DEFAULT_API_URL.to_string());
         Self::new(base_url)
     }
 
     async fn structured_search(&self, query: &StructuredQuery) -> Result<Vec<FullMovie>, BoxErr> {
-        let url = format!("{}/dvd/structured-search", self.base_url);
-        let resp = self.http.post(&url).json(query).send().await?;
-        if !resp.status().is_success() {
-            return Err(format!("structured-search returned {}", resp.status()).into());
+        let url = format!(
+            "{}/dvd/structured-search",
+            self.base_url
+        );
+        let resp = self
+            .http
+            .post(&url)
+            .json(query)
+            .send()
+            .await?;
+        if !resp
+            .status()
+            .is_success()
+        {
+            return Err(
+                format!(
+                    "structured-search returned {}",
+                    resp.status()
+                )
+                .into(),
+            );
         }
-        let movies: Vec<FullMovie> = resp.json().await?;
+        let movies: Vec<FullMovie> = resp
+            .json()
+            .await?;
         Ok(movies)
     }
 }
@@ -119,22 +138,43 @@ impl FilterByActorTool {
 
 impl Tool for FilterByActorTool {
     type Params = FilterByActorParams;
-    fn name() -> &'static str { "filter_by_actor" }
+    fn name() -> &'static str {
+        "filter_by_actor"
+    }
     fn description() -> &'static str {
         "Returns movies featuring the given actor as a JSON array."
     }
 
     async fn call(&mut self, params: Self::Params) -> ToolResult<String> {
-        info!("filter_by_actor: {}", params.actor_name);
+        info!(
+            "filter_by_actor: {}",
+            params.actor_name
+        );
         let query = StructuredQuery {
             actors: vec![params.actor_name],
             ..Default::default()
         };
-        let movies = self.api.structured_search(&query).await.map_err(|e| {
-            error!("filter_by_actor failed: {}", e);
-            e
-        })?;
-        Ok(serde_json::to_string(&truncate(movies, params.limit))?)
+        let movies = self
+            .api
+            .structured_search(&query)
+            .await
+            .map_err(
+                |e| {
+                    error!(
+                        "filter_by_actor failed: {}",
+                        e
+                    );
+                    e
+                },
+            )?;
+        Ok(
+            serde_json::to_string(
+                &truncate(
+                    movies,
+                    params.limit,
+                ),
+            )?,
+        )
     }
 }
 
@@ -151,22 +191,43 @@ impl FilterByGenreTool {
 
 impl Tool for FilterByGenreTool {
     type Params = FilterByGenreParams;
-    fn name() -> &'static str { "filter_by_genre" }
+    fn name() -> &'static str {
+        "filter_by_genre"
+    }
     fn description() -> &'static str {
         "Returns movies matching the given genre as a JSON array."
     }
 
     async fn call(&mut self, params: Self::Params) -> ToolResult<String> {
-        info!("filter_by_genre: {}", params.genre);
+        info!(
+            "filter_by_genre: {}",
+            params.genre
+        );
         let query = StructuredQuery {
             genres: vec![params.genre],
             ..Default::default()
         };
-        let movies = self.api.structured_search(&query).await.map_err(|e| {
-            error!("filter_by_genre failed: {}", e);
-            e
-        })?;
-        Ok(serde_json::to_string(&truncate(movies, params.limit))?)
+        let movies = self
+            .api
+            .structured_search(&query)
+            .await
+            .map_err(
+                |e| {
+                    error!(
+                        "filter_by_genre failed: {}",
+                        e
+                    );
+                    e
+                },
+            )?;
+        Ok(
+            serde_json::to_string(
+                &truncate(
+                    movies,
+                    params.limit,
+                ),
+            )?,
+        )
     }
 }
 
@@ -183,22 +244,43 @@ impl FilterByDirectorTool {
 
 impl Tool for FilterByDirectorTool {
     type Params = FilterByDirectorParams;
-    fn name() -> &'static str { "filter_by_director" }
+    fn name() -> &'static str {
+        "filter_by_director"
+    }
     fn description() -> &'static str {
         "Returns movies by the given director as a JSON array."
     }
 
     async fn call(&mut self, params: Self::Params) -> ToolResult<String> {
-        info!("filter_by_director: {}", params.director_name);
+        info!(
+            "filter_by_director: {}",
+            params.director_name
+        );
         let query = StructuredQuery {
             directors: vec![params.director_name],
             ..Default::default()
         };
-        let movies = self.api.structured_search(&query).await.map_err(|e| {
-            error!("filter_by_director failed: {}", e);
-            e
-        })?;
-        Ok(serde_json::to_string(&truncate(movies, params.limit))?)
+        let movies = self
+            .api
+            .structured_search(&query)
+            .await
+            .map_err(
+                |e| {
+                    error!(
+                        "filter_by_director failed: {}",
+                        e
+                    );
+                    e
+                },
+            )?;
+        Ok(
+            serde_json::to_string(
+                &truncate(
+                    movies,
+                    params.limit,
+                ),
+            )?,
+        )
     }
 }
 
@@ -215,21 +297,41 @@ impl GetMovieDetailsTool {
 
 impl Tool for GetMovieDetailsTool {
     type Params = GetMovieDetailsParams;
-    fn name() -> &'static str { "get_movie_details" }
+    fn name() -> &'static str {
+        "get_movie_details"
+    }
     fn description() -> &'static str {
         "Returns full details for movies whose title matches the input as a JSON array (up to 5)."
     }
 
     async fn call(&mut self, params: Self::Params) -> ToolResult<String> {
-        info!("get_movie_details: {}", params.title);
+        info!(
+            "get_movie_details: {}",
+            params.title
+        );
         let query = StructuredQuery {
             title_keywords: vec![params.title],
             ..Default::default()
         };
-        let movies = self.api.structured_search(&query).await.map_err(|e| {
-            error!("get_movie_details failed: {}", e);
-            e
-        })?;
-        Ok(serde_json::to_string(&truncate(movies, 5))?)
+        let movies = self
+            .api
+            .structured_search(&query)
+            .await
+            .map_err(
+                |e| {
+                    error!(
+                        "get_movie_details failed: {}",
+                        e
+                    );
+                    e
+                },
+            )?;
+        Ok(
+            serde_json::to_string(
+                &truncate(
+                    movies, 5,
+                ),
+            )?,
+        )
     }
 }

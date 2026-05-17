@@ -1,10 +1,10 @@
-use crate::components::movie_grid::MovieGrid;
 use crate::components::browse_bar::BrowseBar;
-use crate::components::search_mode_selector::SearchModeSelector;
+use crate::components::movie_grid::MovieGrid;
 use crate::components::search_bar::SearchBar;
+use crate::components::search_mode_selector::SearchModeSelector;
 use crate::components::YearChart;
 use dioxus::prelude::*;
-use models::{ScoredMovie, SearchRequest, BarChartData};
+use models::{BarChartData, ScoredMovie, SearchRequest};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -129,7 +129,9 @@ async fn fetch_unique_locations() -> Result<Vec<String>, reqwest::Error> {
     Ok(response)
 }
 
-async fn fetch_movies_by_location(location_name: String) -> Result<Vec<ScoredMovie>, reqwest::Error> {
+async fn fetch_movies_by_location(
+    location_name: String,
+) -> Result<Vec<ScoredMovie>, reqwest::Error> {
     let window = web_sys::window().unwrap();
     let location = window.location();
     let hostname = location
@@ -140,12 +142,17 @@ async fn fetch_movies_by_location(location_name: String) -> Result<Vec<ScoredMov
 
     let encoded: String = location_name
         .bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{:02X}", b),
-        })
+        .map(
+            |b| match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    (b as char).to_string()
+                }
+                _ => format!(
+                    "%{:02X}",
+                    b
+                ),
+            },
+        )
         .collect();
 
     let client = reqwest::Client::new();
@@ -157,13 +164,17 @@ async fn fetch_movies_by_location(location_name: String) -> Result<Vec<ScoredMov
         .await?;
 
     // Wrap FullMovie into ScoredMovie with 0 score for MovieGrid compatibility
-    Ok(response
-        .into_iter()
-        .map(|movie| ScoredMovie {
-            movie,
-            vector_score: 0.0,
-        })
-        .collect())
+    Ok(
+        response
+            .into_iter()
+            .map(
+                |movie| ScoredMovie {
+                    movie,
+                    vector_score: 0.0,
+                },
+            )
+            .collect(),
+    )
 }
 
 async fn fetch_unknown_location_movies() -> Result<Vec<ScoredMovie>, reqwest::Error> {
@@ -218,10 +229,12 @@ pub fn AiLiveResults() -> Element {
     let mut selected_model = use_signal(|| None::<String>);
     let mut showing_random = use_signal(|| false);
     let mut showing_recent_movies = use_signal(|| false);
-    let mut year_data = use_signal(|| BarChartData {
-        labels: vec![],
-        values: vec![],
-    });
+    let mut year_data = use_signal(
+        || BarChartData {
+            labels: vec![],
+            values: vec![],
+        },
+    );
     let mut available_models = use_signal(Vec::<models::AvailableModel>::new);
     let mut available_locations = use_signal(Vec::<String>::new);
 
@@ -359,7 +372,7 @@ pub fn AiLiveResults() -> Element {
                         let location = window.location();
                         let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
                         let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
-                        
+
                         match reqwest::get(format!("http://{hostname}:{server_port}/stats/movies-by-year")).await {
                             Ok(resp) => {
                                 if let Ok(data) = resp.json::<BarChartData>().await {
@@ -451,7 +464,7 @@ pub fn AiLiveResults() -> Element {
                         let disable_enh = disable_enhancement();
                         let mode = search_mode();
                         let model = selected_model();
-                        
+
                         spawn(async move {
                             if is_loading() {
                                 return;
@@ -510,8 +523,8 @@ pub fn AiLiveResults() -> Element {
             }
 
             // Movie grid section
-            MovieGrid { 
-                movies: Arc::clone(&movies()), 
+            MovieGrid {
+                movies: Arc::clone(&movies()),
                 search_mode: search_mode(),
                 on_location_updated: move |(movie_id, new_location): (i32, String)| {
                     log::info!("Location update callback called for movie {} with location: {}", movie_id, new_location);

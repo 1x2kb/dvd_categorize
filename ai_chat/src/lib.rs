@@ -142,7 +142,12 @@ pub async fn find_related_keys(
             .content
     );
 
-    serde_json::from_str(&response.message.content).map_err(|e| e.to_string())
+    serde_json::from_str(
+        &response
+            .message
+            .content,
+    )
+    .map_err(|e| e.to_string())
 }
 
 async fn bot_message(dvds: &[FullMovie], ollama: Arc<OllamaClient>) -> Result<String, String> {

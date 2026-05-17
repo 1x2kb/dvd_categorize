@@ -1999,6 +1999,7 @@ dependencies = [
  "log",
  "models",
  "ollama-rs",
+ "prompts",
  "serde",
  "serde_json",
  "tokio",
@@ -2022,6 +2023,7 @@ dependencies = [
  "js-sys",
  "log",
  "models",
+ "prompts",
  "pulldown-cmark",
  "reqwest 0.13.2",
  "serde",
@@ -4755,6 +4757,10 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
+
+[[package]]
+name = "prompts"
+version = "0.1.0"
 
 [[package]]
 name = "psl-types"

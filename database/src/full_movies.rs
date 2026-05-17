@@ -12,13 +12,32 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
     for movie in &full_movies {
         if let Some(date_str) = &movie.added_on {
             // Try parsing as full timestamp first, then fall back to date-only
-            let timestamp_ok = chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S%.f").is_ok();
-            let date_ok = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                .map(|date| date.and_hms_opt(0, 0, 0).is_some())
-                .unwrap_or(false);
-            
+            let timestamp_ok = chrono::NaiveDateTime::parse_from_str(
+                date_str,
+                "%Y-%m-%d %H:%M:%S%.f",
+            )
+            .is_ok();
+            let date_ok = NaiveDate::parse_from_str(
+                date_str, "%Y-%m-%d",
+            )
+            .map(
+                |date| {
+                    date.and_hms_opt(
+                        0, 0, 0,
+                    )
+                    .is_some()
+                },
+            )
+            .unwrap_or(false);
+
             if !timestamp_ok && !date_ok {
-                return Err(format!("Invalid date '{}' for movie '{}'", date_str, movie.name).into());
+                return Err(
+                    format!(
+                        "Invalid date '{}' for movie '{}'",
+                        date_str, movie.name
+                    )
+                    .into(),
+                );
             }
         }
     }

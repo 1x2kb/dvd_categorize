@@ -44,11 +44,7 @@ pub trait InsertMovies: Send + Sync {
 
 #[async_trait]
 pub trait UpdateMovieLocation: Send + Sync {
-    async fn update_location(
-        &self,
-        movie_id: i32,
-        location: String,
-    ) -> Result<(), DatabaseError>;
+    async fn update_location(&self, movie_id: i32, location: String) -> Result<(), DatabaseError>;
 }
 
 #[async_trait]
@@ -92,7 +88,10 @@ pub trait GetUniqueLocations: Send + Sync {
 
 #[async_trait]
 pub trait MoviesByLocation: Send + Sync {
-    async fn movies_by_location(&self, location_name: &str) -> Result<Vec<FullMovie>, DatabaseError>;
+    async fn movies_by_location(
+        &self,
+        location_name: &str,
+    ) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
 #[async_trait]

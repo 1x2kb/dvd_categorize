@@ -9,12 +9,18 @@ use crate::components::location_editor::LocationEditor;
 pub struct SingleMovieCardProps {
     pub scored_movie: ScoredMovie,
     pub search_mode: models::SearchMode,
-    pub on_location_updated: EventHandler<(i32, String)>,
+    pub on_location_updated: EventHandler<(
+        i32,
+        String,
+    )>,
 }
 
 #[component]
 fn MovieCard(props: SingleMovieCardProps) -> Element {
-    let movie_id = props.scored_movie.movie.id;
+    let movie_id = props
+        .scored_movie
+        .movie
+        .id;
 
     rsx! {
         div {
@@ -167,7 +173,10 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
 pub struct MovieGridProps {
     pub movies: Arc<Vec<ScoredMovie>>,
     pub search_mode: models::SearchMode,
-    pub on_location_updated: EventHandler<(i32, String)>,
+    pub on_location_updated: EventHandler<(
+        i32,
+        String,
+    )>,
 }
 
 #[component]
@@ -175,14 +184,14 @@ pub fn MovieGrid(props: MovieGridProps) -> Element {
     // Create and provide editing context for all LocationEditors
     let is_editing = use_signal(|| false);
     use_context_provider(|| is_editing);
-    
+
     rsx! {
         div {
             class: if is_editing() { "movie-grid movie-grid-cols-3 editing-active" } else { "movie-grid movie-grid-cols-3" },
             for scored_movie in props.movies.iter() {
-                MovieCard { 
+                MovieCard {
                     key: "{scored_movie.movie.key_hash}",
-                    scored_movie: scored_movie.clone(), 
+                    scored_movie: scored_movie.clone(),
                     search_mode: props.search_mode,
                     on_location_updated: props.on_location_updated.clone()
                 }

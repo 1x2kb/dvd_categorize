@@ -10,6 +10,7 @@ members = [
     "actor_reorder",
     "dioxus_grapher",
     "ai_tools",
+    "prompts",
 ]
 
 resolver = "2"

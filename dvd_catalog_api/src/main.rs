@@ -39,8 +39,12 @@ async fn main() {
     }
 
     // Load movies into cache state on startup
-    let db_pool = PostgresMovieRepository::from_env().await.expect("Failed to create DB pool");
-    let load_result = db_pool.get_all().await;
+    let db_pool = PostgresMovieRepository::from_env()
+        .await
+        .expect("Failed to create DB pool");
+    let load_result = db_pool
+        .get_all()
+        .await;
     let movies = match load_result {
         Ok(movies) => {
             info!(
@@ -59,7 +63,9 @@ async fn main() {
     };
 
     // Create the router with the initial movie data
-    let app = init_router(movies, db_pool);
+    let app = init_router(
+        movies, db_pool,
+    );
 
     let connection = get_host();
     info!(
@@ -104,9 +110,7 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
     };
 
     // Create DB state for chat history
-    let db_state = DbState {
-        pool: db_pool,
-    };
+    let db_state = DbState { pool: db_pool };
 
     // Create a router for endpoints that need CacheState
     let stateful_router = Router::new()

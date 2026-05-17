@@ -1,4 +1,4 @@
-use csv::{WriterBuilder, QuoteStyle};
+use csv::{QuoteStyle, WriterBuilder};
 use models::FullMovie;
 use std::error::Error;
 
@@ -60,7 +60,9 @@ pub fn movies_to_csv(movies: &[FullMovie]) -> Result<String, Box<dyn Error>> {
             .as_deref()
             .unwrap_or("");
 
-        let year = movie.release_year.to_string();
+        let year = movie
+            .release_year
+            .to_string();
 
         writer.write_record([
             &movie.name,
@@ -123,9 +125,11 @@ mod tests {
         assert!(csv.contains("Actor One | Actor Two"));
         assert!(csv.contains("Action | Drama"));
         assert!(csv.contains("Test Director"));
-        
+
         // Verify header includes Year column
-        let lines: Vec<&str> = csv.lines().collect();
+        let lines: Vec<&str> = csv
+            .lines()
+            .collect();
         assert!(lines[0].contains("Year"));
     }
 
@@ -136,12 +140,10 @@ mod tests {
             key_hash: FullMovie::generate_key_hash("Movie with \"Quotes\""),
             name: "Movie with \"Quotes\"".to_string(),
             description: Some("Description with \"quotes\" and commas, here".to_string()),
-            actors: vec![
-                Actor {
-                    id: 1,
-                    name: "Actor \"Nickname\" Name".to_string(),
-                },
-            ],
+            actors: vec![Actor {
+                id: 1,
+                name: "Actor \"Nickname\" Name".to_string(),
+            }],
             director: Some(
                 Director {
                     id: 1,
@@ -156,18 +158,46 @@ mod tests {
         }];
 
         let csv = movies_to_csv(&movies).unwrap();
-        
+
         // Verify CSV uses "" for escaping quotes (CSV standard), not \"
-        println!("Raw CSV output:\n{}", csv);
-        assert!(csv.contains("\"Movie with \"\"Quotes\"\"\""), "CSV should escape quotes as \"\" not \\\"");
-        assert!(csv.contains("\"Description with \"\"quotes\"\" and commas, here\""), "CSV should escape quotes as \"\" not \\\"");
-        
+        println!(
+            "Raw CSV output:\n{}",
+            csv
+        );
+        assert!(
+            csv.contains("\"Movie with \"\"Quotes\"\"\""),
+            "CSV should escape quotes as \"\" not \\\""
+        );
+        assert!(
+            csv.contains("\"Description with \"\"quotes\"\" and commas, here\""),
+            "CSV should escape quotes as \"\" not \\\""
+        );
+
         // Parse back to verify proper escaping
         let parsed = crate::parse_csv(csv.as_bytes()).unwrap();
-        assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].name, "Movie with \"Quotes\"");
-        assert_eq!(parsed[0].description, Some("Description with \"quotes\" and commas, here".to_string()));
-        assert_eq!(parsed[0].actors[0].name, "Actor \"Nickname\" Name");
-        assert_eq!(parsed[0].director.as_ref().unwrap().name, "Director \"The\" Name");
+        assert_eq!(
+            parsed.len(),
+            1
+        );
+        assert_eq!(
+            parsed[0].name,
+            "Movie with \"Quotes\""
+        );
+        assert_eq!(
+            parsed[0].description,
+            Some("Description with \"quotes\" and commas, here".to_string())
+        );
+        assert_eq!(
+            parsed[0].actors[0].name,
+            "Actor \"Nickname\" Name"
+        );
+        assert_eq!(
+            parsed[0]
+                .director
+                .as_ref()
+                .unwrap()
+                .name,
+            "Director \"The\" Name"
+        );
     }
 }

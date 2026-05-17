@@ -59,8 +59,8 @@ use std::error::Error;
 use std::fmt::Display;
 
 use diesel::ConnectionError;
-use diesel_async::{AsyncConnection, AsyncPgConnection};
 use diesel_async::pooled_connection::deadpool::Pool;
+use diesel_async::{AsyncConnection, AsyncPgConnection};
 pub use models::{schema::*, *};
 
 pub use actors::*;
@@ -105,7 +105,11 @@ impl Error for DatabaseError {}
 impl Display for DatabaseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DatabaseError::QueryError(msg) => write!(f, "Query error: {}", msg),
+            DatabaseError::QueryError(msg) => write!(
+                f,
+                "Query error: {}",
+                msg
+            ),
             DatabaseError::ConnectionError(e) => write!(
                 f,
                 "Database connection error: {}",
@@ -131,14 +135,21 @@ impl Display for DatabaseError {
 pub async fn get_connection_pool() -> Result<Pool<AsyncPgConnection>, DatabaseError> {
     let database_url =
         env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
-    
-    let manager = diesel_async::pooled_connection::AsyncDieselConnectionManager::<AsyncPgConnection>::new(database_url);
+
+    let manager =
+        diesel_async::pooled_connection::AsyncDieselConnectionManager::<AsyncPgConnection>::new(
+            database_url,
+        );
     let pool = Pool::builder(manager)
         .build()
-        .map_err(|e| DatabaseError::ConnectionError(
-            diesel::ConnectionError::BadConnection(e.to_string())
-        ))?;
-    
+        .map_err(
+            |e| {
+                DatabaseError::ConnectionError(
+                    diesel::ConnectionError::BadConnection(e.to_string()),
+                )
+            },
+        )?;
+
     Ok(pool)
 }
 
@@ -158,4 +169,3 @@ pub async fn get_database_connection() -> Result<AsyncPgConnection, DatabaseErro
         .await
         .map_err(DatabaseError::from)
 }
-

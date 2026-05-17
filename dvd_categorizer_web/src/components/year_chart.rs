@@ -1,19 +1,25 @@
 use dioxus::prelude::*;
-use dioxus_grapher::{BarGraph, XAxisMode, AutoOptions};
+use dioxus_grapher::{AutoOptions, BarGraph, XAxisMode};
 use models::BarChartData;
 
 #[component]
-pub fn YearChart(
-    data: ReadSignal<BarChartData>,
-) -> Element {
+pub fn YearChart(data: ReadSignal<BarChartData>) -> Element {
     let data_value = data();
-    let chart_data: Vec<(String, f64)> = data_value
+    let chart_data: Vec<(
+        String,
+        f64,
+    )> = data_value
         .labels
         .iter()
         .cloned()
-        .zip(data_value.values.iter().cloned())
+        .zip(
+            data_value
+                .values
+                .iter()
+                .cloned(),
+        )
         .collect();
-    
+
     rsx! {
         div {
             class: "chart-section year-chart-responsive",

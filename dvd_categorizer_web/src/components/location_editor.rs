@@ -23,9 +23,23 @@ async fn update_location_on_server(movie_id: i32, location: String) -> Result<()
         .json(&request)
         .send()
         .await
-        .map_err(|e| format!("Request failed: {}", e))?
+        .map_err(
+            |e| {
+                format!(
+                    "Request failed: {}",
+                    e
+                )
+            },
+        )?
         .error_for_status()
-        .map_err(|e| format!("Server error: {}", e))?;
+        .map_err(
+            |e| {
+                format!(
+                    "Server error: {}",
+                    e
+                )
+            },
+        )?;
 
     Ok(())
 }
@@ -34,55 +48,83 @@ async fn update_location_on_server(movie_id: i32, location: String) -> Result<()
 pub struct LocationEditorProps {
     pub movie_id: i32,
     pub initial_location: String,
-    pub on_location_updated: EventHandler<(i32, String)>,
+    pub on_location_updated: EventHandler<(
+        i32,
+        String,
+    )>,
 }
 
 #[component]
 pub fn LocationEditor(props: LocationEditorProps) -> Element {
     // Track the current displayed location separately from props for reactivity
-    let mut current_location = use_signal(|| props.initial_location.clone());
+    let mut current_location = use_signal(
+        || {
+            props
+                .initial_location
+                .clone()
+        },
+    );
     let mut editing = use_signal(|| false);
     let mut location_input = use_signal(String::new);
     let mut is_saving = use_signal(|| false);
     let mut save_error = use_signal(|| None::<String>);
-    
-    let input_id = use_signal(|| format!("location-input-{}", props.movie_id));
-    
+
+    let input_id = use_signal(
+        || {
+            format!(
+                "location-input-{}",
+                props.movie_id
+            )
+        },
+    );
+
     // Get global editing context
     let mut global_editing = use_editing_context();
-    
+
     // Update global editing state when local editing changes
-    use_effect(move || {
-        global_editing.set(editing());
-    });
-    
+    use_effect(
+        move || {
+            global_editing.set(editing());
+        },
+    );
+
     // Sync current_location when props change (Option 2B: parent updates flow to child)
-    use_effect(move || {
-        let new_location = props.initial_location.clone();
-        if current_location() != new_location {
-            current_location.set(new_location);
-        }
-    });
-    
+    use_effect(
+        move || {
+            let new_location = props
+                .initial_location
+                .clone();
+            if current_location() != new_location {
+                current_location.set(new_location);
+            }
+        },
+    );
+
     // Focus input when editing mode is activated
-    use_effect(move || {
-        if editing() {
-            let id = input_id();
-            spawn(async move {
-                // Small delay to ensure DOM is updated
-                gloo_timers::future::TimeoutFuture::new(10).await;
-                if let Some(window) = web_sys::window() {
-                    if let Some(document) = window.document() {
-                        if let Some(element) = document.get_element_by_id(&id) {
-                            if let Some(input) = element.dyn_ref::<web_sys::HtmlInputElement>() {
-                                let _ = input.focus();
+    use_effect(
+        move || {
+            if editing() {
+                let id = input_id();
+                spawn(
+                    async move {
+                        // Small delay to ensure DOM is updated
+                        gloo_timers::future::TimeoutFuture::new(10).await;
+                        if let Some(window) = web_sys::window() {
+                            if let Some(document) = window.document() {
+                                if let Some(element) = document.get_element_by_id(&id) {
+                                    if let Some(input) =
+                                        element.dyn_ref::<web_sys::HtmlInputElement>()
+                                    {
+                                        let _ = input.focus();
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-            });
-        }
-    });
+                    },
+                );
+            }
+        },
+    );
 
     rsx! {
         div {

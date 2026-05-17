@@ -2,7 +2,10 @@ use dioxus::prelude::*;
 
 #[derive(Clone, PartialEq, Props)]
 pub struct GraphProps {
-    pub points: Vec<(f64, f64)>,
+    pub points: Vec<(
+        f64,
+        f64,
+    )>,
     #[props(default = 600.0)]
     pub width: f64,
     #[props(default = 400.0)]
@@ -15,7 +18,10 @@ pub struct GraphProps {
 
 #[component]
 pub fn Graph(props: GraphProps) -> Element {
-    if props.points.is_empty() {
+    if props
+        .points
+        .is_empty()
+    {
         return rsx! {
             div {
                 class: "graph-container",
@@ -35,25 +41,34 @@ pub fn Graph(props: GraphProps) -> Element {
     } else {
         1.0
     };
-    
+
     let scale_y = if max_y != min_y {
         graph_height / (max_y - min_y)
     } else {
         1.0
     };
 
-    let path_data = props.points
+    let path_data = props
+        .points
         .iter()
         .enumerate()
-        .map(|(i, (x, y))| {
-            let svg_x = padding + (x - min_x) * scale_x;
-            let svg_y = props.height - padding - (y - min_y) * scale_y;
-            if i == 0 {
-                format!("M {} {}", svg_x, svg_y)
-            } else {
-                format!("L {} {}", svg_x, svg_y)
-            }
-        })
+        .map(
+            |(i, (x, y))| {
+                let svg_x = padding + (x - min_x) * scale_x;
+                let svg_y = props.height - padding - (y - min_y) * scale_y;
+                if i == 0 {
+                    format!(
+                        "M {} {}",
+                        svg_x, svg_y
+                    )
+                } else {
+                    format!(
+                        "L {} {}",
+                        svg_x, svg_y
+                    )
+                }
+            },
+        )
         .collect::<Vec<_>>()
         .join(" ");
 
@@ -61,7 +76,7 @@ pub fn Graph(props: GraphProps) -> Element {
         svg {
             width: "{props.width}",
             height: "{props.height}",
-            
+
             defs {
                 linearGradient {
                     id: "lineGradient",
@@ -103,7 +118,7 @@ pub fn Graph(props: GraphProps) -> Element {
                     }
                 }
             }
-            
+
             for i in 0..5 {
                 {
                     let grid_y = padding + (i as f64 * graph_height / 4.0);
@@ -121,13 +136,13 @@ pub fn Graph(props: GraphProps) -> Element {
                     }
                 }
             }
-            
+
             path {
                 d: "{path_data} L {props.width - padding},{props.height - padding} L {padding},{props.height - padding} Z",
                 fill: "url(#areaGradient)",
                 stroke: "none",
             }
-            
+
             path {
                 d: "{path_data}",
                 stroke: "url(#lineGradient)",
@@ -137,7 +152,7 @@ pub fn Graph(props: GraphProps) -> Element {
                 stroke_linejoin: "round",
                 style: "transition: all 0.3s ease;",
             }
-            
+
             for (x, y) in props.points.iter() {
                 {
                     let svg_x = padding + (x - min_x) * scale_x;
@@ -172,7 +187,17 @@ pub fn Graph(props: GraphProps) -> Element {
     }
 }
 
-fn calculate_bounds(points: &[(f64, f64)]) -> (f64, f64, f64, f64) {
+fn calculate_bounds(
+    points: &[(
+        f64,
+        f64,
+    )],
+) -> (
+    f64,
+    f64,
+    f64,
+    f64,
+) {
     let mut min_x = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
     let mut min_y = f64::INFINITY;
@@ -185,5 +210,7 @@ fn calculate_bounds(points: &[(f64, f64)]) -> (f64, f64, f64, f64) {
         max_y = max_y.max(*y);
     }
 
-    (min_x, max_x, min_y, max_y)
+    (
+        min_x, max_x, min_y, max_y,
+    )
 }

@@ -4,8 +4,8 @@ use models::{
     StructuredQuery,
 };
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{Arc, RwLock};
 
 use crate::traits::*;
 use crate::DatabaseError;
@@ -33,12 +33,20 @@ impl MockMovieRepository {
         let repo = Self::new();
         for movie in movies {
             let id = movie.id;
-            repo.movies.write().unwrap()
+            repo.movies
+                .write()
+                .unwrap()
                 .insert(
                     id, movie,
                 );
-            let current = repo.next_id.load(Ordering::SeqCst);
-            repo.next_id.store(current.max(id + 1), Ordering::SeqCst);
+            let current = repo
+                .next_id
+                .load(Ordering::SeqCst);
+            repo.next_id
+                .store(
+                    current.max(id + 1),
+                    Ordering::SeqCst,
+                );
         }
         repo
     }
@@ -50,7 +58,9 @@ impl MockMovieRepository {
 impl GetAllMovies for MockMovieRepository {
     async fn get_all(&self) -> Result<Vec<FullMovie>, DatabaseError> {
         Ok(
-            self.movies.read().unwrap()
+            self.movies
+                .read()
+                .unwrap()
                 .values()
                 .cloned()
                 .collect(),
@@ -61,7 +71,9 @@ impl GetAllMovies for MockMovieRepository {
 #[async_trait]
 impl GetMovieById for MockMovieRepository {
     async fn get_by_id(&self, id: i32) -> Result<FullMovie, DatabaseError> {
-        self.movies.read().unwrap()
+        self.movies
+            .read()
+            .unwrap()
             .get(&id)
             .cloned()
             .ok_or_else(|| DatabaseError::DieselError(diesel::result::Error::NotFound))
@@ -71,7 +83,10 @@ impl GetMovieById for MockMovieRepository {
 #[async_trait]
 impl GetMoviesByIds for MockMovieRepository {
     async fn get_by_ids(&self, ids: Vec<i32>) -> Result<Vec<FullMovie>, DatabaseError> {
-        let movies = self.movies.read().unwrap();
+        let movies = self
+            .movies
+            .read()
+            .unwrap();
         Ok(
             ids.into_iter()
                 .filter_map(
@@ -89,9 +104,16 @@ impl GetMoviesByIds for MockMovieRepository {
 #[async_trait]
 impl InsertMovie for MockMovieRepository {
     async fn insert(&self, mut full_movie: FullMovie) -> Result<FullMovie, DatabaseError> {
-        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let id = self
+            .next_id
+            .fetch_add(
+                1,
+                Ordering::SeqCst,
+            );
         full_movie.id = id;
-        self.movies.write().unwrap()
+        self.movies
+            .write()
+            .unwrap()
             .insert(
                 id,
                 full_movie.clone(),
@@ -114,7 +136,12 @@ impl InsertMovies for MockMovieRepository {
     > {
         let mut results = Vec::new();
         for new_movie in new_movies {
-            let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+            let id = self
+                .next_id
+                .fetch_add(
+                    1,
+                    Ordering::SeqCst,
+                );
             results.push((
                 id,
                 new_movie
@@ -134,7 +161,9 @@ impl UpdateMovieLocation for MockMovieRepository {
         new_location: String,
     ) -> Result<(), DatabaseError> {
         if let Some(movie) = self
-            .movies.write().unwrap()
+            .movies
+            .write()
+            .unwrap()
             .get_mut(&movie_id)
         {
             movie.location = Some(new_location);
@@ -153,7 +182,9 @@ impl SearchMoviesByEmbedding for MockMovieRepository {
         limit: i64,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
         Ok(
-            self.movies.read().unwrap()
+            self.movies
+                .read()
+                .unwrap()
                 .values()
                 .take(limit as usize)
                 .cloned()
@@ -166,7 +197,9 @@ impl SearchMoviesByEmbedding for MockMovieRepository {
 impl GetRecentMovies for MockMovieRepository {
     async fn get_recent(&self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError> {
         let mut movies: Vec<_> = self
-            .movies.read().unwrap()
+            .movies
+            .read()
+            .unwrap()
             .values()
             .cloned()
             .collect();
@@ -192,7 +225,9 @@ impl SearchMoviesStructured for MockMovieRepository {
         query: &StructuredQuery,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
         let mut results: Vec<FullMovie> = self
-            .movies.read().unwrap()
+            .movies
+            .read()
+            .unwrap()
             .values()
             .cloned()
             .collect();
@@ -303,13 +338,17 @@ impl SearchMoviesStructured for MockMovieRepository {
 }
 
 pub struct MockActorRepository {
-    pub actors: Arc<RwLock<HashMap<
-        i32,
-        (
-            i32,
-            String,
-        ),
-    >>>,
+    pub actors: Arc<
+        RwLock<
+            HashMap<
+                i32,
+                (
+                    i32,
+                    String,
+                ),
+            >,
+        >,
+    >,
     pub next_id: AtomicI32,
 }
 
@@ -344,8 +383,15 @@ impl InsertActors for MockActorRepository {
     > {
         let mut results = Vec::new();
         for actor in actors {
-            let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-            self.actors.write().unwrap()
+            let id = self
+                .next_id
+                .fetch_add(
+                    1,
+                    Ordering::SeqCst,
+                );
+            self.actors
+                .write()
+                .unwrap()
                 .insert(
                     id,
                     (
@@ -384,13 +430,17 @@ impl InsertMovieActorAssociations for MockActorRepository {
 }
 
 pub struct MockDirectorRepository {
-    pub directors: Arc<RwLock<HashMap<
-        i32,
-        (
-            i32,
-            String,
-        ),
-    >>>,
+    pub directors: Arc<
+        RwLock<
+            HashMap<
+                i32,
+                (
+                    i32,
+                    String,
+                ),
+            >,
+        >,
+    >,
     pub next_id: AtomicI32,
 }
 
@@ -425,8 +475,15 @@ impl InsertDirectors for MockDirectorRepository {
     > {
         let mut results = Vec::new();
         for director in directors {
-            let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-            self.directors.write().unwrap()
+            let id = self
+                .next_id
+                .fetch_add(
+                    1,
+                    Ordering::SeqCst,
+                );
+            self.directors
+                .write()
+                .unwrap()
                 .insert(
                     id,
                     (
