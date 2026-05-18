@@ -1,5 +1,7 @@
 use std::{collections::HashSet, error::Error};
 
+use diesel::ConnectionError;
+
 use chrono::NaiveDate;
 use models::{FullMovie, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovieGenre};
 
@@ -62,7 +64,10 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
         },
     );
 
-    let mut connection = crate::get_database_connection().await?;
+    let pool = crate::get_connection_pool().await?;
+    let mut connection = pool.get().await.map_err(|e| {
+        crate::DatabaseError::ConnectionError(ConnectionError::BadConnection(e.to_string()))
+    })?;
     let actors = crate::insert_actors(
         &actors,
         &mut connection,

@@ -422,7 +422,7 @@ impl InsertMovie for PostgresMovieRepository {
                 },
             )?;
 
-        let actors: String = full_movie
+        let _actors_unused: String = full_movie
             .actors
             .iter()
             .map(
@@ -435,7 +435,7 @@ impl InsertMovie for PostgresMovieRepository {
             .collect::<Vec<_>>()
             .join(",");
 
-        let genres: String = full_movie
+        let _genres_unused: String = full_movie
             .genres
             .iter()
             .map(|genre| genre.as_str())

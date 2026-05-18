@@ -15,7 +15,7 @@ use database::{
     },
     FullMovie, PostgresMovieRepository, SearchRequest,
 };
-use log::{error, info};
+use log::{debug, error, info};
 use models::{CsvInput, ScoredMovie};
 use ollama_rs::error::OllamaError;
 use prompts::{DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
@@ -255,7 +255,7 @@ pub async fn chat(
     let model = request
         .model
         .clone()
-        .unwrap_or_else(|| "qwen2.5:3b".to_string());
+        .unwrap_or_else(|| "qwen2.5:7b".to_string());
     info!(
         "Using model: {}",
         model
@@ -453,7 +453,17 @@ pub async fn chat_stream(
                     .min(15)
             );
 
-            ai_chat::rag::format_movies_for_context(&results)
+            // Log movie titles sent to AI
+            let movie_titles: Vec<String> = results
+                .iter()
+                .take(15)
+                .map(|m| format!("{} ({})", m.name, m.release_year))
+                .collect();
+            info!("RAG movies sent to AI: {:?}", movie_titles);
+
+            let movie_context = ai_chat::rag::format_movies_for_context(&results);
+            debug!("RAG movie_context (length {}): {}", movie_context.len(), movie_context);
+            movie_context
         } else {
             info!("RAG: User query is not a movie search query");
             String::new()
@@ -464,19 +474,18 @@ pub async fn chat_stream(
     };
 
     // RAG-mode system prompt: collection-focused with injected movie context.
-    // Allows discussion of movies outside the library only when context suggests it
-    // (e.g. buy recommendations based on existing collection).
-    // Use custom prompt if provided, otherwise fall back to default with movie context.
-    let system_prompt = request
+    // ALWAYS inject movie_context - even if custom system_prompt provided
+    let base_prompt = request
         .system_prompt
-        .unwrap_or_else(
-            || {
-                format!(
-                    "{}\n\n{}",
-                    DEFAULT_RAG_PROMPT, movie_context
-                )
-            },
-        );
+        .unwrap_or_else(|| DEFAULT_RAG_PROMPT.to_string());
+    let system_prompt = format!("{}\n\n{}", base_prompt, movie_context);
+
+    // DEBUG: Log the complete system prompt
+    debug!(
+        "RAG system prompt (length {}): {}",
+        system_prompt.len(),
+        system_prompt
+    );
 
     // Convert chat history to Ollama format (system + history + new messages)
     let messages: Vec<ollama_rs::generation::chat::ChatMessage> =
@@ -524,7 +533,7 @@ pub async fn chat_stream(
     // Get model name from request or use default
     let model = request
         .model
-        .unwrap_or_else(|| "qwen2.5:3b".to_string());
+        .unwrap_or_else(|| "qwen2.5:7b".to_string());
     info!(
         "Using model: {} for streaming",
         model

@@ -863,7 +863,17 @@ async fn structured_query_search(
                 structured_query
             );
 
-            match database::get_database_connection().await {
+            let pool = match database::get_connection_pool().await {
+                Ok(pool) => pool,
+                Err(e) => {
+                    error!("Failed to get database pool: {:?}", e);
+                    return (
+                        Vec::new(),
+                        query.to_string(),
+                    );
+                }
+            };
+            match pool.get().await {
                 Ok(mut conn) => {
                     match database::structured_search::search_movies_structured(
                         &structured_query,

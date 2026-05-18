@@ -52,7 +52,7 @@ pub async fn extract_rag_query(user_message: &str, model: Option<&str>) -> Optio
     )
     .await
     {
-        Ok(structured_query) => {
+        Ok(mut structured_query) => {
             // Check if this is actually a movie query (has any search criteria)
             let is_movie_query = !structured_query
                 .actors
@@ -69,6 +69,21 @@ pub async fn extract_rag_query(user_message: &str, model: Option<&str>) -> Optio
                 || !structured_query
                     .description_keywords
                     .is_empty();
+
+            // Drop genres if other criteria exist (genres are too restrictive when combined)
+            // Only keep genres for genre-only queries
+            let has_other_criteria = !structured_query.actors.is_empty()
+                || !structured_query.directors.is_empty()
+                || !structured_query.title_keywords.is_empty()
+                || !structured_query.description_keywords.is_empty();
+
+            if has_other_criteria && !structured_query.genres.is_empty() {
+                info!(
+                    "Dropping genres {} due to other criteria being present (genres are too restrictive when combined)",
+                    structured_query.genres.len()
+                );
+                structured_query.genres.clear();
+            }
 
             info!(
                 "RAG structured query extracted: is_movie_query={}, actors={}, directors={}, genres={}, title_kw={}, desc_kw={}",
@@ -295,41 +310,40 @@ pub fn format_movies_for_context(movies: &[FullMovie]) -> String {
         return "\n\nNo movies found matching the query.".to_string();
     }
 
-    let movie_list = movies
-        .iter()
-        .take(15)
-        .map(
-            |m| {
-                format!(
-                    "- {} ({}) - Directed by {}, Starring: {}",
-                    m.name,
-                    m.release_year,
-                    m.director
-                        .as_ref()
-                        .map(
-                            |d| d
-                                .name
-                                .as_str()
-                        )
-                        .unwrap_or("Unknown"),
-                    m.actors
-                        .iter()
-                        .map(
-                            |a| a
-                                .name
-                                .as_str()
-                        )
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            },
-        )
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Build CSV format: Title,Year,Director,Actors
+    let mut csv_lines: Vec<String> = vec![
+        "Title,Year,Director,Actors".to_string(),
+    ];
+
+    for m in movies.iter().take(15) {
+        let director = m
+            .director
+            .as_ref()
+            .map(|d| d.name.as_str())
+            .unwrap_or("Unknown");
+        let actors = m
+            .actors
+            .iter()
+            .map(|a| a.name.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        // Escape quotes in CSV fields
+        let name_escaped = m.name.replace('"', "\"\"");
+        let director_escaped = director.replace('"', "\"\"");
+        let actors_escaped = actors.replace('"', "\"\"");
+
+        csv_lines.push(format!(
+            "\"{}\",{},\"{}\",\"{}\"",
+            name_escaped, m.release_year, director_escaped, actors_escaped
+        ));
+    }
+
+    let movie_csv = csv_lines.join("\n");
 
     format!(
-        "\n\nAvailable movies matching your query:\n{}\n\nImportant: Answer based ONLY on these movies. Do not mention movies not in this list.",
-        movie_list
+        "\n\n=== YOUR COMPLETE DVD LIBRARY (CSV FORMAT) ===\n{}\n\nCRITICAL INSTRUCTIONS:\n1. The CSV above contains ALL movies in the user's DVD library.\n2. You may ONLY mention movies from the 'Title' column above.\n3. You have NO knowledge of any other movies.\n4. When recommending, pick ONLY from the Titles listed above.\n5. If the user asks about a movie not in the Title column, say they don't own it.",
+        movie_csv
     )
 }
 

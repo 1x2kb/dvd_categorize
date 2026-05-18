@@ -1,5 +1,6 @@
-use crate::{get_database_connection, DatabaseError};
+use crate::DatabaseError;
 use diesel::prelude::*;
+use diesel::ConnectionError;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use models::{
     schema::movie_genre::{self},
@@ -9,7 +10,10 @@ use models::{
 /// Get all unique genres from the database
 pub async fn get_all_genres() -> Result<Vec<String>, DatabaseError> {
     use crate::schema::movie_genre::dsl::*;
-    let mut conn = get_database_connection().await?;
+    let pool = crate::get_connection_pool().await?;
+    let mut conn = pool.get().await.map_err(|e| {
+        DatabaseError::ConnectionError(ConnectionError::BadConnection(e.to_string()))
+    })?;
 
     movie_genre
         .select(genre)

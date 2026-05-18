@@ -59,8 +59,8 @@ pub use query_enhancement::*;
 pub use embedding::EMBEDDING_MODEL;
 
 // AI Model constants
-const DEFAULT_CHAT_MODEL: &str = "qwen2.5:3b";
-const DEFAULT_SMALL_MODEL: &str = "qwen2.5:3b";
+const DEFAULT_CHAT_MODEL: &str = "qwen2.5:7b";
+const DEFAULT_SMALL_MODEL: &str = "qwen2.5:7b";
 const DEFAULT_OLLAMA_HOST: &str = "ollama";
 const DEFAULT_OLLAMA_PORT: &str = "11434";
 const DEFAULT_CONTEXT_WINDOW: u64 = 64000;

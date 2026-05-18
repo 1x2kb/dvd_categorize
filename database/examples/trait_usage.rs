@@ -1,5 +1,5 @@
 use database::{
-    get_database_connection, GetMovieById, GetRecentMovies, MockEmbeddingProvider,
+    get_connection_pool, GetMovieById, GetRecentMovies, MockEmbeddingProvider,
     MockMovieRepository, PostgresMovieRepository, SearchMoviesStructured, StructuredQuery,
 };
 use models::FullMovie;
@@ -19,8 +19,8 @@ async fn search_recent_movies<R: GetRecentMovies>(
 }
 
 async fn example_with_postgres() -> Result<(), Box<dyn std::error::Error>> {
-    let conn = get_database_connection().await?;
-    let mut repo = PostgresMovieRepository::new(conn);
+    let pool = get_connection_pool().await?;
+    let mut repo = PostgresMovieRepository::new(pool);
 
     let movies = search_recent_movies(
         &mut repo, 5,

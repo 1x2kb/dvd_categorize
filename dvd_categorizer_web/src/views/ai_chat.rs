@@ -373,8 +373,8 @@ async fn send_streaming_message(
                     .to_string();
                 buffer.drain(..=newline_pos);
 
-                if line.starts_with("event: ") {
-                    current_event = line[7..].to_string();
+                if let Some(event) = line.strip_prefix("event: ") {
+                    current_event = event.to_string();
                 } else if let Some(data) = line.strip_prefix("data: ") {
                     if current_event == "message" {
                         accumulated.push_str(data);

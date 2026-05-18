@@ -413,12 +413,12 @@ fn read_and_parse_csv_dry_run(args: &Args) -> Result<Vec<FullMovie>, Box<dyn std
     Ok(movies)
 }
 
-fn generate_output_path(input_path: &PathBuf, output: Option<PathBuf>) -> PathBuf {
-    output.unwrap_or_else(|| input_path.clone())
+fn generate_output_path(input_path: &std::path::Path, output: Option<PathBuf>) -> PathBuf {
+    output.unwrap_or_else(|| input_path.to_path_buf())
 }
 
-fn generate_failed_output_path(input_path: &PathBuf) -> PathBuf {
-    let mut failed_path = input_path.clone();
+fn generate_failed_output_path(input_path: &std::path::Path) -> PathBuf {
+    let mut failed_path = input_path.to_path_buf();
     let stem = input_path
         .file_stem()
         .unwrap_or_default()

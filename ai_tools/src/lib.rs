@@ -167,6 +167,15 @@ impl Tool for FilterByActorTool {
                     e
                 },
             )?;
+        let movie_titles: Vec<String> = movies
+            .iter()
+            .map(|m| format!("{} ({})", m.name, m.release_year))
+            .collect();
+        info!(
+            "filter_by_actor sending {} movies to AI: {:?}",
+            movie_titles.len(),
+            movie_titles
+        );
         Ok(
             serde_json::to_string(
                 &truncate(
@@ -220,6 +229,15 @@ impl Tool for FilterByGenreTool {
                     e
                 },
             )?;
+        let movie_titles: Vec<String> = movies
+            .iter()
+            .map(|m| format!("{} ({})", m.name, m.release_year))
+            .collect();
+        info!(
+            "filter_by_genre sending {} movies to AI: {:?}",
+            movie_titles.len(),
+            movie_titles
+        );
         Ok(
             serde_json::to_string(
                 &truncate(
@@ -273,6 +291,15 @@ impl Tool for FilterByDirectorTool {
                     e
                 },
             )?;
+        let movie_titles: Vec<String> = movies
+            .iter()
+            .map(|m| format!("{} ({})", m.name, m.release_year))
+            .collect();
+        info!(
+            "filter_by_director sending {} movies to AI: {:?}",
+            movie_titles.len(),
+            movie_titles
+        );
         Ok(
             serde_json::to_string(
                 &truncate(
@@ -326,6 +353,15 @@ impl Tool for GetMovieDetailsTool {
                     e
                 },
             )?;
+        let movie_titles: Vec<String> = movies
+            .iter()
+            .map(|m| format!("{} ({})", m.name, m.release_year))
+            .collect();
+        info!(
+            "get_movie_details sending {} movies to AI: {:?}",
+            movie_titles.len(),
+            movie_titles
+        );
         Ok(
             serde_json::to_string(
                 &truncate(
