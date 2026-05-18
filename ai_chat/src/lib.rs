@@ -30,9 +30,13 @@
 
 pub mod embedding;
 pub mod live_ui;
-mod prompts;
 pub mod query_enhancement;
+pub mod rag;
+pub mod schema;
 pub mod structured_query_parser;
+
+// Re-export all prompts from the prompts crate
+pub use prompts::*;
 
 use std::sync::Arc;
 
@@ -46,7 +50,6 @@ use ollama_rs::{
     models::ModelOptions,
     Ollama,
 };
-use prompts::USER_LIBRARY_PROMPT;
 use tracing::{instrument, Level};
 
 pub use embedding::*;
@@ -56,8 +59,8 @@ pub use query_enhancement::*;
 pub use embedding::EMBEDDING_MODEL;
 
 // AI Model constants
-const DEFAULT_CHAT_MODEL: &str = "phi3.5";
-const DEFAULT_SMALL_MODEL: &str = "phi3.5";
+const DEFAULT_CHAT_MODEL: &str = "qwen2.5:7b";
+const DEFAULT_SMALL_MODEL: &str = "qwen2.5:7b";
 const DEFAULT_OLLAMA_HOST: &str = "ollama";
 const DEFAULT_OLLAMA_PORT: &str = "11434";
 const DEFAULT_CONTEXT_WINDOW: u64 = 64000;
@@ -126,7 +129,8 @@ pub async fn find_related_keys(
     let chat_request = ChatMessageRequest::new(
         DEFAULT_SMALL_MODEL.to_string(),
         messages,
-    );
+    )
+    .format(schema::dvd_filters_schema());
 
     let response = ollama
         .send_chat_messages(chat_request)
@@ -141,11 +145,9 @@ pub async fn find_related_keys(
     );
 
     serde_json::from_str(
-        extract_enclosed_content(
-            &response
-                .message
-                .content,
-        ),
+        &response
+            .message
+            .content,
     )
     .map_err(|e| e.to_string())
 }
@@ -243,26 +245,6 @@ pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::Oll
     Ok(response)
 }
 
-/// Extracts JSON content from a string by finding the outermost braces
-///
-/// # Arguments
-///
-/// * `s` - String potentially containing JSON
-///
-/// # Returns
-///
-/// The substring containing the JSON object, or the original string if no braces found
-fn extract_enclosed_content(s: &str) -> &str {
-    if let Some(start) = s.find('{') {
-        if let Some(end) = s.rfind('}') {
-            if end >= start {
-                return &s[start..=end];
-            }
-        }
-    }
-    s
-}
-
 /// Lists all available Ollama models
 ///
 /// # Returns
@@ -329,7 +311,7 @@ pub async fn list_models() -> Result<Vec<models::AvailableModel>, String> {
 ///
 /// # Arguments
 ///
-/// * `model_name` - The name of the model to pull (e.g., "phi3.5", "nomic-embed-text")
+/// * `model_name` - The name of the model to pull (e.g., "qwen2.5:7b", "nomic-embed-text")
 ///
 /// # Returns
 ///

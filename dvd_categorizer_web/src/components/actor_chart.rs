@@ -3,15 +3,20 @@ use dioxus_grapher::BarGraph;
 use models::BarChartData;
 
 #[component]
-pub fn ActorChart(
-    data: ReadSignal<BarChartData>,
-) -> Element {
-    let chart_data: Vec<(String, f64)> = data()
+pub fn ActorChart(data: ReadSignal<BarChartData>) -> Element {
+    let chart_data: Vec<(
+        String,
+        f64,
+    )> = data()
         .labels
         .into_iter()
-        .zip(data().values.into_iter())
+        .zip(
+            data()
+                .values
+                .into_iter(),
+        )
         .collect();
-    
+
     rsx! {
         div {
             class: "chart-section actor-chart-responsive",

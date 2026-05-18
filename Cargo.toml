@@ -9,6 +9,8 @@ members = [
     "csv_utils",
     "actor_reorder",
     "dioxus_grapher",
+    "ai_tools",
+    "prompts",
 ]
 
 resolver = "2"
@@ -21,7 +23,11 @@ tokio = { version = "1.52.1", features = ["full"] }
 dotenvy = "0.15"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.137"
-ollama-rs = { version = "0.3.4", features = ["tokio"] }
+ollama-rs = { version = "0.3.4", features = ["tokio", "macros", "stream"] }
+async-stream = "0.3"
+diesel = { version = "^2.2.4", features = ["postgres"] }
+diesel-async = { version = "0.8.0", features = ["postgres", "tokio", "deadpool"] }
+deadpool = "0.12"
 dioxus = "0.7.9"
 
 [profile]

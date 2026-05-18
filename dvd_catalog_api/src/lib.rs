@@ -1,7 +1,10 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{
+        sse::{Event, Sse},
+        IntoResponse,
+    },
     Json,
 };
 use axum_macros::debug_handler;
@@ -12,11 +15,13 @@ use database::{
     },
     FullMovie, PostgresMovieRepository, SearchRequest,
 };
-use log::{error, info};
+use log::{debug, error, info};
 use models::{CsvInput, ScoredMovie};
 use ollama_rs::error::OllamaError;
-use serde::Deserialize;
+use prompts::{DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
+use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Instant};
+use tokio_stream::StreamExt;
 use tracing::instrument;
 
 // Movie search functionality module
@@ -26,6 +31,11 @@ pub use movie_search::extract_entities;
 #[derive(Clone, Debug)]
 pub struct CacheState {
     pub movies: Arc<tokio::sync::RwLock<Vec<FullMovie>>>,
+}
+
+#[derive(Clone)]
+pub struct DbState {
+    pub pool: database::PostgresMovieRepository,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,9 +93,15 @@ pub async fn get_dvds(State(state): State<CacheState>) -> Json<Option<Vec<FullMo
 #[debug_handler]
 pub async fn get_dvd(Path(id): Path<i32>) -> Json<Option<FullMovie>> {
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.get_by_id(id).await.ok(),
+        Ok(repo) => repo
+            .get_by_id(id)
+            .await
+            .ok(),
         Err(e) => {
-            error!("Failed to get repo: {}", e);
+            error!(
+                "Failed to get repo: {}",
+                e
+            );
             None
         }
     };
@@ -96,18 +112,31 @@ pub async fn get_dvd(Path(id): Path<i32>) -> Json<Option<FullMovie>> {
 #[debug_handler]
 pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.insert(dvd).await.ok(),
+        Ok(repo) => repo
+            .insert(dvd)
+            .await
+            .ok(),
         Err(e) => {
-            error!("Failed to get repo: {}", e);
+            error!(
+                "Failed to get repo: {}",
+                e
+            );
             None
         }
     };
     Json(result)
 }
 
-#[instrument]
+/// Non-streaming chat endpoint with tool calling.
+///
+/// Uses `ollama_rs::coordinator::Coordinator` so the model can invoke
+/// `ai_tools` (filter-by-actor / genre / director, get-movie-details) which
+/// self-call this same API over HTTP. Session + history persisted to DB —
+/// mirrors the streaming endpoint but produces a single JSON response.
+#[instrument(skip(db_state, request), fields(messages = request.messages.len()))]
 #[debug_handler]
 pub async fn chat(
+    State(db_state): State<DbState>,
     Json(request): Json<models::ChatRequest>,
 ) -> Result<
     Json<models::ChatResponse>,
@@ -117,36 +146,396 @@ pub async fn chat(
     ),
 > {
     info!(
-        "Processing chat request with {} message(s)",
+        "Processing tool-enabled chat request with {} message(s)",
         request
             .messages
             .len()
     );
 
-    // Convert chat history to Ollama format
-    let messages: Vec<ollama_rs::generation::chat::ChatMessage> = std::iter::once(
-        ollama_rs::generation::chat::ChatMessage::system(
-            "You are a friendly and knowledgeable assistant. You can help with any topic the user asks about. \
-             Be conversational, helpful, and concise.".to_string()
+    // Get or create session
+    let session_id = match request
+        .session_id
+        .as_ref()
+        .and_then(|s| uuid::Uuid::parse_str(s).ok())
+    {
+        Some(id) => id,
+        None => db_state
+            .pool
+            .create_chat_session()
+            .await
+            .map_err(
+                |e| {
+                    error!(
+                        "Failed to create session: {:?}",
+                        e
+                    );
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!(
+                            "Failed to create session: {}",
+                            e
+                        ),
+                    )
+                },
+            )?,
+    };
+
+    // Load existing history from DB and seed the Coordinator's history
+    let history_messages = db_state
+        .pool
+        .get_chat_history(session_id)
+        .await
+        .unwrap_or_default();
+
+    // Tool-mode system prompt: results/recommendations scoped to user's library,
+    // but the AI may enrich answers with real-world knowledge about those movies.
+    // External movie references only when user explicitly requests them.
+    // Use custom prompt if provided, otherwise fall back to default.
+    let system_prompt = request
+        .system_prompt
+        .as_deref()
+        .unwrap_or(DEFAULT_TOOL_PROMPT);
+
+    // Seed the Coordinator's history with prior turns from DB (system prompt first).
+    // New messages are passed as the `chat()` argument — coordinator's
+    // send_chat_messages_with_history merges them in. Do NOT add new messages to
+    // this history vec or they will be sent twice.
+    let mut history: Vec<ollama_rs::generation::chat::ChatMessage> =
+        vec![ollama_rs::generation::chat::ChatMessage::system(
+            system_prompt.to_string(),
+        )];
+    for m in &history_messages {
+        let msg = match m
+            .role
+            .as_str()
+        {
+            "user" => ollama_rs::generation::chat::ChatMessage::user(
+                m.content
+                    .clone(),
+            ),
+            _ => ollama_rs::generation::chat::ChatMessage::assistant(
+                m.content
+                    .clone(),
+            ),
+        };
+        history.push(msg);
+    }
+
+    // New messages for this turn — passed to coordinator, NOT pre-added to history.
+    let new_messages: Vec<ollama_rs::generation::chat::ChatMessage> = request
+        .messages
+        .iter()
+        .map(
+            |msg| match msg.role {
+                models::Role::User => ollama_rs::generation::chat::ChatMessage::user(
+                    msg.message
+                        .clone(),
+                ),
+                models::Role::Ai => ollama_rs::generation::chat::ChatMessage::assistant(
+                    msg.message
+                        .clone(),
+                ),
+            },
         )
+        .collect();
+
+    // Capture user content for DB persistence after the call
+    let user_content_for_db: Vec<String> = request
+        .messages
+        .iter()
+        .filter(|m| m.role == models::Role::User)
+        .map(
+            |m| {
+                m.message
+                    .clone()
+            },
+        )
+        .collect();
+
+    let model = request
+        .model
+        .clone()
+        .unwrap_or_else(|| "qwen2.5:7b".to_string());
+    info!(
+        "Using model: {}",
+        model
+    );
+
+    // Ollama client
+    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
+    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
+    let ollama_url = format!(
+        "http://{}:{}",
+        ollama_host, ollama_port
+    );
+    let ollama = ollama_rs::Ollama::from_url(
+        ollama_url
+            .parse()
+            .unwrap(),
+    );
+
+    // Build coordinator with all tools — each tool shares one ApiClient (cheap clone)
+    let api_client = ai_tools::ApiClient::from_env();
+    let mut coordinator = ollama_rs::coordinator::Coordinator::new(
+        ollama, model, history,
     )
-    .chain(
-        request.messages.iter().map(|msg| {
-            match msg.role {
-                models::Role::User => ollama_rs::generation::chat::ChatMessage::user(msg.message.clone()),
-                models::Role::Ai => ollama_rs::generation::chat::ChatMessage::assistant(msg.message.clone()),
+    .add_tool(ai_tools::FilterByActorTool::new(api_client.clone()))
+    .add_tool(ai_tools::FilterByGenreTool::new(api_client.clone()))
+    .add_tool(ai_tools::FilterByDirectorTool::new(api_client.clone()))
+    .add_tool(ai_tools::GetMovieDetailsTool::new(api_client));
+
+    match coordinator
+        .chat(new_messages)
+        .await
+    {
+        Ok(response) => {
+            let content = response
+                .message
+                .content;
+            info!(
+                "Successfully generated AI response ({} chars)",
+                content.len()
+            );
+
+            // Persist user turn(s) then assistant response — only after successful LLM call
+            for user_content in &user_content_for_db {
+                if let Err(e) = db_state
+                    .pool
+                    .save_chat_message(
+                        models::NewChatMessage {
+                            session_id,
+                            role: "user".to_string(),
+                            content: user_content.clone(),
+                        },
+                    )
+                    .await
+                {
+                    error!(
+                        "Failed to save user message: {:?}",
+                        e
+                    );
+                }
             }
-        })
+
+            if let Err(e) = db_state
+                .pool
+                .save_chat_message(
+                    models::NewChatMessage {
+                        session_id,
+                        role: "assistant".to_string(),
+                        content: content.clone(),
+                    },
+                )
+                .await
+            {
+                error!(
+                    "Failed to save AI response: {:?}",
+                    e
+                );
+            }
+
+            Ok(
+                Json(
+                    models::ChatResponse {
+                        message: content,
+                        session_id: Some(session_id.to_string()),
+                    },
+                ),
+            )
+        }
+        Err(e) => {
+            error!(
+                "Failed to generate AI response: {:?}",
+                e
+            );
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "Failed to generate AI response: {}",
+                    e
+                ),
+            ))
+        }
+    }
+}
+
+/// SSE streaming chat endpoint with RAG
+#[instrument(skip(db_state))]
+pub async fn chat_stream(
+    State(db_state): State<DbState>,
+    Json(request): Json<models::ChatRequest>,
+) -> impl IntoResponse {
+    info!(
+        "Processing streaming chat request with {} message(s)",
+        request
+            .messages
+            .len()
+    );
+
+    // Get or create session
+    let session_id = match request
+        .session_id
+        .and_then(|s| uuid::Uuid::parse_str(&s).ok())
+    {
+        Some(id) => id,
+        None => match db_state
+            .pool
+            .create_chat_session()
+            .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                error!(
+                    "Failed to create session: {:?}",
+                    e
+                );
+                let error_stream = async_stream::stream! {
+                    yield Ok::<Event, std::convert::Infallible>(Event::default()
+                        .event("error")
+                        .data("Failed to create session"));
+                };
+                return Sse::new(error_stream)
+                    .keep_alive(axum::response::sse::KeepAlive::default())
+                    .into_response();
+            }
+        },
+    };
+
+    // Load history from DB
+    let history_messages = db_state
+        .pool
+        .get_chat_history(session_id)
+        .await
+        .unwrap_or_default();
+
+    // RAG: Extract movie query from user message using new 2-step flow
+    let user_message = request
+        .messages
+        .first()
+        .map(
+            |m| {
+                m.message
+                    .as_str()
+            },
+        )
+        .unwrap_or("");
+
+    let movie_context = if let Some(extracted) = ai_chat::rag::extract_rag_query(
+        user_message,
+        request
+            .model
+            .as_deref(),
     )
-    .collect();
+    .await
+    {
+        if extracted.is_movie_query {
+            info!(
+                "RAG: Extracted query - actors: {:?}, directors: {:?}, genres: {:?}, title_kw: {:?}, desc_kw: {:?}",
+                extracted.structured_query.actors,
+                extracted.structured_query.directors,
+                extracted.structured_query.genres,
+                extracted.structured_query.title_keywords,
+                extracted.structured_query.description_keywords
+            );
+
+            // Search movies from DB using structured query
+            let results = db_state
+                .pool
+                .search_structured(&extracted.structured_query)
+                .await
+                .unwrap_or_default();
+
+            info!(
+                "RAG search returned {} movies, injecting {} into context",
+                results.len(),
+                results
+                    .len()
+                    .min(15)
+            );
+
+            // Log movie titles sent to AI
+            let movie_titles: Vec<String> = results
+                .iter()
+                .take(15)
+                .map(|m| format!("{} ({})", m.name, m.release_year))
+                .collect();
+            info!("RAG movies sent to AI: {:?}", movie_titles);
+
+            let movie_context = ai_chat::rag::format_movies_for_context(&results);
+            debug!("RAG movie_context (length {}): {}", movie_context.len(), movie_context);
+            movie_context
+        } else {
+            info!("RAG: User query is not a movie search query");
+            String::new()
+        }
+    } else {
+        error!("RAG: Failed to extract query from user message");
+        String::new()
+    };
+
+    // RAG-mode system prompt: collection-focused with injected movie context.
+    // ALWAYS inject movie_context - even if custom system_prompt provided
+    let base_prompt = request
+        .system_prompt
+        .unwrap_or_else(|| DEFAULT_RAG_PROMPT.to_string());
+    let system_prompt = format!("{}\n\n{}", base_prompt, movie_context);
+
+    // DEBUG: Log the complete system prompt
+    debug!(
+        "RAG system prompt (length {}): {}",
+        system_prompt.len(),
+        system_prompt
+    );
+
+    // Convert chat history to Ollama format (system + history + new messages)
+    let messages: Vec<ollama_rs::generation::chat::ChatMessage> =
+        std::iter::once(ollama_rs::generation::chat::ChatMessage::system(system_prompt))
+            .chain(
+                history_messages
+                    .iter()
+                    .map(
+                        |msg| match msg
+                            .role
+                            .as_str()
+                        {
+                            "user" => ollama_rs::generation::chat::ChatMessage::user(
+                                msg.content
+                                    .clone(),
+                            ),
+                            _ => ollama_rs::generation::chat::ChatMessage::assistant(
+                                msg.content
+                                    .clone(),
+                            ),
+                        },
+                    ),
+            )
+            .chain(
+                request
+                    .messages
+                    .iter()
+                    .map(
+                        |msg| match msg.role {
+                            models::Role::User => ollama_rs::generation::chat::ChatMessage::user(
+                                msg.message
+                                    .clone(),
+                            ),
+                            models::Role::Ai => {
+                                ollama_rs::generation::chat::ChatMessage::assistant(
+                                    msg.message
+                                        .clone(),
+                                )
+                            }
+                        },
+                    ),
+            )
+            .collect();
 
     // Get model name from request or use default
     let model = request
         .model
-        .unwrap_or_else(|| "phi3.5".to_string());
-
+        .unwrap_or_else(|| "qwen2.5:7b".to_string());
     info!(
-        "Using model: {}",
+        "Using model: {} for streaming",
         model
     );
 
@@ -170,37 +559,119 @@ pub async fn chat(
         messages,
     );
 
-    // Send to Ollama
-    match ollama
-        .send_chat_messages(chat_request)
-        .await
-    {
-        Ok(response) => {
-            info!("Successfully generated AI response");
-            Ok(
-                Json(
-                    models::ChatResponse {
-                        message: response
-                            .message
-                            .content,
-                    },
-                ),
+    // Save user messages to DB
+    for msg in &request.messages {
+        if let Err(e) = db_state
+            .pool
+            .save_chat_message(
+                models::NewChatMessage {
+                    session_id,
+                    role: "user".to_string(),
+                    content: msg
+                        .message
+                        .clone(),
+                },
             )
-        }
-        Err(e) => {
+            .await
+        {
             error!(
-                "Failed to generate AI response: {:?}",
+                "Failed to save user message: {:?}",
                 e
             );
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "Failed to generate AI response: {}",
-                    e
-                ),
-            ))
         }
     }
+
+    // Get Ollama stream
+    let ollama_stream = match ollama
+        .send_chat_messages_stream(chat_request)
+        .await
+    {
+        Ok(stream) => stream,
+        Err(e) => {
+            error!(
+                "Failed to start stream: {:?}",
+                e
+            );
+            // Return error as single SSE event
+            let error_stream = async_stream::stream! {
+                yield Ok::<Event, std::convert::Infallible>(Event::default()
+                    .event("error")
+                    .data(format!("Failed to start stream: {}", e)));
+            };
+            return Sse::new(error_stream)
+                .keep_alive(axum::response::sse::KeepAlive::default())
+                .into_response();
+        }
+    };
+
+    // Clone for saving
+    let db_pool = db_state
+        .pool
+        .clone();
+
+    // Convert to SSE stream with response accumulation
+    let sse_stream = async_stream::stream! {
+        tokio::pin!(ollama_stream);
+        let mut accumulated_response = String::new();
+
+        while let Some(chunk) = ollama_stream.next().await {
+            match chunk {
+                Ok(response) => {
+                    // Log chunk content for debugging
+                    if response.message.content.is_empty() {
+                        info!("Received empty chunk from Ollama");
+                    } else {
+                        info!("Chunk content: {:?}", response.message.content);
+                    }
+
+                    // Accumulate content
+                    if !response.message.content.is_empty() {
+                        accumulated_response.push_str(&response.message.content);
+
+                        // Send content chunk as-is (markdown parser will handle formatting)
+                        yield Ok::<Event, std::convert::Infallible>(Event::default()
+                            .event("message")
+                            .data(response.message.content));
+                    }
+
+                    // Send done event on final chunk
+                    if response.done {
+                        // Save AI response to DB
+                        if !accumulated_response.is_empty() {
+                            if let Err(e) = db_pool.save_chat_message(models::NewChatMessage {
+                                session_id,
+                                role: "assistant".to_string(),
+                                content: accumulated_response.clone(),
+                            }).await {
+                                error!("Failed to save AI response: {:?}", e);
+                            }
+                        }
+
+                        // Send session ID
+                        yield Ok::<Event, std::convert::Infallible>(Event::default()
+                            .event("session")
+                            .data(session_id.to_string()));
+
+                        yield Ok::<Event, std::convert::Infallible>(Event::default()
+                            .event("done")
+                            .data(""));
+                        break;
+                    }
+                }
+                Err(e) => {
+                    error!("Stream error: {:?}", e);
+                    yield Ok::<Event, std::convert::Infallible>(Event::default()
+                        .event("error")
+                        .data(format!("Stream error: {:?}", e)));
+                    break;
+                }
+            }
+        }
+    };
+
+    Sse::new(sse_stream)
+        .keep_alive(axum::response::sse::KeepAlive::default())
+        .into_response()
 }
 
 #[instrument(skip(cache_state), fields(movie_count))]
@@ -363,7 +834,10 @@ pub async fn parse_csv(
 
     // Refresh the cache with the latest movies
     let refresh_result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.get_all().await,
+        Ok(repo) => {
+            repo.get_all()
+                .await
+        }
         Err(e) => Err(e),
     };
     match refresh_result {
@@ -674,7 +1148,10 @@ pub async fn update_movie_location(
 
     // Refresh the cache with updated movies
     let refresh_result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.get_all().await,
+        Ok(repo) => {
+            repo.get_all()
+                .await
+        }
         Err(e) => Err(e),
     };
     match refresh_result {
@@ -788,7 +1265,10 @@ pub async fn get_recent_movies() -> Json<Vec<ScoredMovie>> {
     info!("Getting recent movies");
 
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.get_recent(50).await,
+        Ok(repo) => {
+            repo.get_recent(50)
+                .await
+        }
         Err(e) => Err(e),
     };
 
@@ -831,7 +1311,7 @@ pub async fn get_recent_releases(
     );
 
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             repo.get_by_release_year(
                 params.min_year,
                 params.max_year,
@@ -881,7 +1361,10 @@ pub async fn get_random_movies(Query(params): Query<RandomMoviesQuery>) -> Json<
     );
 
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.get_random(params.count).await,
+        Ok(repo) => {
+            repo.get_random(params.count)
+                .await
+        }
         Err(e) => Err(e),
     };
 
@@ -919,7 +1402,10 @@ pub async fn get_unknown_location_movies() -> Json<Vec<ScoredMovie>> {
     info!("Getting movies with unknown location");
 
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.get_unknown_location(50).await,
+        Ok(repo) => {
+            repo.get_unknown_location(50)
+                .await
+        }
         Err(e) => Err(e),
     };
 
@@ -955,37 +1441,55 @@ pub async fn get_unknown_location_movies() -> Json<Vec<ScoredMovie>> {
 pub async fn unique_locations() -> Json<Vec<String>> {
     info!("Getting unique list of all locations");
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.unique_locations().await,
+        Ok(repo) => {
+            repo.unique_locations()
+                .await
+        }
         Err(e) => Err(e),
     };
 
     result
         .map(Json)
-        .unwrap_or_else(|e| {
-            error!(
-                "Failed to get unique locations: {}",
-                e
-            );
-            Json(Vec::new())
-        })
+        .unwrap_or_else(
+            |e| {
+                error!(
+                    "Failed to get unique locations: {}",
+                    e
+                );
+                Json(Vec::new())
+            },
+        )
 }
 
 #[instrument]
 #[debug_handler]
 pub async fn get_movies_by_location(Path(location): Path<String>) -> Json<Vec<FullMovie>> {
-    info!("Getting movies for location: {}", location);
+    info!(
+        "Getting movies for location: {}",
+        location
+    );
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.movies_by_location(&location).await,
+        Ok(repo) => {
+            repo.movies_by_location(&location)
+                .await
+        }
         Err(e) => Err(e),
     };
 
     match result {
         Ok(movies) => {
-            info!("Found {} movies for location '{}'", movies.len(), location);
+            info!(
+                "Found {} movies for location '{}'",
+                movies.len(),
+                location
+            );
             Json(movies)
         }
         Err(e) => {
-            error!("Failed to get movies by location: {}", e);
+            error!(
+                "Failed to get movies by location: {}",
+                e
+            );
             Json(Vec::new())
         }
     }
@@ -997,46 +1501,78 @@ pub async fn get_movies_by_location(Path(location): Path<String>) -> Json<Vec<Fu
 pub async fn stats_overview() -> Json<models::StatsOverview> {
     info!("Getting stats overview");
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.get_all().await,
+        Ok(repo) => {
+            repo.get_all()
+                .await
+        }
         Err(e) => {
-            error!("Failed to create repository: {}", e);
-            return Json(models::StatsOverview {
-                total_movies: 0,
-                total_directors: 0,
-                total_actors: 0,
-            });
+            error!(
+                "Failed to create repository: {}",
+                e
+            );
+            return Json(
+                models::StatsOverview {
+                    total_movies: 0,
+                    total_directors: 0,
+                    total_actors: 0,
+                },
+            );
         }
     };
 
     match result {
         Ok(movies) => {
             use std::collections::HashSet;
-            
+
             let total_movies = movies.len();
-            let total_directors = movies.iter()
-                .filter_map(|m| m.director.as_ref())
-                .map(|d| d.name.clone())
+            let total_directors = movies
+                .iter()
+                .filter_map(
+                    |m| {
+                        m.director
+                            .as_ref()
+                    },
+                )
+                .map(
+                    |d| {
+                        d.name
+                            .clone()
+                    },
+                )
                 .collect::<HashSet<_>>()
                 .len();
-            let total_actors = movies.iter()
+            let total_actors = movies
+                .iter()
                 .flat_map(|m| &m.actors)
-                .map(|a| a.name.clone())
+                .map(
+                    |a| {
+                        a.name
+                            .clone()
+                    },
+                )
                 .collect::<HashSet<_>>()
                 .len();
-            
-            Json(models::StatsOverview {
-                total_movies,
-                total_directors,
-                total_actors,
-            })
+
+            Json(
+                models::StatsOverview {
+                    total_movies,
+                    total_directors,
+                    total_actors,
+                },
+            )
         }
         Err(e) => {
-            error!("Failed to get movies: {}", e);
-            Json(models::StatsOverview {
-                total_movies: 0,
-                total_directors: 0,
-                total_actors: 0,
-            })
+            error!(
+                "Failed to get movies: {}",
+                e
+            );
+            Json(
+                models::StatsOverview {
+                    total_movies: 0,
+                    total_directors: 0,
+                    total_actors: 0,
+                },
+            )
         }
     }
 }
@@ -1047,45 +1583,71 @@ pub async fn stats_overview() -> Json<models::StatsOverview> {
 pub async fn stats_movies_by_year() -> Json<models::BarChartData> {
     info!("Getting movies by year stats");
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.get_all().await,
+        Ok(repo) => {
+            repo.get_all()
+                .await
+        }
         Err(e) => {
-            error!("Failed to create repository: {}", e);
-            return Json(models::BarChartData {
-                labels: vec![],
-                values: vec![],
-            });
+            error!(
+                "Failed to create repository: {}",
+                e
+            );
+            return Json(
+                models::BarChartData {
+                    labels: vec![],
+                    values: vec![],
+                },
+            );
         }
     };
 
     match result {
         Ok(movies) => {
             use std::collections::HashMap;
-            
+
             let mut year_counts: HashMap<i32, usize> = HashMap::new();
             for movie in movies {
                 if movie.release_year > 0 {
-                    *year_counts.entry(movie.release_year).or_insert(0) += 1;
+                    *year_counts
+                        .entry(movie.release_year)
+                        .or_insert(0) += 1;
                 }
             }
-            
-            let mut year_data: Vec<(i32, usize)> = year_counts.into_iter().collect();
+
+            let mut year_data: Vec<(
+                i32,
+                usize,
+            )> = year_counts
+                .into_iter()
+                .collect();
             // Sort by count descending and take top 15
             year_data.sort_by(|(_, a), (_, b)| b.cmp(a));
             year_data.truncate(15);
             // Re-sort by year for display
             year_data.sort_by_key(|(year, _)| *year);
-            
-            let labels: Vec<String> = year_data.iter().map(|(y, _)| y.to_string()).collect();
-            let values: Vec<f64> = year_data.iter().map(|(_, c)| *c as f64).collect();
-            
+
+            let labels: Vec<String> = year_data
+                .iter()
+                .map(|(y, _)| y.to_string())
+                .collect();
+            let values: Vec<f64> = year_data
+                .iter()
+                .map(|(_, c)| *c as f64)
+                .collect();
+
             Json(models::BarChartData { labels, values })
         }
         Err(e) => {
-            error!("Failed to get movies: {}", e);
-            Json(models::BarChartData {
-                labels: vec![],
-                values: vec![],
-            })
+            error!(
+                "Failed to get movies: {}",
+                e
+            );
+            Json(
+                models::BarChartData {
+                    labels: vec![],
+                    values: vec![],
+                },
+            )
         }
     }
 }
@@ -1096,9 +1658,15 @@ pub async fn stats_movies_by_year() -> Json<models::BarChartData> {
 pub async fn stats_genres() -> Json<models::PieChartData> {
     info!("Getting genre distribution stats");
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.get_all().await,
+        Ok(repo) => {
+            repo.get_all()
+                .await
+        }
         Err(e) => {
-            error!("Failed to create repository: {}", e);
+            error!(
+                "Failed to create repository: {}",
+                e
+            );
             return Json(models::PieChartData { data: vec![] });
         }
     };
@@ -1106,28 +1674,237 @@ pub async fn stats_genres() -> Json<models::PieChartData> {
     match result {
         Ok(movies) => {
             use std::collections::HashMap;
-            
+
             let mut genre_counts: HashMap<String, usize> = HashMap::new();
             for movie in movies {
                 for genre in &movie.genres {
-                    *genre_counts.entry(genre.clone()).or_insert(0) += 1;
+                    *genre_counts
+                        .entry(genre.clone())
+                        .or_insert(0) += 1;
                 }
             }
-            
-            let mut data: Vec<(String, f64)> = genre_counts
+
+            let mut data: Vec<(
+                String,
+                f64,
+            )> = genre_counts
                 .into_iter()
-                .map(|(genre, count)| (genre, count as f64))
+                .map(
+                    |(genre, count)| {
+                        (
+                            genre,
+                            count as f64,
+                        )
+                    },
+                )
                 .collect();
-            
+
             // Sort by count descending and take top 10
-            data.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+            data.sort_by(
+                |(_, a), (_, b)| {
+                    b.partial_cmp(a)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                },
+            );
             data.truncate(10);
-            
+
             Json(models::PieChartData { data })
         }
         Err(e) => {
-            error!("Failed to get movies: {}", e);
+            error!(
+                "Failed to get movies: {}",
+                e
+            );
             Json(models::PieChartData { data: vec![] })
+        }
+    }
+}
+
+/// Chat session with first query preview
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatSessionWithPreview {
+    pub id: i32,
+    pub session_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub first_query: Option<String>,
+}
+
+/// List all chat sessions ordered by most recent
+#[instrument(skip(db_state))]
+#[debug_handler]
+pub async fn list_chat_sessions(
+    State(db_state): State<DbState>,
+) -> Result<
+    Json<Vec<ChatSessionWithPreview>>,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    info!("Listing chat sessions");
+
+    match db_state
+        .pool
+        .list_chat_sessions()
+        .await
+    {
+        Ok(sessions) => {
+            info!(
+                "Found {} chat sessions",
+                sessions.len()
+            );
+
+            let mut sessions_with_preview = Vec::new();
+            for session in sessions {
+                let first_query = db_state
+                    .pool
+                    .get_chat_history(session.session_id)
+                    .await
+                    .ok()
+                    .and_then(
+                        |messages| {
+                            messages
+                                .iter()
+                                .find(|m| m.role == "user")
+                                .map(
+                                    |m| {
+                                        m.content
+                                            .clone()
+                                    },
+                                )
+                        },
+                    );
+
+                sessions_with_preview.push(
+                    ChatSessionWithPreview {
+                        id: session.id,
+                        session_id: session
+                            .session_id
+                            .to_string(),
+                        created_at: session
+                            .created_at
+                            .to_string(),
+                        updated_at: session
+                            .updated_at
+                            .to_string(),
+                        first_query,
+                    },
+                );
+            }
+
+            Ok(Json(sessions_with_preview))
+        }
+        Err(e) => {
+            error!(
+                "Failed to list chat sessions: {:?}",
+                e
+            );
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "Failed to list chat sessions: {}",
+                    e
+                ),
+            ))
+        }
+    }
+}
+
+/// Get chat history for a specific session
+#[instrument(skip(db_state))]
+#[debug_handler]
+pub async fn get_session_history(
+    State(db_state): State<DbState>,
+    Path(session_id): Path<String>,
+) -> Result<
+    Json<Vec<models::ChatMessage>>,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    info!(
+        "Getting chat history for session: {}",
+        session_id
+    );
+
+    let session_uuid = uuid::Uuid::parse_str(&session_id).map_err(
+        |e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "Invalid session ID: {}",
+                    e
+                ),
+            )
+        },
+    )?;
+
+    match db_state
+        .pool
+        .get_chat_history(session_uuid)
+        .await
+    {
+        Ok(messages) => {
+            info!(
+                "Found {} messages for session {}",
+                messages.len(),
+                session_id
+            );
+            Ok(Json(messages))
+        }
+        Err(e) => {
+            error!(
+                "Failed to get chat history: {:?}",
+                e
+            );
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "Failed to get chat history: {}",
+                    e
+                ),
+            ))
+        }
+    }
+}
+
+/// Structured search endpoint — filter by actors, genres, directors, title/description keywords.
+/// Used by `ai_tools` over HTTP so tools avoid diesel-async (which isn't Sync for ollama-rs).
+#[instrument(skip(db_state, query), fields(actors = query.actors.len(), genres = query.genres.len(), directors = query.directors.len()))]
+#[debug_handler]
+pub async fn structured_search(
+    State(db_state): State<DbState>,
+    Json(query): Json<models::StructuredQuery>,
+) -> Json<Vec<FullMovie>> {
+    info!(
+        "Structured search: actors={:?} genres={:?} directors={:?} title={:?} desc={:?}",
+        query.actors,
+        query.genres,
+        query.directors,
+        query.title_keywords,
+        query.description_keywords
+    );
+
+    match db_state
+        .pool
+        .search_structured(&query)
+        .await
+    {
+        Ok(movies) => {
+            info!(
+                "Structured search returned {} movies",
+                movies.len()
+            );
+            Json(movies)
+        }
+        Err(e) => {
+            error!(
+                "Structured search failed: {}",
+                e
+            );
+            Json(Vec::new())
         }
     }
 }
@@ -1138,42 +1915,72 @@ pub async fn stats_genres() -> Json<models::PieChartData> {
 pub async fn stats_top_actors() -> Json<models::BarChartData> {
     info!("Getting top actors stats");
     let result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.get_all().await,
+        Ok(repo) => {
+            repo.get_all()
+                .await
+        }
         Err(e) => {
-            error!("Failed to create repository: {}", e);
-            return Json(models::BarChartData {
-                labels: vec![],
-                values: vec![],
-            });
+            error!(
+                "Failed to create repository: {}",
+                e
+            );
+            return Json(
+                models::BarChartData {
+                    labels: vec![],
+                    values: vec![],
+                },
+            );
         }
     };
 
     match result {
         Ok(movies) => {
             use std::collections::HashMap;
-            
+
             let mut actor_counts: HashMap<String, usize> = HashMap::new();
             for movie in movies {
                 for actor in &movie.actors {
-                    *actor_counts.entry(actor.name.clone()).or_insert(0) += 1;
+                    *actor_counts
+                        .entry(
+                            actor
+                                .name
+                                .clone(),
+                        )
+                        .or_insert(0) += 1;
                 }
             }
-            
-            let mut actor_data: Vec<(String, usize)> = actor_counts.into_iter().collect();
+
+            let mut actor_data: Vec<(
+                String,
+                usize,
+            )> = actor_counts
+                .into_iter()
+                .collect();
             actor_data.sort_by(|(_, a), (_, b)| b.cmp(a));
             actor_data.truncate(10);
-            
-            let labels: Vec<String> = actor_data.iter().map(|(name, _)| name.clone()).collect();
-            let values: Vec<f64> = actor_data.iter().map(|(_, count)| *count as f64).collect();
-            
+
+            let labels: Vec<String> = actor_data
+                .iter()
+                .map(|(name, _)| name.clone())
+                .collect();
+            let values: Vec<f64> = actor_data
+                .iter()
+                .map(|(_, count)| *count as f64)
+                .collect();
+
             Json(models::BarChartData { labels, values })
         }
         Err(e) => {
-            error!("Failed to get movies: {}", e);
-            Json(models::BarChartData {
-                labels: vec![],
-                values: vec![],
-            })
+            error!(
+                "Failed to get movies: {}",
+                e
+            );
+            Json(
+                models::BarChartData {
+                    labels: vec![],
+                    values: vec![],
+                },
+            )
         }
     }
 }

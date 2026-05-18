@@ -59,6 +59,7 @@ use std::error::Error;
 use std::fmt::Display;
 
 use diesel::ConnectionError;
+use diesel_async::pooled_connection::deadpool::Pool;
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 pub use models::{schema::*, *};
 
@@ -84,6 +85,7 @@ pub trait Random {
 pub enum DatabaseError {
     ConnectionError(ConnectionError),
     DieselError(diesel::result::Error),
+    QueryError(String),
 }
 
 impl From<ConnectionError> for DatabaseError {
@@ -103,6 +105,11 @@ impl Error for DatabaseError {}
 impl Display for DatabaseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            DatabaseError::QueryError(msg) => write!(
+                f,
+                "Query error: {}",
+                msg
+            ),
             DatabaseError::ConnectionError(e) => write!(
                 f,
                 "Database connection error: {}",
@@ -117,6 +124,35 @@ impl Display for DatabaseError {
     }
 }
 
+/// Creates a connection pool for the PostgreSQL database.
+///
+/// # Errors
+/// Returns `DatabaseError` if the DATABASE_URL environment variable is not set
+/// or if the pool cannot be created.
+///
+/// # Panics
+/// Panics if the DATABASE_URL environment variable is not set.
+pub async fn get_connection_pool() -> Result<Pool<AsyncPgConnection>, DatabaseError> {
+    let database_url =
+        env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
+
+    let manager =
+        diesel_async::pooled_connection::AsyncDieselConnectionManager::<AsyncPgConnection>::new(
+            database_url,
+        );
+    let pool = Pool::builder(manager)
+        .build()
+        .map_err(
+            |e| {
+                DatabaseError::ConnectionError(
+                    diesel::ConnectionError::BadConnection(e.to_string()),
+                )
+            },
+        )?;
+
+    Ok(pool)
+}
+
 /// Establishes a connection to the PostgreSQL database.
 ///
 /// # Errors
@@ -125,6 +161,7 @@ impl Display for DatabaseError {
 ///
 /// # Panics
 /// Panics if the DATABASE_URL environment variable is not set.
+#[deprecated(note = "Use get_connection_pool() instead")]
 pub async fn get_database_connection() -> Result<AsyncPgConnection, DatabaseError> {
     let database_url =
         env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
@@ -132,4 +169,3 @@ pub async fn get_database_connection() -> Result<AsyncPgConnection, DatabaseErro
         .await
         .map_err(DatabaseError::from)
 }
-

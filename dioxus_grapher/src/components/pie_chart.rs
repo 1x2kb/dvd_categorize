@@ -13,7 +13,10 @@ struct SliceData {
 
 #[derive(Clone, PartialEq, Props)]
 pub struct PieChartProps {
-    pub data: Vec<(String, f64)>,
+    pub data: Vec<(
+        String,
+        f64,
+    )>,
     #[props(default = 400.0)]
     pub size: f64,
     #[props(default = vec![
@@ -38,8 +41,11 @@ pub struct PieChartProps {
 #[component]
 pub fn PieChart(props: PieChartProps) -> Element {
     let mut hovered_index = use_signal(|| None::<usize>);
-    
-    if props.data.is_empty() {
+
+    if props
+        .data
+        .is_empty()
+    {
         return rsx! {
             div {
                 class: "pie-chart-container",
@@ -50,21 +56,31 @@ pub fn PieChart(props: PieChartProps) -> Element {
     }
 
     // Apply filters: sort by value descending, then apply top_n and min_percentage
-    let mut filtered_data = props.data.clone();
-    filtered_data.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-    
+    let mut filtered_data = props
+        .data
+        .clone();
+    filtered_data.sort_by(
+        |(_, a), (_, b)| {
+            b.partial_cmp(a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        },
+    );
+
     // Apply top_n filter if specified
     if let Some(n) = props.top_n {
         filtered_data.truncate(n);
     }
-    
-    let total: f64 = filtered_data.iter().map(|(_, v)| v).sum();
-    
+
+    let total: f64 = filtered_data
+        .iter()
+        .map(|(_, v)| v)
+        .sum();
+
     // Apply min_percentage filter if specified
     if let Some(min_pct) = props.min_percentage {
         filtered_data.retain(|(_, v)| (*v / total * 100.0) >= min_pct);
     }
-    
+
     if total <= 0.0 {
         return rsx! {
             div {
@@ -79,43 +95,56 @@ pub fn PieChart(props: PieChartProps) -> Element {
     let center_y = props.size / 2.0;
     let radius = (props.size / 2.0) * 0.7;
 
-    let slices = use_memo(move || {
-        let mut current_angle = -90.0;
-        let mut result = Vec::new();
+    let slices = use_memo(
+        move || {
+            let mut current_angle = -90.0;
+            let mut result = Vec::new();
 
-        for (idx, (label, value)) in filtered_data.iter().enumerate() {
-            let percentage = (value / total) * 100.0;
-            let angle = (value / total) * 360.0;
-            let end_angle = current_angle + angle;
-            
-            let color = props.colors.get(idx % props.colors.len())
-                .cloned()
-                .unwrap_or_else(|| "#999999".to_string());
+            for (idx, (label, value)) in filtered_data
+                .iter()
+                .enumerate()
+            {
+                let percentage = (value / total) * 100.0;
+                let angle = (value / total) * 360.0;
+                let end_angle = current_angle + angle;
 
-            result.push(SliceData {
-                label: label.clone(),
-                value: *value,
-                percentage,
-                start_angle: current_angle,
-                end_angle,
-                color,
-                index: idx,
-            });
+                let color = props
+                    .colors
+                    .get(
+                        idx % props
+                            .colors
+                            .len(),
+                    )
+                    .cloned()
+                    .unwrap_or_else(|| "#999999".to_string());
 
-            current_angle = end_angle;
-        }
-        result
-    });
+                result.push(
+                    SliceData {
+                        label: label.clone(),
+                        value: *value,
+                        percentage,
+                        start_angle: current_angle,
+                        end_angle,
+                        color,
+                        index: idx,
+                    },
+                );
+
+                current_angle = end_angle;
+            }
+            result
+        },
+    );
 
     rsx! {
         div {
             style: "display: flex; align-items: center; gap: 30px; font-family: sans-serif;",
-            
+
             svg {
                 width: "{props.size}",
                 height: "{props.size}",
                 style: "overflow: visible;",
-                
+
                 defs {
                     for (idx, slice) in slices.read().iter().enumerate() {
                         {
@@ -163,7 +192,7 @@ pub fn PieChart(props: PieChartProps) -> Element {
                         }
                     }
                 }
-                
+
                 for slice in slices.read().iter() {
                     {
                         let path_data = create_pie_slice(
@@ -173,12 +202,12 @@ pub fn PieChart(props: PieChartProps) -> Element {
                             slice.start_angle,
                             slice.end_angle,
                         );
-                        
+
                         let mid_angle = (slice.start_angle + slice.end_angle) / 2.0;
                         let label_radius = radius * 0.65;
                         let label_x = center_x + label_radius * mid_angle.to_radians().cos();
                         let label_y = center_y + label_radius * mid_angle.to_radians().sin();
-                        
+
                         let is_hovered = hovered_index() == Some(slice.index);
                         let transform = if is_hovered {
                             let offset = 10.0;
@@ -188,17 +217,17 @@ pub fn PieChart(props: PieChartProps) -> Element {
                         } else {
                             String::new()
                         };
-                        
+
                         let idx = slice.index;
                         let percentage = slice.percentage;
-                        
+
                         rsx! {
                             g {
                                 transform: "{transform}",
                                 onmouseenter: move |_| hovered_index.set(Some(idx)),
                                 onmouseleave: move |_| hovered_index.set(None),
                                 style: "transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);",
-                                
+
                                 path {
                                     d: "{path_data}",
                                     fill: "url(#sliceGradient{idx})",
@@ -214,7 +243,7 @@ pub fn PieChart(props: PieChartProps) -> Element {
                                     stroke: "none",
                                     pointer_events: "none",
                                 }
-                                
+
                                 text {
                                     x: "{label_x}",
                                     y: "{label_y}",
@@ -229,17 +258,17 @@ pub fn PieChart(props: PieChartProps) -> Element {
                         }
                     }
                 }
-                
+
                 if let Some(idx) = hovered_index() {
                     if let Some(slice) = slices.read().get(idx) {
                         {
                             let tooltip_x = center_x;
                             let tooltip_y = 30.0;
-                            
+
                             let label = &slice.label;
                             let value = slice.value;
                             let percentage = slice.percentage;
-                            
+
                             rsx! {
                                 g {
                                     rect {
@@ -275,11 +304,11 @@ pub fn PieChart(props: PieChartProps) -> Element {
                     }
                 }
             }
-            
+
             if props.show_legend {
                 div {
                     style: "display: flex; flex-direction: column; gap: 12px;",
-                    
+
                     for slice in slices.read().iter() {
                         {
                             let is_hovered = hovered_index() == Some(slice.index);
@@ -291,14 +320,14 @@ pub fn PieChart(props: PieChartProps) -> Element {
                             let value = slice.value;
                             let percentage = slice.percentage;
                             let color = &slice.color;
-                            
+
                             rsx! {
                                 div {
                                     key: "{idx}",
                                     style: "display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 10px; border-radius: 8px; background: {bg_color}; transition: all 0.2s ease; transform: {transform_val};",
                                     onmouseenter: move |_| hovered_index.set(Some(idx)),
                                     onmouseleave: move |_| hovered_index.set(None),
-                                    
+
                                     div {
                                         style: "width: 20px; height: 20px; background: {color}; border-radius: 6px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); transition: all 0.2s ease; transform: {scale_val};",
                                     }
@@ -326,14 +355,18 @@ pub fn PieChart(props: PieChartProps) -> Element {
 fn create_pie_slice(cx: f64, cy: f64, radius: f64, start_angle: f64, end_angle: f64) -> String {
     let start_rad = start_angle.to_radians();
     let end_rad = end_angle.to_radians();
-    
+
     let x1 = cx + radius * start_rad.cos();
     let y1 = cy + radius * start_rad.sin();
     let x2 = cx + radius * end_rad.cos();
     let y2 = cy + radius * end_rad.sin();
-    
-    let large_arc = if (end_angle - start_angle) > 180.0 { 1 } else { 0 };
-    
+
+    let large_arc = if (end_angle - start_angle) > 180.0 {
+        1
+    } else {
+        0
+    };
+
     format!(
         "M {},{} L {},{} A {},{} 0 {},{} {},{} Z",
         cx, cy, x1, y1, radius, radius, large_arc, 1, x2, y2

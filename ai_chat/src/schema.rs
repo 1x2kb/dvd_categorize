@@ -1,0 +1,24 @@
+use models::{dvd_filters::DvdFilters, QuerySpec, StructuredQuery};
+use ollama_rs::generation::parameters::{FormatType, JsonStructure};
+
+/// Generate JSON schema for DvdFilters struct
+pub fn dvd_filters_schema() -> FormatType {
+    FormatType::StructuredJson(Box::new(JsonStructure::new::<DvdFilters>()))
+}
+
+/// Generate JSON schema for StructuredQuery struct
+pub fn structured_query_schema() -> FormatType {
+    FormatType::StructuredJson(Box::new(JsonStructure::new::<StructuredQuery>()))
+}
+
+/// Generate JSON schema for actor array (Vec<String>)
+/// Used by actor_reorder crate to enforce valid JSON array responses
+pub fn actor_array_schema() -> FormatType {
+    FormatType::StructuredJson(Box::new(JsonStructure::new::<Vec<String>>()))
+}
+
+/// Generate JSON schema for QuerySpec
+/// Used by tool calling to let AI generate database queries
+pub fn query_spec_schema() -> FormatType {
+    FormatType::StructuredJson(Box::new(JsonStructure::new::<QuerySpec>()))
+}

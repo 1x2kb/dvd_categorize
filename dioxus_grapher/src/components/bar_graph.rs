@@ -40,7 +40,10 @@ impl Default for XAxisMode {
 
 #[derive(Clone, PartialEq, Props)]
 pub struct BarGraphProps {
-    pub data: Vec<(String, f64)>,
+    pub data: Vec<(
+        String,
+        f64,
+    )>,
     #[props(default = 600.0)]
     pub width: f64,
     #[props(default = 400.0)]
@@ -62,8 +65,11 @@ pub struct BarGraphProps {
 #[component]
 pub fn BarGraph(props: BarGraphProps) -> Element {
     let mut hovered_index = use_signal(|| None::<usize>);
-    
-    if props.data.is_empty() {
+
+    if props
+        .data
+        .is_empty()
+    {
         return rsx! {
             div {
                 class: "bar-graph-container",
@@ -78,19 +84,37 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
     let graph_height = props.height - 2.0 * padding;
 
     // Use custom y_max or auto-calculate
-    let max_value = props.y_max.unwrap_or_else(|| {
-        props.data.iter()
-            .map(|(_, v)| *v)
-            .fold(f64::NEG_INFINITY, f64::max)
-    });
-    
+    let max_value = props
+        .y_max
+        .unwrap_or_else(
+            || {
+                props
+                    .data
+                    .iter()
+                    .map(|(_, v)| *v)
+                    .fold(
+                        f64::NEG_INFINITY,
+                        f64::max,
+                    )
+            },
+        );
+
     // Use custom y_min or auto-calculate
-    let min_value = props.y_min.unwrap_or_else(|| {
-        props.data.iter()
-            .map(|(_, v)| *v)
-            .fold(f64::INFINITY, f64::min)
-            .min(0.0)
-    });
+    let min_value = props
+        .y_min
+        .unwrap_or_else(
+            || {
+                props
+                    .data
+                    .iter()
+                    .map(|(_, v)| *v)
+                    .fold(
+                        f64::INFINITY,
+                        f64::min,
+                    )
+                    .min(0.0)
+            },
+        );
 
     let value_range = max_value - min_value;
     let scale_y = if value_range > 0.0 {
@@ -99,8 +123,15 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
         1.0
     };
 
-    let bar_width = graph_width / props.data.len() as f64 * 0.8;
-    let bar_spacing = graph_width / props.data.len() as f64;
+    let bar_width = graph_width
+        / props
+            .data
+            .len() as f64
+        * 0.8;
+    let bar_spacing = graph_width
+        / props
+            .data
+            .len() as f64;
 
     let y_ticks = 5;
     let tick_step = value_range / y_ticks as f64;
@@ -110,7 +141,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
             width: "{props.width}",
             height: "{props.height}",
             style: "font-family: sans-serif;",
-            
+
             defs {
                 linearGradient {
                     id: "barGradient",
@@ -130,7 +161,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                     }
                 }
             }
-            
+
             // Y-axis line
             line {
                 x1: "{padding}",
@@ -140,7 +171,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                 stroke: "#374151",
                 stroke_width: "2",
             }
-            
+
             // X-axis line
             line {
                 x1: "{padding}",
@@ -150,7 +181,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                 stroke: "#374151",
                 stroke_width: "2",
             }
-            
+
             // Y-axis ticks and labels
             for i in 0..=y_ticks {
                 {
@@ -176,14 +207,14 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                     }
                 }
             }
-            
+
             // Bars and X-axis labels
             for (idx, (label, value)) in props.data.iter().enumerate() {
                 {
                     let x_pos = padding + (idx as f64 * bar_spacing) + (bar_spacing - bar_width) / 2.0;
                     let bar_height = (value - min_value) * scale_y;
                     let y_pos = props.height - padding - bar_height;
-                    
+
                     // Get label based on x_mode
                     let display_label = match &props.x_mode {
                         XAxisMode::Explicit(opts) => {
@@ -191,15 +222,15 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                         }
                         XAxisMode::Auto(_) => label.clone(),
                     };
-                    
+
                     let is_hovered = hovered_index() == Some(idx);
                     let bar_fill = if is_hovered { "#06b6d4" } else { "url(#barGradient)" };
-                    
+
                     rsx! {
                         g {
                             onmouseenter: move |_| hovered_index.set(Some(idx)),
                             onmouseleave: move |_| hovered_index.set(None),
-                            
+
                             // Vertical line to x-axis when hovered
                             if is_hovered {
                                 line {
@@ -213,7 +244,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                                     opacity: "0.6",
                                 }
                             }
-                            
+
                             rect {
                                 x: "{x_pos}",
                                 y: "{y_pos}",
@@ -237,13 +268,13 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                                 opacity: if is_hovered { "0.8" } else { "0.3" },
                             }
                         }
-                        
+
                         {
                             let skip = match &props.x_mode {
                                 XAxisMode::Auto(opts) => opts.skip_labels,
                                 XAxisMode::Explicit(opts) => opts.skip_labels,
                             };
-                            
+
                             if idx % skip == 0 {
                                 rsx! {
                                     text {
@@ -259,7 +290,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                                 rsx! {}
                             }
                         }
-                        
+
                         text {
                             x: "{x_pos + bar_width / 2.0}",
                             y: "{y_pos - 5.0}",
@@ -273,7 +304,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                     }
                 }
             }
-            
+
             // X-axis label
             text {
                 x: "{props.width / 2.0}",
@@ -284,7 +315,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                 font_weight: "bold",
                 "{props.x_label}"
             }
-            
+
             // Y-axis label (rotated)
             text {
                 x: "{15.0}",
@@ -296,7 +327,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                 transform: "rotate(-90, 15, {props.height / 2.0})",
                 "{props.y_label}"
             }
-            
+
             // Tooltip on hover
             if let Some(idx) = hovered_index() {
                 if let Some((label, value)) = props.data.get(idx) {
@@ -307,10 +338,10 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                             }
                             XAxisMode::Auto(_) => label.clone(),
                         };
-                        
+
                         let tooltip_x = props.width / 2.0;
                         let tooltip_y = 30.0;
-                        
+
                         rsx! {
                             g {
                                 rect {

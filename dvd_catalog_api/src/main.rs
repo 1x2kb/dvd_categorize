@@ -33,16 +33,16 @@ async fn main() {
     // Only load .env file in debug mode (development)
     #[cfg(debug_assertions)]
     {
-        dotenv()
-            .ok()
-            .expect("Failed to run env reader");
+        dotenv().expect("Failed to run env reader");
     }
 
     // Load movies into cache state on startup
-    let load_result = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => repo.get_all().await,
-        Err(e) => Err(e),
-    };
+    let db_pool = PostgresMovieRepository::from_env()
+        .await
+        .expect("Failed to create DB pool");
+    let load_result = db_pool
+        .get_all()
+        .await;
     let movies = match load_result {
         Ok(movies) => {
             info!(
@@ -61,7 +61,9 @@ async fn main() {
     };
 
     // Create the router with the initial movie data
-    let app = init_router(movies);
+    let app = init_router(
+        movies, db_pool,
+    );
 
     let connection = get_host();
     info!(
@@ -99,11 +101,14 @@ fn get_host() -> String {
     format!("{host}:{port}")
 }
 
-fn init_router(movies: Vec<FullMovie>) -> Router {
+fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Router {
     // Create state with the provided movies wrapped in Arc<RwLock<>>
     let state = CacheState {
         movies: Arc::new(tokio::sync::RwLock::new(movies)),
     };
+
+    // Create DB state for chat history
+    let db_state = DbState { pool: db_pool };
 
     // Create a router for endpoints that need CacheState
     let stateful_router = Router::new()
@@ -114,10 +119,6 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
         .route(
             "/ai/dvd-match",
             post(get_matching_movies),
-        )
-        .route(
-            "/ai/chat",
-            post(chat),
         )
         .route(
             "/movie/location",
@@ -132,6 +133,30 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
             get(export_csv),
         )
         .with_state(state);
+
+    // Create router for chat (tool-enabled non-streaming) and streaming, both need DbState
+    let chat_stream_router = Router::new()
+        .route(
+            "/ai/chat",
+            post(chat),
+        )
+        .route(
+            "/ai/chat/stream",
+            post(chat_stream),
+        )
+        .route(
+            "/ai/chat/sessions",
+            get(list_chat_sessions),
+        )
+        .route(
+            "/ai/chat/sessions/{session_id}",
+            get(get_session_history),
+        )
+        .route(
+            "/dvd/structured-search",
+            post(structured_search),
+        )
+        .with_state(db_state);
 
     // Create a router for stateless endpoints
     let stateless_router = Router::new()
@@ -199,6 +224,7 @@ fn init_router(movies: Vec<FullMovie>) -> Router {
     // Merge the routers
     Router::new()
         .merge(stateful_router)
+        .merge(chat_stream_router)
         .merge(stateless_router)
         .layer(
             CorsLayer::new()

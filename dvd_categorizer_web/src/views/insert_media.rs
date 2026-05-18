@@ -214,8 +214,8 @@ pub fn InsertMedia() -> Element {
                                 }).collect()
                             );
                             rsx! {
-                                MovieGrid { 
-                                    movies: scored_movies, 
+                                MovieGrid {
+                                    movies: scored_movies,
                                     search_mode: models::SearchMode::Both,
                                     on_location_updated: move |(movie_id, new_location): (i32, String)| {
                                         // Update the movie in the dvd_data list
@@ -237,7 +237,7 @@ pub fn InsertMedia() -> Element {
                                 }
                             }
                         }
-                        
+
                         if is_sending() {
                             div { class: "loading-overlay",
                                 div { class: "loading-content",

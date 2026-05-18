@@ -1,4 +1,4 @@
-use diesel::{ExpressionMethods, QueryDsl};
+use diesel::{ConnectionError, ExpressionMethods, QueryDsl};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use models::*;
 
@@ -35,7 +35,10 @@ pub async fn update_movie_location(
     movie_id: i32,
     new_location: String,
 ) -> Result<(), DatabaseError> {
-    let mut connection = crate::get_database_connection().await?;
+    let pool = crate::get_connection_pool().await?;
+    let mut connection = pool.get().await.map_err(|e| {
+        DatabaseError::ConnectionError(ConnectionError::BadConnection(e.to_string()))
+    })?;
 
     diesel::update(schema::movie::table.find(movie_id))
         .set(schema::movie::location.eq(new_location))

@@ -128,7 +128,10 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
         let display_name = if release_year == 0 {
             name.clone()
         } else {
-            format!("{} ({})", name, release_year)
+            format!(
+                "{} ({})",
+                name, release_year
+            )
         };
 
         let movie = FullMovie {

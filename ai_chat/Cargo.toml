@@ -6,8 +6,10 @@ description = "Ollama integration for AI-powered features: embeddings, query enh
 readme = "README.md"
 
 [dependencies]
+database = { path = "../database" }
+models = { path = "../models", features = ["postgres", "ai"] }
 ollama-rs.workspace = true
-models = { path = "../models", features = ["ai"] }
+prompts = { path = "../prompts" }
 serde.workspace = true
 serde_json.workspace = true
 log.workspace = true

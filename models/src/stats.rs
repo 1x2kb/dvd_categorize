@@ -15,5 +15,8 @@ pub struct BarChartData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PieChartData {
-    pub data: Vec<(String, f64)>,
+    pub data: Vec<(
+        String,
+        f64,
+    )>,
 }

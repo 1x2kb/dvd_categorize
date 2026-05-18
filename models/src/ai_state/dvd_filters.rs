@@ -1,6 +1,7 @@
+use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct DvdFilters {
     pub genres: Option<Vec<String>>,

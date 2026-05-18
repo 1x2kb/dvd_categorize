@@ -84,15 +84,61 @@ pub use roled_message::*;
 pub mod stats;
 pub use stats::*;
 
+pub mod query_spec;
+pub use query_spec::*;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     pub messages: Vec<RoledMessage>,
     pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+}
+
+#[cfg(feature = "postgres")]
+#[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::chat_sessions, check_for_backend(diesel::pg::Pg)))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatSession {
+    pub id: i32,
+    pub session_id: uuid::Uuid,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
+}
+
+#[cfg(feature = "postgres")]
+#[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::chat_sessions, check_for_backend(diesel::pg::Pg)))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewChatSession {
+    pub session_id: uuid::Uuid,
+}
+
+#[cfg(feature = "postgres")]
+#[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::chat_messages, check_for_backend(diesel::pg::Pg)))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub id: i32,
+    pub session_id: uuid::Uuid,
+    pub role: String,
+    pub content: String,
+    pub created_at: chrono::NaiveDateTime,
+}
+
+#[cfg(feature = "postgres")]
+#[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::chat_messages, check_for_backend(diesel::pg::Pg)))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewChatMessage {
+    pub session_id: uuid::Uuid,
+    pub role: String,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -248,7 +294,7 @@ impl FullMovie {
     pub fn generate_key_hash(name: &str) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         name.hash(&mut hasher);
         hasher.finish()
@@ -258,30 +304,50 @@ impl FullMovie {
     /// Year 0 indicates unknown year and will not be displayed
     pub fn display_name(&self) -> String {
         if self.release_year == 0 {
-            self.name.clone()
+            self.name
+                .clone()
         } else {
-            format!("{} ({})", self.name, self.release_year)
+            format!(
+                "{} ({})",
+                self.name, self.release_year
+            )
         }
     }
 
     /// Parse a movie name that may contain a year in format "Name (Year)"
     /// Returns (name, optional_year)
-    pub fn parse_name_and_year(full_name: &str) -> (String, Option<i32>) {
+    pub fn parse_name_and_year(
+        full_name: &str,
+    ) -> (
+        String,
+        Option<i32>,
+    ) {
         // Check if the name ends with (YYYY) pattern
         if let Some(last_paren) = full_name.rfind('(') {
             if let Some(close_paren) = full_name[last_paren..].find(')') {
                 let year_str = &full_name[last_paren + 1..last_paren + close_paren];
-                if let Ok(year) = year_str.trim().parse::<i32>() {
+                if let Ok(year) = year_str
+                    .trim()
+                    .parse::<i32>()
+                {
                     // Validate it's a reasonable year (1800-2100)
-                    if year >= 1800 && year <= 2100 {
-                        let name = full_name[..last_paren].trim().to_string();
-                        return (name, Some(year));
+                    if (1800..=2100).contains(&year) {
+                        let name = full_name[..last_paren]
+                            .trim()
+                            .to_string();
+                        return (
+                            name,
+                            Some(year),
+                        );
                     }
                 }
             }
         }
         // No valid year found, return the full name
-        (full_name.to_string(), None)
+        (
+            full_name.to_string(),
+            None,
+        )
     }
 
     #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
@@ -487,7 +553,7 @@ pub enum SearchMode {
 
 /// Structured query criteria parsed from natural language
 /// Used for dynamic Diesel query building
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, schemars::JsonSchema)]
 pub struct StructuredQuery {
     #[serde(default)]
     pub actors: Vec<String>,

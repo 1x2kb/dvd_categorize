@@ -9,6 +9,7 @@ name = "actor_reorder"
 path = "src/main.rs"
 
 [dependencies]
+ai_chat = { path = "../ai_chat" }
 csv_utils = { path = "../csv_utils" }
 models = { path = "../models" }
 ollama-rs.workspace = true

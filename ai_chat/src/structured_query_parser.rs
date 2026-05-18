@@ -124,7 +124,8 @@ Rules:
             ChatMessage::system(system_prompt.to_string()),
             ChatMessage::user(user_message),
         ],
-    );
+    )
+    .format(crate::schema::structured_query_schema());
 
     match ollama
         .send_chat_messages(request)
@@ -136,17 +137,11 @@ Rules:
                 .content
                 .trim();
             debug!(
-                "Raw AI response: {}",
+                "AI response: {}",
                 content
             );
 
-            let json_content = extract_json_from_response(content);
-            debug!(
-                "Extracted JSON: {}",
-                json_content
-            );
-
-            match serde_json::from_str::<StructuredQuery>(&json_content) {
+            match serde_json::from_str::<StructuredQuery>(content) {
                 Ok(structured) => {
                     info!(
                         "Successfully parsed query to: {:?}",
@@ -156,8 +151,8 @@ Rules:
                 }
                 Err(e) => {
                     let error_msg = format!(
-                        "Failed to parse JSON response: {}. JSON content was: {}",
-                        e, json_content
+                        "Failed to parse JSON response: {}. Content was: {}",
+                        e, content
                     );
                     error!(
                         "{}",
@@ -177,124 +172,6 @@ Rules:
                 error_msg
             );
             Err(error_msg)
-        }
-    }
-}
-
-/// Extracts JSON from AI response, handling cases where the AI adds extra text or markdown code blocks
-fn extract_json_from_response(content: &str) -> String {
-    let mut content = content.trim();
-
-    // Remove markdown code blocks if present
-    if content.starts_with("```json") {
-        content = content
-            .strip_prefix("```json")
-            .unwrap_or(content)
-            .trim();
-    } else if content.starts_with("```") {
-        content = content
-            .strip_prefix("```")
-            .unwrap_or(content)
-            .trim();
-    }
-
-    if content.ends_with("```") {
-        content = content
-            .strip_suffix("```")
-            .unwrap_or(content)
-            .trim();
-    }
-
-    // Find the first complete JSON object by tracking brace depth
-    if let Some(start) = content.find('{') {
-        let mut depth = 0;
-        let mut in_string = false;
-        let mut escape_next = false;
-
-        for (i, ch) in content[start..].char_indices() {
-            if escape_next {
-                escape_next = false;
-                continue;
-            }
-
-            match ch {
-                '\\' if in_string => escape_next = true,
-                '"' => in_string = !in_string,
-                '{' if !in_string => depth += 1,
-                '}' if !in_string => {
-                    depth -= 1;
-                    if depth == 0 {
-                        // Found the end of the first complete JSON object
-                        return content[start..=start + i].to_string();
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    content.to_string()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_json_from_response() {
-        let cases = vec![
-            // Plain JSON
-            (
-                r#"{"actors":["brad pitt"],"directors":[],"genres":["action"],"title_keywords":[],"description_keywords":[]}"#,
-                r#"{"actors":["brad pitt"],"directors":[],"genres":["action"],"title_keywords":[],"description_keywords":[]}"#,
-            ),
-            // JSON with prefix text
-            (
-                r#"Here is the result: {"actors":[],"directors":[],"genres":[],"title_keywords":[],"description_keywords":[]}"#,
-                r#"{"actors":[],"directors":[],"genres":[],"title_keywords":[],"description_keywords":[]}"#,
-            ),
-            // JSON with suffix text
-            (
-                r#"{"actors":["tom hanks"],"directors":[],"genres":["comedy"],"title_keywords":[],"description_keywords":[]} - This is a comedy movie"#,
-                r#"{"actors":["tom hanks"],"directors":[],"genres":["comedy"],"title_keywords":[],"description_keywords":[]}"#,
-            ),
-            // Markdown code block with json tag
-            (
-                r#"```json
-{"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazis"]}
-```"#,
-                r#"{"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazis"]}"#,
-            ),
-            // Markdown code block without json tag
-            (
-                r#"```
-{"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazis"]}
-```"#,
-                r#"{"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazis"]}"#,
-            ),
-            // Markdown with extra text after closing backticks
-            (
-                r#"{"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazis"]}
-
-    ```json
-    {
-      "actors": ["brad pitt"],
-      "directors": [],
-      "genres": [],
-      "title_keywords": [],
-      "description_keywords": ["nazis"]
-    }"#,
-                r#"{"actors":["brad pitt"],"directors":[],"genres":[],"title_keywords":[],"description_keywords":["nazis"]}"#,
-            ),
-        ];
-
-        for (input, expected) in cases {
-            let result = extract_json_from_response(input);
-            assert_eq!(
-                result, expected,
-                "Failed for input: {}",
-                input
-            );
         }
     }
 }

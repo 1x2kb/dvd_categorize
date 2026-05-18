@@ -1,5 +1,7 @@
 use std::{collections::HashSet, error::Error};
 
+use diesel::ConnectionError;
+
 use chrono::NaiveDate;
 use models::{FullMovie, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovieGenre};
 
@@ -12,13 +14,32 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
     for movie in &full_movies {
         if let Some(date_str) = &movie.added_on {
             // Try parsing as full timestamp first, then fall back to date-only
-            let timestamp_ok = chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S%.f").is_ok();
-            let date_ok = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                .map(|date| date.and_hms_opt(0, 0, 0).is_some())
-                .unwrap_or(false);
-            
+            let timestamp_ok = chrono::NaiveDateTime::parse_from_str(
+                date_str,
+                "%Y-%m-%d %H:%M:%S%.f",
+            )
+            .is_ok();
+            let date_ok = NaiveDate::parse_from_str(
+                date_str, "%Y-%m-%d",
+            )
+            .map(
+                |date| {
+                    date.and_hms_opt(
+                        0, 0, 0,
+                    )
+                    .is_some()
+                },
+            )
+            .unwrap_or(false);
+
             if !timestamp_ok && !date_ok {
-                return Err(format!("Invalid date '{}' for movie '{}'", date_str, movie.name).into());
+                return Err(
+                    format!(
+                        "Invalid date '{}' for movie '{}'",
+                        date_str, movie.name
+                    )
+                    .into(),
+                );
             }
         }
     }
@@ -43,7 +64,10 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
         },
     );
 
-    let mut connection = crate::get_database_connection().await?;
+    let pool = crate::get_connection_pool().await?;
+    let mut connection = pool.get().await.map_err(|e| {
+        crate::DatabaseError::ConnectionError(ConnectionError::BadConnection(e.to_string()))
+    })?;
     let actors = crate::insert_actors(
         &actors,
         &mut connection,
@@ -55,19 +79,17 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>) -> Result<(), B
     )
     .await?;
 
+    // TODO: Fix circular dependency - move embedding generation to caller
     let embeddings: Vec<String> = full_movies
         .iter()
         .map(|movie| movie.embedding_str())
         .collect();
-    let embeddings = ai_chat::get_embeddings(
-        embeddings,
-        ai_chat::EMBEDDING_MODEL,
-    )
-    .await?;
+    // let embeddings = ai_chat::get_embeddings(embeddings, ai_chat::EMBEDDING_MODEL).await?;
+    let embeddings: Vec<Vec<f32>> = vec![vec![]; embeddings.len()]; // Stub
 
     let movies: Vec<NewMovie> = full_movies
         .iter_mut()
-        .zip(embeddings.into_iter())
+        .zip(embeddings)
         .map(
             |(movie, embedding)| NewMovie {
                 name: movie

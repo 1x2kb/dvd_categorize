@@ -6,9 +6,7 @@ use axum::extract::Json;
 use axum_macros::debug_handler;
 use categorizer_utilities::strip_punctuation;
 use database::{
-    question::AiAction,
-    traits::SearchMoviesByEmbedding,
-    FullMovie, PostgresMovieRepository,
+    question::AiAction, traits::SearchMoviesByEmbedding, FullMovie, PostgresMovieRepository,
 };
 use log::{error, info};
 use ollama_rs::Ollama;
@@ -120,8 +118,14 @@ pub async fn extract_entities(
             true
         } else {
             // Check if entity appears as whole word(s) in query
-            let padded_query = format!(" {} ", query_normalized);
-            let padded_entity = format!(" {} ", entity_normalized);
+            let padded_query = format!(
+                " {} ",
+                query_normalized
+            );
+            let padded_entity = format!(
+                " {} ",
+                entity_normalized
+            );
             padded_query.contains(&padded_entity)
         };
 
@@ -247,7 +251,7 @@ fn score_movie_by_keywords(movie: &FullMovie, criteria: &SearchCriteria) -> f32 
             .name
             .to_lowercase();
         let title_lower = title.to_lowercase();
-        
+
         let movie_title_normalized = strip_punctuation(&movie_title_lower);
         let title_normalized = strip_punctuation(&title_lower);
 
@@ -287,7 +291,9 @@ fn score_movie_by_keywords(movie: &FullMovie, criteria: &SearchCriteria) -> f32 
                 .name
                 .to_lowercase();
             let movie_actor_normalized = strip_punctuation(&movie_actor_lower);
-            if movie_actor_normalized == actor_normalized || movie_actor_normalized.contains(&actor_normalized) {
+            if movie_actor_normalized == actor_normalized
+                || movie_actor_normalized.contains(&actor_normalized)
+            {
                 score += 20.0;
                 break;
             }
@@ -304,7 +310,9 @@ fn score_movie_by_keywords(movie: &FullMovie, criteria: &SearchCriteria) -> f32 
                 .name
                 .to_lowercase();
             let director_normalized = strip_punctuation(&director_lower);
-            if director_normalized == actor_normalized || director_normalized.contains(&actor_normalized) {
+            if director_normalized == actor_normalized
+                || director_normalized.contains(&actor_normalized)
+            {
                 score += 25.0;
                 break;
             }
@@ -554,7 +562,13 @@ async fn vector_only_search(
     let vector_results = match embedding(&enhanced_query).await {
         Ok(embedding_vec) => {
             let search_result = match PostgresMovieRepository::from_env().await {
-                Ok(mut repo) => repo.search_by_embedding(embedding_vec, (limit * 2) as i64).await,
+                Ok(repo) => {
+                    repo.search_by_embedding(
+                        embedding_vec,
+                        (limit * 2) as i64,
+                    )
+                    .await
+                }
                 Err(e) => Err(e),
             };
             match search_result {
@@ -711,7 +725,13 @@ async fn hybrid_both_search(
             match embedding(&enhanced_query_clone).await {
                 Ok(embedding_vec) => {
                     let search_result = match PostgresMovieRepository::from_env().await {
-                        Ok(mut repo) => repo.search_by_embedding(embedding_vec, (limit * 2) as i64).await,
+                        Ok(repo) => {
+                            repo.search_by_embedding(
+                                embedding_vec,
+                                (limit * 2) as i64,
+                            )
+                            .await
+                        }
                         Err(e) => Err(e),
                     };
                     match search_result {
@@ -843,7 +863,17 @@ async fn structured_query_search(
                 structured_query
             );
 
-            match database::get_database_connection().await {
+            let pool = match database::get_connection_pool().await {
+                Ok(pool) => pool,
+                Err(e) => {
+                    error!("Failed to get database pool: {:?}", e);
+                    return (
+                        Vec::new(),
+                        query.to_string(),
+                    );
+                }
+            };
+            match pool.get().await {
                 Ok(mut conn) => {
                     match database::structured_search::search_movies_structured(
                         &structured_query,
@@ -1058,9 +1088,11 @@ async fn extract_entities_from_movies(
 #[debug_handler]
 pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
     let dvds = match PostgresMovieRepository::from_env().await {
-        Ok(mut repo) => {
+        Ok(repo) => {
             use database::traits::GetAllMovies;
-            repo.get_all().await.unwrap_or_else(|_| Vec::new())
+            repo.get_all()
+                .await
+                .unwrap_or_else(|_| Vec::new())
         }
         Err(_) => Vec::new(),
     };

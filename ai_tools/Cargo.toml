@@ -1,0 +1,15 @@
+[package]
+name = "ai_tools"
+version = "1.0.0"
+edition = "2021"
+description = "Ollama Tool implementations that self-call dvd_catalog_api over HTTP"
+
+[dependencies]
+models = { path = "../models" }
+ollama-rs.workspace = true
+reqwest = { version = "0.12", features = ["json"] }
+serde.workspace = true
+serde_json.workspace = true
+schemars = "1.2"
+log.workspace = true
+tokio.workspace = true

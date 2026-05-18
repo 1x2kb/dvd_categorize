@@ -13,6 +13,11 @@ path = "./src/lib.rs"
 axum = "0.8.9"
 axum-macros = "0.5.1"
 tower-http = { version = "0.6", features = ["cors"] }
+uuid = "1.0"
+serde_json = "1.0"
+async-stream.workspace = true
+futures-util = "0.3"
+tokio-stream = "0.1"
 log.workspace = true
 env_logger.workspace = true
 tracing.workspace = true
@@ -24,7 +29,9 @@ models = { path = "../models", features = [
 ] }
 dotenvy.workspace = true
 ai_chat = { path = "../ai_chat" }
+ai_tools = { path = "../ai_tools" }
 ollama-rs.workspace = true
 csv_utils = { path = "../csv_utils" }
 categorizer_utilities = { path = "../categorizer_utilities" }
+prompts = { path = "../prompts" }
 serde.workspace = true
