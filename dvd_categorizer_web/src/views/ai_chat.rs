@@ -425,7 +425,7 @@ pub fn AiChat() -> Element {
     let mut show_history = use_signal(|| false);
     // false = streaming RAG (`/ai/chat/stream`), true = non-streaming tool-enabled (`/ai/chat`)
     let mut tool_mode = use_signal(|| false);
-    let mut selected_model = use_signal(|| "qwen2.5:3b".to_string());
+    let mut selected_model = use_signal(|| "qwen2.5:7b".to_string());
     let mut available_models = use_signal(Vec::<AvailableModel>::new);
     let mut show_prompt_editor = use_signal(|| false);
     let mut rag_prompt = use_signal(|| DEFAULT_RAG_PROMPT.to_string());

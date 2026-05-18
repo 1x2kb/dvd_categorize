@@ -19,7 +19,7 @@ pub fn ModelPull() -> Element {
                         "Enter the name of the Ollama model you want to pull. Common models include:"
                     }
                     ul { class: "model-examples",
-                        li { code { "qwen2.5:3b" } " - Default chat model" }
+                        li { code { "qwen2.5:7b" } " - Default chat model" }
                         li { code { "nomic-embed-text" } " - Embedding model (currently used)" }
                         li { code { "mistral" } " - Alternative chat model" }
                         li { code { "codellama" } " - Code-focused model" }
@@ -36,7 +36,7 @@ pub fn ModelPull() -> Element {
                         id: "model-name",
                         class: "model-input",
                         r#type: "text",
-                        placeholder: "e.g., qwen2.5:3b",
+                        placeholder: "e.g., qwen2.5:7b",
                         value: "{model_name}",
                         oninput: move |e| {
                             model_name.set(e.value());

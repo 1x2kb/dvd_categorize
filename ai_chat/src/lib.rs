@@ -311,7 +311,7 @@ pub async fn list_models() -> Result<Vec<models::AvailableModel>, String> {
 ///
 /// # Arguments
 ///
-/// * `model_name` - The name of the model to pull (e.g., "qwen2.5:3b", "nomic-embed-text")
+/// * `model_name` - The name of the model to pull (e.g., "qwen2.5:7b", "nomic-embed-text")
 ///
 /// # Returns
 ///
