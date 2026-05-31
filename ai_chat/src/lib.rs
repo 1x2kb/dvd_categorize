@@ -464,15 +464,21 @@ Example for "The Matrix":
 /// Correct a batch of movie titles in a single Ollama call.
 /// Returns one corrected title per input, in the same order.
 /// If a title is already correct, the model returns it unchanged.
+#[instrument(level = Level::DEBUG, skip(titles, model), fields(title_count = titles.len()))]
 pub async fn correct_movie_titles(
     titles: &[String],
     model: Option<&str>,
 ) -> Result<Vec<String>, String> {
+    debug!("Starting title correction for {} titles: {:?}", titles.len(), titles);
+
     let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
     let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
     let ollama = match format!("http://{}:{}", ollama_host, ollama_port).parse() {
         Ok(url) => Ollama::from_url(url),
-        Err(e) => return Err(format!("Failed to parse Ollama URL: {}", e)),
+        Err(e) => {
+            error!("Failed to parse Ollama URL: {}", e);
+            return Err(format!("Failed to parse Ollama URL: {}", e));
+        }
     };
 
     let numbered = titles.iter().enumerate()
@@ -497,6 +503,8 @@ Input titles:\n{}\n\nJSON array only, no explanation:",
         numbered
     );
 
+    debug!("Sending title correction prompt to AI (model: {:?})", model);
+
     let request = ChatMessageRequest::new(
         model.unwrap_or("qwen2.5:7b").to_string(),
         vec![ChatMessage::user(prompt)],
@@ -505,16 +513,47 @@ Input titles:\n{}\n\nJSON array only, no explanation:",
     match ollama.send_chat_messages(request).await {
         Ok(response) => {
             let content = response.message.content.trim();
+            debug!("Raw AI response for title correction: '{}'", content);
+
             // Strip markdown code fences if present
             let json = content
                 .trim_start_matches("```json")
                 .trim_start_matches("```")
                 .trim_end_matches("```")
                 .trim();
-            serde_json::from_str::<Vec<String>>(json)
-                .map_err(|e| format!("Failed to parse title corrections: {}. Content: {}", e, json))
+
+            debug!("Stripped JSON for parsing: '{}'", json);
+
+            match serde_json::from_str::<Vec<String>>(json) {
+                Ok(corrected) => {
+                    debug!("Successfully parsed {} corrected titles: {:?}", corrected.len(), corrected);
+
+                    // Log each individual correction for detailed debugging
+                    for (i, (orig, corr)) in titles.iter().zip(corrected.iter()).enumerate() {
+                        if orig != corr {
+                            debug!("Title {}: '{}' -> '{}' (CHANGED)", i, orig, corr);
+                        } else {
+                            debug!("Title {}: '{}' (unchanged)", i, orig);
+                        }
+                    }
+
+                    if corrected.len() != titles.len() {
+                        error!("Title correction count mismatch: sent {}, received {}", titles.len(), corrected.len());
+                        return Err(format!("Response count mismatch: expected {} titles, got {}", titles.len(), corrected.len()));
+                    }
+
+                    Ok(corrected)
+                }
+                Err(e) => {
+                    error!("Failed to parse title corrections JSON: {}. Raw content: '{}'", e, json);
+                    Err(format!("Failed to parse title corrections: {}. Content: {}", e, json))
+                }
+            }
         }
-        Err(e) => Err(format!("Failed to get AI response: {}", e)),
+        Err(e) => {
+            error!("Failed to get AI response for title correction: {}", e);
+            Err(format!("Failed to get AI response: {}", e))
+        }
     }
 }
 

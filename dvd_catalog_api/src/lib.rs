@@ -941,20 +941,40 @@ pub async fn validate_titles(
     State(cache): State<CacheState>,
     Json(request): Json<ValidateTitlesRequest>,
 ) -> Json<Vec<TitleValidation>> {
+    info!("Validating {} titles: {:?}", request.titles.len(), request.titles);
+    debug!("Using model for validation: {:?}", request.model);
+
     let movies = cache.movies.read().await;
     let catalog: Vec<String> = movies.iter().map(|m| m.name.to_lowercase()).collect();
+    debug!("Catalog has {} movies for duplicate check", catalog.len());
 
     // Ask the model to correct spelling in one batch call — it's already hot
     // since it's the same model the user will use for generation.
-    let corrected = match ai_chat::correct_movie_titles(&request.titles, request.model.as_deref()).await {
-        Ok(c) if c.len() == request.titles.len() => c,
-        // On any failure fall back to the originals — validation is best-effort.
-        _ => request.titles.clone(),
+    let correction_result = ai_chat::correct_movie_titles(&request.titles, request.model.as_deref()).await;
+    let corrected = match &correction_result {
+        Ok(c) if c.len() == request.titles.len() => {
+            info!("Title correction succeeded for all {} titles", c.len());
+            debug!("Correction mapping: original -> corrected");
+            for (orig, corr) in request.titles.iter().zip(c.iter()) {
+                if orig != corr {
+                    debug!("  '{}' -> '{}'", orig, corr);
+                }
+            }
+            c.clone()
+        }
+        Ok(c) => {
+            error!("Title correction returned wrong count: sent {}, got {}", request.titles.len(), c.len());
+            request.titles.clone()
+        }
+        Err(e) => {
+            error!("Title correction failed: {}. Falling back to originals.", e);
+            request.titles.clone()
+        }
     };
 
     let strip_the = |s: &str| s.strip_prefix("the ").unwrap_or(s).to_string();
 
-    let results = request.titles.iter().zip(corrected.iter()).map(|(original, corrected)| {
+    let results: Vec<TitleValidation> = request.titles.iter().zip(corrected.iter()).map(|(original, corrected)| {
         let corrected_lower = corrected.to_lowercase();
         let original_lower = original.to_lowercase();
 
@@ -982,6 +1002,12 @@ pub async fn validate_titles(
         }
     }).collect();
 
+    // Log summary of validation results
+    let with_suggestions = results.iter().filter(|r| r.suggestion.is_some()).count();
+    let in_catalog_count = results.iter().filter(|r| r.already_in_catalog).count();
+    info!("Validation complete: {} suggestions, {} already in catalog", with_suggestions, in_catalog_count);
+    debug!("Full validation results: {:?}", results);
+
     Json(results)
 }
 
@@ -1000,17 +1026,37 @@ pub async fn generate_movies_stream(
 ) -> Sse<impl futures_util::stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
     use async_stream::stream;
 
+    info!("Streaming movie generation for {} titles: {:?}", request.titles.len(), request.titles);
+    debug!("Model: {:?}, Positions: {:?}", request.model, request.positions);
+
     let titles = request.titles.clone();
     let model = request.model.clone();
 
     // Snapshot full catalog for duplicate detection and data lookup.
     let catalog_movies: Vec<models::FullMovie> = cache.movies.read().await.clone();
     let catalog_names: Vec<String> = catalog_movies.iter().map(|m| m.name.to_lowercase()).collect();
+    debug!("Catalog snapshot: {} movies available for duplicate detection", catalog_movies.len());
 
     // Validate + correct titles upfront — one fast Ollama call.
-    let corrected = match ai_chat::correct_movie_titles(&titles, model.as_deref()).await {
-        Ok(c) if c.len() == titles.len() => c,
-        _ => titles.clone(),
+    let correction_result = ai_chat::correct_movie_titles(&titles, model.as_deref()).await;
+    let corrected = match &correction_result {
+        Ok(c) if c.len() == titles.len() => {
+            info!("Title correction succeeded for {} titles in stream", c.len());
+            for (i, (orig, corr)) in titles.iter().zip(c.iter()).enumerate() {
+                if orig != corr {
+                    debug!("  Stream title {}: '{}' -> '{}'", i, orig, corr);
+                }
+            }
+            c.clone()
+        }
+        Ok(c) => {
+            error!("Title correction wrong count in stream: sent {}, got {}", titles.len(), c.len());
+            titles.clone()
+        }
+        Err(e) => {
+            error!("Title correction failed in stream: {}. Using originals.", e);
+            titles.clone()
+        }
     };
 
     let strip_the = |s: &str| s.strip_prefix("the ").unwrap_or(s).to_string();
@@ -1063,6 +1109,12 @@ pub async fn generate_movies_stream(
             clean_titles.push((original.clone(), pos));
         }
     }
+
+    // Log summary of streaming events
+    let movies_count = events_to_yield.iter().filter(|e| matches!(e, GenerateStreamEvent::Movie(_))).count();
+    let needs_input_count = events_to_yield.iter().filter(|e| matches!(e, GenerateStreamEvent::NeedsInput { .. })).count();
+    info!("Stream event summary: {} catalog movies, {} needs_input, {} to generate", movies_count, needs_input_count, clean_titles.len());
+    debug!("Clean titles to generate: {:?}", clean_titles);
 
     let s = stream! {
         // Immediately yield all needs_input events.

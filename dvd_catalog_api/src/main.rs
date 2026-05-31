@@ -10,23 +10,21 @@ use dotenvy::dotenv;
 use dvd_catalog::*;
 use log::{error, info, warn};
 use tower_http::cors::{Any, CorsLayer};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
 async fn main() {
-    // Initialize logger with timestamp and module info
-    let env = env_logger::Env::default()
-        .filter_or(
-            "RUST_LOG", "info",
+    // Initialize JSON logging
+    tracing_subscriber::registry()
+        .with(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info,dvd_catalog=debug,database=debug,ai_chat=debug")),
         )
-        .write_style_or(
-            "RUST_LOG_STYLE",
-            "always",
-        );
-
-    env_logger::Builder::from_env(env)
-        .format_timestamp(Some(env_logger::TimestampPrecision::Millis))
-        .format_module_path(true)
-        .format_target(true)
+        .with(
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_current_span(false),
+        )
         .init();
 
     info!("Starting DVD Catalog API");
