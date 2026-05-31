@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use log::error;
-use models::{AiMovieData, AvailableModel, AvailableModelsResponse};
+use models::{AiMovieData, AvailableModel, AvailableModelsResponse, GenerateStreamEvent, NeedsInputReason};
+use crate::components::toast::{ToastContainer, ToastMessage};
 use serde::Serialize;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -13,20 +14,25 @@ use crate::components::generated_movie_grid::GeneratedMovieGrid;
 struct GenerateMoviesRequest {
     titles: Vec<String>,
     model: Option<String>,
+    positions: Vec<usize>,
 }
 
 #[component]
 pub fn MoviePrompt() -> Element {
     let mut title_input = use_signal(|| "".to_string());
-    let mut title_list: Signal<Vec<String>> = use_signal(Vec::new);
+    let mut chips: Signal<Vec<String>> = use_signal(Vec::new);
     let mut selected_model = use_signal(|| "".to_string());
     let mut available_models = use_signal(Vec::<AvailableModel>::new);
     let mut is_loading = use_signal(|| false);
     let mut error_message = use_signal(|| None::<String>);
-    let mut success_message = use_signal(|| None::<String>);
     let mut generated_movies: Signal<Vec<AiMovieData>> = use_signal(Vec::new);
+    let mut pending_inputs: Signal<Vec<(String, NeedsInputReason)>> = use_signal(Vec::new);
+    let mut toasts: Signal<Vec<ToastMessage>> = use_signal(Vec::new);
     let mut has_results = use_signal(|| false);
     let mut generate_trigger: Signal<u32> = use_signal(|| 0);
+
+    let mut push_toast = move |msg: ToastMessage| toasts.with_mut(|v| v.push(msg));
+    let mut dismiss_toast = move |id: u32| toasts.with_mut(|v| v.retain(|t| t.id != id));
 
     // Fetch available models on component mount
     use_effect(move || {
@@ -52,7 +58,7 @@ pub fn MoviePrompt() -> Element {
         });
     });
 
-    // Add the current input value as chips, splitting on '|' for batch entry.
+    // Add titles as simple string chips.
     let add_title = move |_: MouseEvent| {
         let raw = title_input();
         let new_titles: Vec<String> = raw
@@ -61,58 +67,46 @@ pub fn MoviePrompt() -> Element {
             .filter(|s| !s.is_empty())
             .collect();
         if new_titles.is_empty() { return; }
-        title_list.with_mut(|v| {
-            for title in new_titles {
-                if !v.iter().any(|t: &String| t.to_lowercase() == title.to_lowercase()) {
-                    v.push(title);
-                }
-            }
-        });
+        let added: Vec<String> = new_titles.into_iter().filter(|t| {
+            !chips().iter().any(|c| c.to_lowercase() == t.to_lowercase())
+        }).collect();
+        if added.is_empty() { title_input.set("".to_string()); return; }
+        chips.with_mut(|v| v.extend(added));
         title_input.set("".to_string());
     };
 
     let generate_movies = move |_| {
-        let titles = title_list();
-        if titles.is_empty() {
+        if chips().is_empty() {
             error_message.set(Some("Add at least one movie title first".to_string()));
             return;
         }
         error_message.set(None);
-        success_message.set(None);
-
-        if !has_results() {
-            // First generation — stream cards in, show grid after first arrives.
-            let model = selected_model();
-            is_loading.set(true);
-            generated_movies.set(Vec::new());
-            spawn(async move {
-                let on_movie = move |movie: AiMovieData| {
-                    generated_movies.with_mut(|v| v.push(movie));
-                    has_results.set(true);
-                };
-                let on_done = move || {
-                    let count = generated_movies().len();
-                    let word = if count == 1 { "movie" } else { "movies" };
-                    success_message.set(Some(format!("✓ Generated {} {}", count, word)));
-                    is_loading.set(false);
-                };
-                let on_err = move |e: String| {
-                    error_message.set(Some(e));
-                    is_loading.set(false);
-                };
-                stream_generated_movies(titles, model, on_movie, on_done, on_err).await;
-            });
-        } else {
-            // Subsequent generation — grid handles it via trigger.
-            generate_trigger.with_mut(|t| *t += 1);
-        }
+        generated_movies.set(Vec::new());
+        pending_inputs.set(Vec::new());
+        has_results.set(true);
+        generate_trigger.with_mut(|t| *t += 1);
     };
 
-    let movie_count = generated_movies().len();
-    let movie_word = if movie_count == 1 { "movie" } else { "movies" };
-
     rsx! {
-        div { class: "movie-prompt-container",
+        ToastContainer {
+            toasts: toasts,
+            on_dismiss: move |id| dismiss_toast(id),
+        }
+        div {
+            class: "movie-prompt-container",
+            onkeydown: move |e: KeyboardEvent| {
+                if e.key() == Key::Enter && e.modifiers().ctrl() {
+                    if chips().is_empty() {
+                        error_message.set(Some("Add at least one movie title first".to_string()));
+                        return;
+                    }
+                    error_message.set(None);
+                    generated_movies.set(Vec::new());
+                    pending_inputs.set(Vec::new());
+                    has_results.set(true);
+                    generate_trigger.with_mut(|t| *t += 1);
+                }
+            },
             h2 { class: "page-title", "Movie Generator" }
             p { class: "page-description",
                 "Add movie titles below, then click Generate. Lock cards you're happy with and Generate again to redo the rest."
@@ -145,9 +139,6 @@ pub fn MoviePrompt() -> Element {
                     "{error}"
                 }
             }
-            if let Some(msg) = success_message() {
-                div { class: "message message-success", "{msg}" }
-            }
 
             // Title chip input
             div { class: "input-section",
@@ -162,19 +153,12 @@ pub fn MoviePrompt() -> Element {
                         oninput: move |e| title_input.set(e.value()),
                         onkeydown: move |e: KeyboardEvent| {
                             if e.key() == Key::Enter {
-                                let new_titles: Vec<String> = title_input()
-                                    .split('|')
-                                    .map(|s| s.trim().to_string())
-                                    .filter(|s| !s.is_empty())
-                                    .collect();
+                                let raw = title_input();
+                                let new_titles: Vec<String> = raw.split('|').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
                                 if new_titles.is_empty() { return; }
-                                title_list.with_mut(|v| {
-                                    for title in new_titles {
-                                        if !v.iter().any(|t: &String| t.to_lowercase() == title.to_lowercase()) {
-                                            v.push(title);
-                                        }
-                                    }
-                                });
+                                let added: Vec<String> = new_titles.into_iter().filter(|t| !chips().iter().any(|c| c.to_lowercase() == t.to_lowercase())).collect();
+                                if added.is_empty() { title_input.set("".to_string()); return; }
+                                chips.with_mut(|v| v.extend(added));
                                 title_input.set("".to_string());
                             }
                         },
@@ -187,24 +171,15 @@ pub fn MoviePrompt() -> Element {
                 }
 
                 // Chip list
-                if !title_list().is_empty() {
+                if !chips().is_empty() {
                     div { class: "title-chip-list",
-                        for (idx, title) in title_list().iter().enumerate() {
-                            div { class: "title-chip", key: "{idx}-{title}",
-                                span { class: "title-chip-text", "{title}" }
+                        for (idx, chip) in chips().iter().enumerate() {
+                            div { class: "title-chip", key: "{idx}-{chip}",
+                                span { class: "title-chip-text", "{chip}" }
                                 button {
                                     class: "title-chip-remove",
                                     title: "Remove",
-                                    onclick: move |_| {
-                                        title_list.with_mut(|v| v.remove(idx));
-                                        // Also drop the corresponding generated card if present
-                                        generated_movies.with_mut(|v| {
-                                            if idx < v.len() { v.remove(idx); }
-                                        });
-                                        if generated_movies().is_empty() {
-                                            has_results.set(false);
-                                        }
-                                    },
+                                    onclick: move |_| chips.with_mut(|v| { v.remove(idx); }),
                                     "×"
                                 }
                             }
@@ -215,7 +190,7 @@ pub fn MoviePrompt() -> Element {
                 div { class: "input-buttons",
                     button {
                         class: "button button-primary",
-                        disabled: is_loading() || title_list().is_empty(),
+                        disabled: is_loading() || chips().is_empty(),
                         onclick: generate_movies,
                         if is_loading() { "Generating..." } else { "Generate" }
                     }
@@ -223,23 +198,12 @@ pub fn MoviePrompt() -> Element {
                         class: "button button-secondary",
                         disabled: is_loading(),
                         onclick: move |_| {
-                            title_list.set(Vec::new());
+                            chips.set(Vec::new());
                             generated_movies.set(Vec::new());
                             has_results.set(false);
                             error_message.set(None);
-                            success_message.set(None);
                         },
                         "Clear All"
-                    }
-                }
-            }
-
-            // Loading Indicator
-            if is_loading() {
-                div { class: "loading-section",
-                    div { class: "loading-indicator",
-                        div { class: "spinner" }
-                        p { "Asking AI for movie data..." }
                     }
                 }
             }
@@ -248,12 +212,13 @@ pub fn MoviePrompt() -> Element {
             if has_results() {
                 div { class: "preview-section",
                     h3 { class: "preview-title",
-                        "{movie_count} {movie_word} — 🔒 lock cards to keep, Generate again to redo the rest"
+                        "🔒 Lock cards to keep, Generate again to redo the rest"
                     }
                     div { class: "preview-wrapper",
                         GeneratedMovieGrid {
                             movies: generated_movies,
-                            input_titles: title_list(),
+                            pending_inputs: pending_inputs,
+                            input_titles: chips(),
                             generate_trigger: generate_trigger,
                             model: selected_model(),
                             on_movies_changed: move |updated: Vec<AiMovieData>| {
@@ -261,14 +226,21 @@ pub fn MoviePrompt() -> Element {
                             },
                             on_loading: move |loading: bool| {
                                 is_loading.set(loading);
-                                if !loading {
-                                    let count = generated_movies().len();
-                                    let word = if count == 1 { "movie" } else { "movies" };
-                                    success_message.set(Some(format!("✓ Generated {} {}", count, word)));
-                                }
                             },
                             on_error: move |e: String| {
                                 error_message.set(Some(e));
+                            },
+                            on_pending: move |(title, reason): (String, NeedsInputReason)| {
+                                pending_inputs.with_mut(|v| v.push((title, reason)));
+                            },
+                            on_toast: move |msg: ToastMessage| push_toast(msg),
+                            on_dismiss_toast: move |id: u32| dismiss_toast(id),
+                            on_title_corrected: move |(original, corrected): (String, String)| {
+                                chips.with_mut(|v| {
+                                    if let Some(c) = v.iter_mut().find(|c| c.to_lowercase() == original.to_lowercase()) {
+                                        *c = corrected;
+                                    }
+                                });
                             },
                         }
                     }
@@ -290,12 +262,13 @@ async fn get_api_base() -> String {
     format!("http://{}:{}", hostname, port)
 }
 
-/// Stream movie generation via SSE. Calls `on_movie` for each card as it arrives,
-/// `on_done` when the stream closes, and `on_err` on any failure.
+/// Stream movie generation via SSE. Calls `on_movie` for each generated card,
+/// `on_needs_input` for titles requiring user action, `on_done` when done, `on_err` on failure.
 pub async fn stream_generated_movies(
     titles: Vec<String>,
+    positions: Vec<usize>,
     model: String,
-    mut on_movie: impl FnMut(AiMovieData),
+    mut on_movie: impl FnMut(AiMovieData, Option<NeedsInputReason>),
     on_done: impl FnOnce(),
     on_err: impl FnOnce(String),
 ) {
@@ -303,6 +276,7 @@ pub async fn stream_generated_movies(
     let request = GenerateMoviesRequest {
         titles,
         model: if model.is_empty() { None } else { Some(model) },
+        positions,
     };
 
     let body = match serde_json::to_string(&request) {
@@ -370,9 +344,23 @@ pub async fn stream_generated_movies(
                         if let Some(data) = line.strip_prefix("data:") {
                             let data = data.trim();
                             if data.is_empty() { continue; }
-                            match serde_json::from_str::<AiMovieData>(data) {
-                                Ok(movie) => on_movie(movie),
-                                Err(e) => error!("Failed to parse SSE movie: {} — {}", e, data),
+                            match serde_json::from_str::<GenerateStreamEvent>(data) {
+                                Ok(GenerateStreamEvent::Movie(movie)) => on_movie(movie, None),
+                                Ok(GenerateStreamEvent::NeedsInput { original, reason, position }) => {
+                                    let placeholder = AiMovieData {
+                                        title: original.clone(),
+                                        year: 0,
+                                        description: String::new(),
+                                        actors: vec![],
+                                        genres: vec![],
+                                        director: String::new(),
+                                        already_in_catalog: false,
+                                        input_title: Some(original.clone()),
+                                        position,
+                                    };
+                                    on_movie(placeholder, Some(reason));
+                                },
+                                Err(e) => error!("Failed to parse SSE event: {} — {}", e, data),
                             }
                         } else if line.starts_with("event: done") {
                             on_done();
@@ -398,8 +386,9 @@ pub async fn fetch_generated_movies(
     let mut error: Option<String> = None;
     stream_generated_movies(
         titles,
+        vec![],
         model,
-        |m| results.push(m),
+        |m, _| results.push(m),
         || {},
         |e| error = Some(e),
     ).await;

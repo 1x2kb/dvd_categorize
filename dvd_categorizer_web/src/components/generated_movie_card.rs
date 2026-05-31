@@ -27,6 +27,9 @@ pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
                 if props.movie.year > 0 {
                     span { class: "gen-poster-year", " ({props.movie.year})" }
                 }
+                if props.movie.already_in_catalog {
+                    span { class: "gen-catalog-badge", "Already in catalog" }
+                }
             }
 
             div {
@@ -199,6 +202,9 @@ pub fn EditableMovieCard(props: EditableMovieCardProps) -> Element {
                                 actors: actors().split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
                                 genres: genres().split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
                                 director: director(),
+                                already_in_catalog: false,
+                                input_title: None,
+                                position: 0,
                             });
                         },
                         "✓ Save"

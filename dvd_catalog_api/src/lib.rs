@@ -16,7 +16,7 @@ use database::{
     FullMovie, PostgresMovieRepository, SearchRequest,
 };
 use log::{debug, error, info};
-use models::{CsvInput, ScoredMovie};
+use models::{CsvInput, GenerateStreamEvent, NeedsInputReason, ScoredMovie, TitleValidation, ValidateTitlesRequest};
 use ollama_rs::error::OllamaError;
 use prompts::{DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
 use serde::{Deserialize, Serialize};
@@ -28,6 +28,9 @@ use std::{sync::Arc, time::Instant};
 pub struct GenerateMoviesRequest {
     pub titles: Vec<String>,
     pub model: Option<String>,
+    /// Chip positions parallel to titles, for ordering on the frontend.
+    #[serde(default)]
+    pub positions: Vec<usize>,
 }
 use tokio_stream::StreamExt;
 use tracing::instrument;
@@ -930,13 +933,69 @@ pub async fn generate_movies(
     }
 }
 
-/// Stream movie generation one title at a time via SSE.
+/// Validate a list of movie titles against the catalog.
+/// Returns per-title status: already in catalog and/or a spelling suggestion.
+#[instrument]
+#[debug_handler]
+pub async fn validate_titles(
+    State(cache): State<CacheState>,
+    Json(request): Json<ValidateTitlesRequest>,
+) -> Json<Vec<TitleValidation>> {
+    let movies = cache.movies.read().await;
+    let catalog: Vec<String> = movies.iter().map(|m| m.name.to_lowercase()).collect();
+
+    // Ask the model to correct spelling in one batch call — it's already hot
+    // since it's the same model the user will use for generation.
+    let corrected = match ai_chat::correct_movie_titles(&request.titles, request.model.as_deref()).await {
+        Ok(c) if c.len() == request.titles.len() => c,
+        // On any failure fall back to the originals — validation is best-effort.
+        _ => request.titles.clone(),
+    };
+
+    let strip_the = |s: &str| s.strip_prefix("the ").unwrap_or(s).to_string();
+
+    let results = request.titles.iter().zip(corrected.iter()).map(|(original, corrected)| {
+        let corrected_lower = corrected.to_lowercase();
+        let original_lower = original.to_lowercase();
+
+        // Match with and without leading "The " so "Matrix Reloaded" finds "The Matrix Reloaded".
+        let in_catalog = |s: &str| {
+            catalog.contains(&s.to_string())
+                || catalog.contains(&strip_the(s))
+                || catalog.iter().any(|c| strip_the(c) == strip_the(s))
+        };
+
+        let already_in_catalog = in_catalog(&corrected_lower) || in_catalog(&original_lower);
+
+        let suggestion = if already_in_catalog {
+            None
+        } else if corrected_lower != original_lower {
+            Some(corrected.clone())
+        } else {
+            None
+        };
+
+        TitleValidation {
+            original: original.clone(),
+            already_in_catalog,
+            suggestion,
+        }
+    }).collect();
+
+    Json(results)
+}
+
+/// Stream movie generation via SSE.
 ///
-/// Each movie is generated individually and sent as a `data:` SSE event containing
-/// a JSON-encoded `AiMovieData`. The stream ends with a `event: done` sentinel.
+/// Protocol:
+/// 1. Validate + correct all titles (one Ollama call, fast).
+/// 2. For each title that needs user input, immediately stream a `NeedsInput` event.
+/// 3. For clean titles, pipeline scrape+generate and stream `Movie` events.
+/// 4. End with `event: done`.
 #[instrument]
 #[debug_handler]
 pub async fn generate_movies_stream(
+    State(cache): State<CacheState>,
     Json(request): Json<GenerateMoviesRequest>,
 ) -> Sse<impl futures_util::stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
     use async_stream::stream;
@@ -944,22 +1003,127 @@ pub async fn generate_movies_stream(
     let titles = request.titles.clone();
     let model = request.model.clone();
 
-    let s = stream! {
-        for title in titles {
-            #[cfg(feature = "internet")]
-            let result = ai_chat::generate_movie_single_with_rag(&title, model.as_deref()).await;
-            #[cfg(not(feature = "internet"))]
-            let result = ai_chat::generate_movie_single(&title, model.as_deref()).await;
+    // Snapshot full catalog for duplicate detection and data lookup.
+    let catalog_movies: Vec<models::FullMovie> = cache.movies.read().await.clone();
+    let catalog_names: Vec<String> = catalog_movies.iter().map(|m| m.name.to_lowercase()).collect();
 
-            match result {
-                Ok(movie) => {
-                    match serde_json::to_string(&movie) {
-                        Ok(json) => yield Ok(Event::default().data(json)),
-                        Err(e) => yield Ok(Event::default().event("error").data(e.to_string())),
+    // Validate + correct titles upfront — one fast Ollama call.
+    let corrected = match ai_chat::correct_movie_titles(&titles, model.as_deref()).await {
+        Ok(c) if c.len() == titles.len() => c,
+        _ => titles.clone(),
+    };
+
+    let strip_the = |s: &str| s.strip_prefix("the ").unwrap_or(s).to_string();
+    let find_in_catalog = |s: &str| -> Option<&models::FullMovie> {
+        let lower = s.to_lowercase();
+        catalog_movies.iter().find(|m| {
+            let ml = m.name.to_lowercase();
+            ml == lower || strip_the(&ml) == strip_the(&lower)
+        })
+    };
+    let _ = catalog_names; // used implicitly via find_in_catalog
+
+    let mut events_to_yield: Vec<GenerateStreamEvent> = Vec::new();
+
+    // Build a parallel positions vec, defaulting to index if not provided.
+    let positions: Vec<usize> = (0..titles.len()).map(|i| {
+        request.positions.get(i).copied().unwrap_or(i)
+    }).collect();
+
+    // Track which original title maps to which clean title + its position.
+    let mut clean_titles: Vec<(String, usize)> = Vec::new();
+
+    for (idx, (original, corrected)) in titles.iter().zip(corrected.iter()).enumerate() {
+        let corrected_lower = corrected.to_lowercase();
+        let original_lower = original.to_lowercase();
+        let catalog_match = find_in_catalog(corrected).or_else(|| find_in_catalog(original));
+        let has_suggestion = corrected_lower != original_lower;
+        let pos = positions[idx];
+
+        if let Some(full_movie) = catalog_match {
+            let movie = models::AiMovieData {
+                title: full_movie.name.clone(),
+                year: full_movie.release_year,
+                description: full_movie.description.clone().unwrap_or_default(),
+                actors: full_movie.actors.iter().map(|a| a.name.clone()).collect(),
+                genres: full_movie.genres.clone(),
+                director: full_movie.director.as_ref().map(|d| d.name.clone()).unwrap_or_default(),
+                already_in_catalog: true,
+                input_title: Some(original.clone()),
+                position: pos,
+            };
+            events_to_yield.push(GenerateStreamEvent::Movie(movie));
+        } else if has_suggestion {
+            events_to_yield.push(GenerateStreamEvent::NeedsInput {
+                original: original.clone(),
+                reason: NeedsInputReason::Suggestion(corrected.clone()),
+                position: pos,
+            });
+        } else {
+            clean_titles.push((original.clone(), pos));
+        }
+    }
+
+    let s = stream! {
+        // Immediately yield all needs_input events.
+        for event in events_to_yield {
+            match serde_json::to_string(&event) {
+                Ok(json) => yield Ok(Event::default().data(json)),
+                Err(e) => yield Ok(Event::default().event("error").data(e.to_string())),
+            }
+        }
+
+        // Pipeline-generate clean titles.
+        #[cfg(feature = "internet")]
+        {
+            let mut titles_iter = clean_titles.into_iter().peekable();
+            let mut next_context: Option<((String, usize), String)> = if let Some(first) = titles_iter.next() {
+                let ctx = ai_chat::scrape_single(&first.0).await;
+                Some((first, ctx))
+            } else {
+                None
+            };
+            while let Some(((title, pos), context)) = next_context.take() {
+                let next_title = titles_iter.next();
+                let (result, scraped_next) = tokio::join!(
+                    ai_chat::generate_movie_with_context(&title, context, model.as_deref()),
+                    async {
+                        match &next_title {
+                            Some(t) => Some(ai_chat::scrape_single(&t.0).await),
+                            None => None,
+                        }
                     }
+                );
+                next_context = next_title.zip(scraped_next);
+                match result {
+                    Ok(mut movie) => {
+                        movie.input_title = Some(title);
+                        movie.position = pos;
+                        let event = GenerateStreamEvent::Movie(movie);
+                        match serde_json::to_string(&event) {
+                            Ok(json) => yield Ok(Event::default().data(json)),
+                            Err(e) => yield Ok(Event::default().event("error").data(e.to_string())),
+                        }
+                    },
+                    Err(e) => yield Ok(Event::default().event("error").data(e)),
                 }
-                Err(e) => {
-                    yield Ok(Event::default().event("error").data(e));
+            }
+        }
+        #[cfg(not(feature = "internet"))]
+        {
+            for (title, pos) in clean_titles {
+                let result = ai_chat::generate_movie_single(&title, model.as_deref()).await;
+                match result {
+                    Ok(mut movie) => {
+                        movie.input_title = Some(title);
+                        movie.position = pos;
+                        let event = GenerateStreamEvent::Movie(movie);
+                        match serde_json::to_string(&event) {
+                            Ok(json) => yield Ok(Event::default().data(json)),
+                            Err(e) => yield Ok(Event::default().event("error").data(e.to_string())),
+                        }
+                    },
+                    Err(e) => yield Ok(Event::default().event("error").data(e)),
                 }
             }
         }

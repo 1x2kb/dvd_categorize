@@ -133,6 +133,14 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
             "/csv/export",
             get(export_csv),
         )
+        .route(
+            "/ai/validate-titles",
+            post(validate_titles),
+        )
+        .route(
+            "/ai/generate-movies-stream",
+            post(generate_movies_stream),
+        )
         .with_state(state);
 
     // Create router for chat (tool-enabled non-streaming) and streaming, both need DbState
@@ -204,10 +212,6 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
         .route(
             "/ai/generate-movies",
             post(generate_movies),
-        )
-        .route(
-            "/ai/generate-movies-stream",
-            post(generate_movies_stream),
         )
         .route(
             "/ai/recent",

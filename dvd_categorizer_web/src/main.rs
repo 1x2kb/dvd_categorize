@@ -99,10 +99,10 @@ pub fn Hero() -> Element {
                     to: Route::InsertMedia {}, "Insert"
                 }
                 Link {
-                    to: Route::ModelPull {}, "Models"
+                    to: Route::MoviePrompt {}, "Generator"
                 }
                 Link {
-                    to: Route::MoviePrompt {}, "Generator"
+                    to: Route::ModelPull {}, "Models"
                 }
                 Link {
                     to: Route::Stats {}, "Stats"
@@ -139,10 +139,10 @@ fn Navbar() -> Element {
                     to: Route::InsertMedia {}, "Insert"
             }
             Link {
-                    to: Route::ModelPull {}, "Models"
+                    to: Route::MoviePrompt {}, "Generator"
             }
             Link {
-                    to: Route::MoviePrompt {}, "Generator"
+                    to: Route::ModelPull {}, "Models"
             }
             Link {
                     to: Route::Stats {}, "Stats"

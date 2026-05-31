@@ -289,6 +289,43 @@ pub struct ScoredMovie {
     pub vector_score: f32,
 }
 
+/// Why a title needs user input before generation.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "reason", content = "value")]
+pub enum NeedsInputReason {
+    /// The AI corrected the title — user should accept or dismiss.
+    Suggestion(String),
+}
+
+/// A single event in the generate-movies SSE stream.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", content = "data")]
+pub enum GenerateStreamEvent {
+    /// A fully generated movie card.
+    Movie(AiMovieData),
+    /// This title needs user input before generation can proceed.
+    NeedsInput { original: String, reason: NeedsInputReason, position: usize },
+}
+
+/// Request body for the /ai/validate-titles endpoint.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ValidateTitlesRequest {
+    pub titles: Vec<String>,
+    /// The model to use for title correction — should match the generation model so it's already hot.
+    pub model: Option<String>,
+}
+
+/// Per-title result from /ai/validate-titles.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct TitleValidation {
+    /// The original title as submitted.
+    pub original: String,
+    /// True if an exact (case-insensitive) match exists in the catalog.
+    pub already_in_catalog: bool,
+    /// A fuzzy-matched suggestion from the catalog, if close enough but not exact.
+    pub suggestion: Option<String>,
+}
+
 /// Simplified movie data structure for AI generation.
 /// Used with Ollama structured output to get consistent JSON responses.
 #[derive(Clone, PartialEq, Serialize, Deserialize, Debug, schemars::JsonSchema)]
@@ -299,6 +336,18 @@ pub struct AiMovieData {
     pub actors: Vec<String>,
     pub genres: Vec<String>,
     pub director: String,
+    /// Set to true when this card was populated from the existing catalog, not generated fresh.
+    #[serde(default)]
+    #[schemars(skip)]
+    pub already_in_catalog: bool,
+    /// The original user-typed chip title this movie was generated for.
+    #[serde(default)]
+    #[schemars(skip)]
+    pub input_title: Option<String>,
+    /// Chip position index — echoed from request so frontend can place card correctly.
+    #[serde(default)]
+    #[schemars(skip)]
+    pub position: usize,
 }
 
 impl AiMovieData {

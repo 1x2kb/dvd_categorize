@@ -1,4 +1,5 @@
 pub mod actor_chart;
+pub mod toast;
 pub mod browse_bar;
 pub mod generated_movie_card;
 pub mod generated_movie_grid;
