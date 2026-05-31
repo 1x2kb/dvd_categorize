@@ -25,7 +25,8 @@ async fn main() {
 
     env_logger::Builder::from_env(env)
         .format_timestamp(Some(env_logger::TimestampPrecision::Millis))
-        .format_module_path(false)
+        .format_module_path(true)
+        .format_target(true)
         .init();
 
     info!("Starting DVD Catalog API");
@@ -199,6 +200,14 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
         .route(
             "/ai/models",
             get(list_available_models),
+        )
+        .route(
+            "/ai/generate-movies",
+            post(generate_movies),
+        )
+        .route(
+            "/ai/generate-movies-stream",
+            post(generate_movies_stream),
         )
         .route(
             "/ai/recent",

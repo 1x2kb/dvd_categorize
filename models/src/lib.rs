@@ -289,6 +289,48 @@ pub struct ScoredMovie {
     pub vector_score: f32,
 }
 
+/// Simplified movie data structure for AI generation.
+/// Used with Ollama structured output to get consistent JSON responses.
+#[derive(Clone, PartialEq, Serialize, Deserialize, Debug, schemars::JsonSchema)]
+pub struct AiMovieData {
+    pub title: String,
+    pub year: i32,
+    pub description: String,
+    pub actors: Vec<String>,
+    pub genres: Vec<String>,
+    pub director: String,
+}
+
+impl AiMovieData {
+    /// Convert AiMovieData to FullMovie for display
+    pub fn to_full_movie(&self, id: i32) -> FullMovie {
+        let display_name = if self.year == 0 {
+            self.title.clone()
+        } else {
+            format!("{} ({})", self.title, self.year)
+        };
+
+        FullMovie {
+            id,
+            key_hash: FullMovie::generate_key_hash(&display_name),
+            name: self.title.clone(),
+            description: Some(self.description.clone()),
+            actors: self.actors.iter().map(|name| Actor::from(name.clone())).collect(),
+            director: if self.director.is_empty() {
+                None
+            } else {
+                Some(Director::from(self.director.clone()))
+            },
+            genres: self.genres.clone(),
+            #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
+            embedding: None,
+            added_on: None,
+            location: Some("Unknown".to_string()),
+            release_year: self.year,
+        }
+    }
+}
+
 impl FullMovie {
     /// Generate a stable hash from the movie name for use as a DOM key
     pub fn generate_key_hash(name: &str) -> u64 {

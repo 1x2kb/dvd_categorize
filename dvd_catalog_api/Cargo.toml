@@ -35,3 +35,6 @@ csv_utils = { path = "../csv_utils" }
 categorizer_utilities = { path = "../categorizer_utilities" }
 prompts = { path = "../prompts" }
 serde.workspace = true
+
+[features]
+internet = ["ai_chat/internet"]

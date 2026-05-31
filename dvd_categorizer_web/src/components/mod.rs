@@ -1,5 +1,7 @@
 pub mod actor_chart;
 pub mod browse_bar;
+pub mod generated_movie_card;
+pub mod generated_movie_grid;
 pub mod genre_chart;
 pub mod location_editor;
 pub mod markdown;

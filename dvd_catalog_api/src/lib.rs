@@ -20,7 +20,15 @@ use models::{CsvInput, ScoredMovie};
 use ollama_rs::error::OllamaError;
 use prompts::{DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
 use serde::{Deserialize, Serialize};
+
 use std::{sync::Arc, time::Instant};
+
+/// Request to generate movie data from titles using AI
+#[derive(Debug, Deserialize)]
+pub struct GenerateMoviesRequest {
+    pub titles: Vec<String>,
+    pub model: Option<String>,
+}
 use tokio_stream::StreamExt;
 use tracing::instrument;
 
@@ -873,6 +881,92 @@ pub async fn parse_csv(
             ))
         }
     }
+}
+
+/// Generate movie data from titles using AI structured output
+#[instrument]
+#[debug_handler]
+pub async fn generate_movies(
+    Json(request): Json<GenerateMoviesRequest>,
+) -> Result<
+    impl IntoResponse,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    info!("Generating movie data for {} titles", request.titles.len());
+
+    if request.titles.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "No movie titles provided".to_string(),
+        ));
+    }
+
+    #[cfg(feature = "internet")]
+    let generate_result =
+        ai_chat::generate_movies_structured_with_rag(&request.titles, request.model.as_deref())
+            .await;
+    #[cfg(not(feature = "internet"))]
+    let generate_result =
+        ai_chat::generate_movies_structured(&request.titles, request.model.as_deref()).await;
+
+    match generate_result {
+        Ok(ai_movies) => {
+            info!("Successfully generated {} movies", ai_movies.len());
+            Ok((
+                StatusCode::OK,
+                Json(ai_movies),
+            ))
+        }
+        Err(e) => {
+            error!("Failed to generate movies: {}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to generate movies: {}", e),
+            ))
+        }
+    }
+}
+
+/// Stream movie generation one title at a time via SSE.
+///
+/// Each movie is generated individually and sent as a `data:` SSE event containing
+/// a JSON-encoded `AiMovieData`. The stream ends with a `event: done` sentinel.
+#[instrument]
+#[debug_handler]
+pub async fn generate_movies_stream(
+    Json(request): Json<GenerateMoviesRequest>,
+) -> Sse<impl futures_util::stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    use async_stream::stream;
+
+    let titles = request.titles.clone();
+    let model = request.model.clone();
+
+    let s = stream! {
+        for title in titles {
+            #[cfg(feature = "internet")]
+            let result = ai_chat::generate_movie_single_with_rag(&title, model.as_deref()).await;
+            #[cfg(not(feature = "internet"))]
+            let result = ai_chat::generate_movie_single(&title, model.as_deref()).await;
+
+            match result {
+                Ok(movie) => {
+                    match serde_json::to_string(&movie) {
+                        Ok(json) => yield Ok(Event::default().data(json)),
+                        Err(e) => yield Ok(Event::default().event("error").data(e.to_string())),
+                    }
+                }
+                Err(e) => {
+                    yield Ok(Event::default().event("error").data(e));
+                }
+            }
+        }
+        yield Ok(Event::default().event("done").data(""));
+    };
+
+    Sse::new(s)
 }
 
 /// Generates vector embeddings for a given text question using the Ollama AI service.

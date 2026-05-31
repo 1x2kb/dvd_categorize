@@ -1,5 +1,5 @@
 # Multi-stage build for production API
-FROM rust:latest AS builder
+FROM rust:bookworm AS builder
 
 WORKDIR /app
 
@@ -7,7 +7,7 @@ WORKDIR /app
 COPY . .
 
 # Build the API application
-RUN cargo build --release --package dvd_catalog_api
+RUN cargo build --release --package dvd_catalog_api --features internet
 
 # Runtime stage
 FROM debian:bookworm-slim
