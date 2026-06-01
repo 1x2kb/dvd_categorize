@@ -31,8 +31,8 @@ pub struct MovieEntry {
     /// When true, this card is preserved on the next Generate.
     pub locked: bool,
     pub editing: bool,
-    /// True while a per-movie regenerate request is in-flight.
-    pub regenerating: bool,
+    /// True while this card's generation stream is in-flight.
+    pub generating: bool,
     /// Set when the backend says this title needs user input before generating.
     pub pending: Option<PendingReason>,
 }
@@ -44,7 +44,7 @@ impl MovieEntry {
             data,
             locked: false,
             editing: false,
-            regenerating: false,
+            generating: false,
             pending: None,
         }
     }
@@ -66,7 +66,7 @@ impl MovieEntry {
             data: placeholder,
             locked: false,
             editing: false,
-            regenerating: false,
+            generating: false,
             pending: Some(reason),
         }
     }
@@ -96,6 +96,8 @@ pub struct GeneratedMovieGridProps {
     pub on_toast: EventHandler<ToastMessage>,
     /// Called when user accepts a suggestion — (original, corrected) so parent can update chips.
     pub on_title_corrected: EventHandler<(String, String)>,
+    /// Called when a card is removed — parent should remove the matching chip.
+    pub on_title_removed: EventHandler<String>,
     /// Called to dismiss a toast by id.
     pub on_dismiss_toast: EventHandler<u32>,
 }
@@ -138,7 +140,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                 for (i, _) in &resolved {
                     if let Some(e) = v.get_mut(*i) {
                         e.pending = None;
-                        e.regenerating = true;
+                        e.generating = true;
                     }
                 }
             });
@@ -168,7 +170,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                         entries.with_mut(|v| {
                             if let Some(e) = v.get_mut(pos) {
                                 e.data = movie;
-                                e.regenerating = false;
+                                e.generating = false;
                             }
                         });
                     },
@@ -205,13 +207,13 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
             // Remove slots whose chip was deleted.
             v.retain(|e| input_titles_regen.iter().any(|t| t.to_lowercase() == e.input_title.to_lowercase()));
             // Rebuild to exactly match chip list, preserving locked entries.
-            let mut new_v: Vec<MovieEntry> = input_titles_regen.iter().enumerate().map(|(pos, t)| {
+            let new_v: Vec<MovieEntry> = input_titles_regen.iter().enumerate().map(|(pos, t)| {
                 if let Some(existing) = v.iter().find(|e| e.input_title.to_lowercase() == t.to_lowercase()) {
                     let mut e = existing.clone();
                     e.data.position = pos; // ensure position is canonical chip index
                     e
                 } else {
-                    let mut placeholder = AiMovieData {
+                    let placeholder = AiMovieData {
                         title: t.clone(),
                         year: 0,
                         description: String::new(),
@@ -237,9 +239,9 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
             .collect();
         if to_generate.is_empty() { return; }
 
-        // Mark unlocked cards as regenerating.
+        // Mark unlocked cards as generating.
         entries.with_mut(|v| {
-            for (i, _) in &to_generate { v[*i].regenerating = true; }
+            for (i, _) in &to_generate { v[*i].generating = true; }
         });
         on_loading.call(true);
 
@@ -261,7 +263,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                         // Mark the pre-allocated slot at this position as pending.
                         entries.with_mut(|v| {
                             if let Some(e) = v.get_mut(pos) {
-                                e.regenerating = false;
+                                e.generating = false;
                                 e.pending = Some(PendingReason::from(reason.clone()));
                             }
                         });
@@ -288,7 +290,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                     entries.with_mut(|v| {
                         if let Some(entry) = v.get_mut(pos) {
                             entry.data = movie;
-                            entry.regenerating = false;
+                            entry.generating = false;
                         }
                     });
                 },
@@ -300,14 +302,71 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
     });
 
 
-    let all_locked = entries().iter().all(|e| e.locked);
+    let snapshot = entries();
+    let all_locked = snapshot.iter().filter(|e| !e.data.already_in_catalog).all(|e| e.locked);
+    let any_in_catalog = snapshot.iter().any(|e| e.data.already_in_catalog);
+    let is_generating = snapshot.iter().any(|e| e.generating);
+    drop(snapshot);
+
+    let on_toast_toolbar = props.on_toast.clone();
+    let mut next_toast_toolbar = next_toast_id;
 
     rsx! {
         div { class: "gen-grid-toolbar",
             button {
                 class: "gen-btn gen-btn-lock-all",
-                onclick: move |_| entries.with_mut(|v| v.iter_mut().for_each(|e| e.locked = !all_locked)),
+                disabled: is_generating,
+                onclick: move |_| {
+                    if is_generating {
+                        let id = *next_toast_toolbar.peek();
+                        next_toast_toolbar.with_mut(|n| *n += 1);
+                        on_toast_toolbar.call(ToastMessage {
+                            id,
+                            kind: ToastKind::Warning,
+                            message: "Card buttons disabled until generation completes".to_string(),
+                            duration_ms: 3000,
+                        });
+                        return;
+                    }
+                    entries.with_mut(|v| v.iter_mut().filter(|e| !e.data.already_in_catalog).for_each(|e| e.locked = !all_locked));
+                },
                 if all_locked { "🔓 Unlock All" } else { "🔒 Lock All" }
+            }
+            if any_in_catalog {
+                {
+                    let on_toast_rm = props.on_toast.clone();
+                    let mut next_id_rm = next_toast_id;
+                    rsx! {
+                        button {
+                            class: "gen-btn gen-btn-remove-catalog",
+                            disabled: is_generating,
+                            onclick: move |_| {
+                                if is_generating {
+                                    let id = *next_id_rm.peek();
+                                    next_id_rm.with_mut(|n| *n += 1);
+                                    on_toast_rm.call(ToastMessage {
+                                        id,
+                                        kind: ToastKind::Warning,
+                                        message: "Card buttons disabled until generation completes".to_string(),
+                                        duration_ms: 3000,
+                                    });
+                                    return;
+                                }
+                                let removed = entries.peek().iter().filter(|e| e.data.already_in_catalog).count();
+                                entries.with_mut(|v| v.retain(|e| !e.data.already_in_catalog));
+                                let id = *next_id_rm.peek();
+                                next_id_rm.with_mut(|n| *n += 1);
+                                on_toast_rm.call(ToastMessage {
+                                    id,
+                                    kind: ToastKind::Info,
+                                    message: format!("Removed {} item{} already in catalog", removed, if removed == 1 { "" } else { "s" }),
+                                    duration_ms: 3000,
+                                });
+                            },
+                            "🗑 Remove Already in DB"
+                        }
+                    }
+                }
             }
         }
 
@@ -319,7 +378,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                     key: "{idx}-{entry.data.title}",
                     class: "gen-movie-grid-item",
 
-                    if entry.regenerating {
+                    if entry.generating || (entry.data.year == 0 && entry.data.description.is_empty() && is_generating && entry.pending.is_none()) {
                         div { class: "movie-card gen-card-regenerating",
                             div { class: "movie-poster", "{entry.data.title}" }
                             div { class: "movie-details gen-regen-overlay",
@@ -433,9 +492,13 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                         {
                             let lock_key = entry.input_title.clone();
                             let edit_key = entry.input_title.clone();
+                            let remove_key = entry.input_title.clone();
+                            let on_toast_card = props.on_toast.clone();
+                            let mut next_id_card = next_toast_id;
                             rsx! { GeneratedMovieCard {
                                 movie: entry.data.clone(),
                                 locked: entry.locked,
+                                disabled: is_generating,
                                 on_lock_toggle: move |new_locked: bool| {
                                     entries.with_mut(|v| {
                                         if let Some(e) = v.iter_mut().find(|e| e.input_title == lock_key) {
@@ -448,6 +511,20 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                                         if let Some(e) = v.iter_mut().find(|e| e.input_title == edit_key) {
                                             e.editing = true;
                                         }
+                                    });
+                                },
+                                on_remove: move |_| {
+                                    entries.with_mut(|v| v.retain(|e| e.input_title != remove_key));
+                                    props.on_title_removed.call(remove_key.clone());
+                                },
+                                on_disabled_click: move |_| {
+                                    let id = *next_id_card.peek();
+                                    next_id_card.with_mut(|n| *n += 1);
+                                    on_toast_card.call(ToastMessage {
+                                        id,
+                                        kind: ToastKind::Warning,
+                                        message: "Card buttons disabled until generation completes".to_string(),
+                                        duration_ms: 3000,
                                     });
                                 },
                             } }
@@ -467,6 +544,6 @@ pub fn apply_regenerate_result(
 ) {
     if let Some(entry) = entries.get_mut(index) {
         entry.data = result;
-        entry.regenerating = false;
+        entry.generating = false;
     }
 }

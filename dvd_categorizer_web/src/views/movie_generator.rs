@@ -242,6 +242,9 @@ pub fn MoviePrompt() -> Element {
                                     }
                                 });
                             },
+                            on_title_removed: move |title: String| {
+                                chips.with_mut(|v| v.retain(|c| c.to_lowercase() != title.to_lowercase()));
+                            },
                         }
                     }
                 }

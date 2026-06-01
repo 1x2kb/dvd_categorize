@@ -9,17 +9,31 @@ use models::AiMovieData;
 pub struct GeneratedMovieCardProps {
     pub movie: AiMovieData,
     pub locked: bool,
+    /// True while grid-wide generation is in progress — disables interactive buttons.
+    pub disabled: bool,
     pub on_lock_toggle: EventHandler<bool>,
     pub on_edit: EventHandler<()>,
+    /// Called when user clicks Remove on a catalog item.
+    pub on_remove: EventHandler<()>,
+    /// Called when a disabled button is clicked — parent shows toast.
+    pub on_disabled_click: EventHandler<()>,
 }
 
 #[component]
 pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
+    let is_catalog = props.movie.already_in_catalog;
+    let disabled = props.disabled;
+    let actors_str = props.movie.actors.join(", ");
+
     rsx! {
         div {
             class: if props.locked { "movie-card gen-card-locked" } else { "movie-card" },
-            onclick: move |_| props.on_lock_toggle.call(!props.locked),
-            style: "cursor: pointer;",
+            onclick: move |_| {
+                if !is_catalog && !disabled {
+                    props.on_lock_toggle.call(!props.locked);
+                }
+            },
+            style: if is_catalog || disabled { "cursor: default;" } else { "cursor: pointer;" },
 
             div {
                 class: "movie-poster",
@@ -27,7 +41,7 @@ pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
                 if props.movie.year > 0 {
                     span { class: "gen-poster-year", " ({props.movie.year})" }
                 }
-                if props.movie.already_in_catalog {
+                if is_catalog {
                     span { class: "gen-catalog-badge", "Already in catalog" }
                 }
             }
@@ -44,7 +58,7 @@ pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
                 if !props.movie.actors.is_empty() {
                     div { class: "movie-info-row",
                         span { class: "movie-info-label", "CAST: " }
-                        span { class: "movie-info-value", "{props.movie.actors.join(\", \")}" }
+                        span { class: "movie-info-value", "{actors_str}" }
                     }
                 }
 
@@ -67,21 +81,44 @@ pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
 
                 div { class: "gen-card-actions",
                     button {
-                        class: "gen-btn gen-btn-edit",
+                        class: if disabled { "gen-btn gen-btn-edit gen-btn-disabled" } else { "gen-btn gen-btn-edit" },
                         onclick: move |evt| {
                             evt.stop_propagation();
-                            props.on_edit.call(());
+                            if disabled {
+                                props.on_disabled_click.call(());
+                            } else {
+                                props.on_edit.call(());
+                            }
                         },
                         "✏ Edit"
                     }
-                    button {
-                        class: if props.locked { "gen-btn gen-btn-lock gen-btn-lock-active" } else { "gen-btn gen-btn-lock" },
-                        title: if props.locked { "Locked — will not be regenerated" } else { "Unlocked — will be regenerated on next Generate" },
-                        onclick: move |evt| {
-                            evt.stop_propagation();
-                            props.on_lock_toggle.call(!props.locked);
-                        },
-                        if props.locked { "🔒 Locked" } else { "🔓 Lock" }
+                    if is_catalog {
+                        button {
+                            class: if disabled { "gen-btn gen-btn-remove gen-btn-disabled" } else { "gen-btn gen-btn-remove" },
+                            onclick: move |evt| {
+                                evt.stop_propagation();
+                                if disabled {
+                                    props.on_disabled_click.call(());
+                                } else {
+                                    props.on_remove.call(());
+                                }
+                            },
+                            "🗑 Remove"
+                        }
+                    } else {
+                        button {
+                            class: if props.locked { "gen-btn gen-btn-lock gen-btn-lock-active" } else if disabled { "gen-btn gen-btn-lock gen-btn-disabled" } else { "gen-btn gen-btn-lock" },
+                            title: if props.locked { "Locked — will not be regenerated" } else { "Unlocked — will be regenerated on next Generate" },
+                            onclick: move |evt| {
+                                evt.stop_propagation();
+                                if disabled {
+                                    props.on_disabled_click.call(());
+                                } else {
+                                    props.on_lock_toggle.call(!props.locked);
+                                }
+                            },
+                            if props.locked { "🔒 Locked" } else { "🔓 Lock" }
+                        }
                     }
                 }
             }
