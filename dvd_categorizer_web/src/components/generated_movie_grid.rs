@@ -332,6 +332,59 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                 },
                 if all_locked { "🔓 Unlock All" } else { "🔒 Lock All" }
             }
+            {
+                let on_toast_save_all = props.on_toast.clone();
+                let next_id_save_all = next_toast_id;
+                let saveable: Vec<(String, AiMovieData)> = entries().iter()
+                    .filter(|e| !e.data.already_in_catalog && e.pending.is_none() && !e.generating && e.data.year > 0)
+                    .map(|e| (e.input_title.clone(), e.data.clone()))
+                    .collect();
+                let save_all_disabled = is_generating || saveable.is_empty();
+                rsx! {
+                    button {
+                        class: if save_all_disabled { "gen-btn gen-btn-save gen-btn-disabled" } else { "gen-btn gen-btn-save" },
+                        disabled: save_all_disabled,
+                        onclick: move |_| {
+                            let items = saveable.clone();
+                            let on_toast = on_toast_save_all.clone();
+                            let mut next_id = next_id_save_all;
+                            spawn(async move {
+                                let base = crate::views::movie_generator::get_api_base().await;
+                                let mut saved_count = 0usize;
+                                let mut failed: Vec<String> = vec![];
+                                for (key, movie) in items {
+                                    let title = movie.title.clone();
+                                    match save_movie_to_catalog(movie, base.clone()).await {
+                                        Ok(_) => {
+                                            saved_count += 1;
+                                            entries.with_mut(|v| v.retain(|e| e.input_title != key));
+                                        }
+                                        Err(e) => failed.push(format!("{}: {}", title, e)),
+                                    }
+                                }
+                                let id = *next_id.peek();
+                                next_id.with_mut(|n| *n += 1);
+                                if failed.is_empty() {
+                                    on_toast.call(ToastMessage {
+                                        id,
+                                        kind: ToastKind::Success,
+                                        message: format!("{} movie{} saved to catalog", saved_count, if saved_count == 1 { "" } else { "s" }),
+                                        duration_ms: 4000,
+                                    });
+                                } else {
+                                    on_toast.call(ToastMessage {
+                                        id,
+                                        kind: ToastKind::Warning,
+                                        message: format!("{} saved, {} failed: {}", saved_count, failed.len(), failed.join(", ")),
+                                        duration_ms: 6000,
+                                    });
+                                }
+                            });
+                        },
+                        "💾 Save All"
+                    }
+                }
+            }
             if any_in_catalog {
                 {
                     let on_toast_rm = props.on_toast.clone();
@@ -519,27 +572,33 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                                 },
                                 on_save: {
                                     let on_toast_save = props.on_toast.clone();
-                                    let mut next_id_save = next_toast_id;
+                                    let save_key = entry.input_title.clone();
                                     move |movie: AiMovieData| {
-                                        let on_toast_save = on_toast_save.clone();
+                                        let save_key = save_key.clone();
+                                        let on_toast = on_toast_save.clone();
+                                        let mut next_id = next_toast_id;
                                         spawn(async move {
                                             let base = crate::views::movie_generator::get_api_base().await;
-                                            let id = *next_id_save.peek();
-                                            next_id_save.with_mut(|n| *n += 1);
-                                            match save_movie_to_catalog(movie, base).await {
-                                                Ok(saved) => on_toast_save.call(ToastMessage {
-                                                    id,
-                                                    kind: ToastKind::Success,
-                                                    message: format!("'{}' saved to catalog", saved.name),
-                                                    duration_ms: 4000,
-                                                }),
-                                                Err(e) => on_toast_save.call(ToastMessage {
+                                            let id = *next_id.peek();
+                                            next_id.with_mut(|n| *n += 1);
+                                            let msg = match save_movie_to_catalog(movie, base).await {
+                                                Ok(saved) => {
+                                                    entries.with_mut(|v| v.retain(|e| e.input_title != save_key));
+                                                    ToastMessage {
+                                                        id,
+                                                        kind: ToastKind::Success,
+                                                        message: format!("'{}' saved to catalog", saved.name),
+                                                        duration_ms: 4000,
+                                                    }
+                                                }
+                                                Err(e) => ToastMessage {
                                                     id,
                                                     kind: ToastKind::Warning,
                                                     message: format!("Save failed: {}", e),
                                                     duration_ms: 5000,
-                                                }),
-                                            }
+                                                },
+                                            };
+                                            on_toast.call(msg);
                                         });
                                     }
                                 },

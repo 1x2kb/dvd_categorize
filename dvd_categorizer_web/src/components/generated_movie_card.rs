@@ -83,7 +83,7 @@ pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
 
                 div { class: "gen-card-actions",
                     button {
-                        class: if disabled { "gen-btn gen-btn-save-catalog gen-btn-disabled" } else { "gen-btn gen-btn-save-catalog" },
+                        class: if disabled { "gen-btn gen-btn-save gen-btn-disabled" } else { "gen-btn gen-btn-save" },
                         onclick: move |evt| {
                             evt.stop_propagation();
                             if disabled {
