@@ -15,6 +15,8 @@ pub struct GeneratedMovieCardProps {
     pub on_edit: EventHandler<()>,
     /// Called when user clicks Remove on a catalog item.
     pub on_remove: EventHandler<()>,
+    /// Called when user saves this card to the catalog.
+    pub on_save: EventHandler<AiMovieData>,
     /// Called when a disabled button is clicked — parent shows toast.
     pub on_disabled_click: EventHandler<()>,
 }
@@ -80,6 +82,18 @@ pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
                 }
 
                 div { class: "gen-card-actions",
+                    button {
+                        class: if disabled { "gen-btn gen-btn-save-catalog gen-btn-disabled" } else { "gen-btn gen-btn-save-catalog" },
+                        onclick: move |evt| {
+                            evt.stop_propagation();
+                            if disabled {
+                                props.on_disabled_click.call(());
+                            } else {
+                                props.on_save.call(props.movie.clone());
+                            }
+                        },
+                        "💾 Save"
+                    }
                     button {
                         class: if disabled { "gen-btn gen-btn-edit gen-btn-disabled" } else { "gen-btn gen-btn-edit" },
                         onclick: move |evt| {

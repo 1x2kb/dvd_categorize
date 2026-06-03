@@ -163,6 +163,10 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
             "/dvd/structured-search",
             post(structured_search),
         )
+        .route(
+            "/saveMovie",
+            post(save_movie),
+        )
         .with_state(db_state);
 
     // Create a router for stateless endpoints

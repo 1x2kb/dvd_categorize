@@ -2219,6 +2219,36 @@ pub async fn structured_search(
     }
 }
 
+/// Save a generated movie card to the catalog.
+#[instrument(skip(db_state))]
+#[debug_handler]
+pub async fn save_movie(
+    State(db_state): State<DbState>,
+    Json(movie): Json<models::AiMovieData>,
+) -> Result<
+    Json<FullMovie>,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    info!("Saving generated movie to catalog: {}", movie.title);
+    let full_movie = movie.to_full_movie(0);
+    
+    db_state
+        .pool
+        .insert(full_movie)
+        .await
+        .map(|saved| {
+            info!("Saved movie '{}' with id {}", saved.name, saved.id);
+            Json(saved)
+        })
+        .map_err(|e| {
+            error!("Failed to save movie: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save movie: {}", e))
+        })
+}
+
 /// Get top actors data
 #[instrument]
 #[debug_handler]

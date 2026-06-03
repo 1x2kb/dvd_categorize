@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use models::{AiMovieData, NeedsInputReason};
+use models::{AiMovieData, FullMovie, NeedsInputReason};
 use crate::components::generated_movie_card::{EditableMovieCard, GeneratedMovieCard};
 use crate::components::toast::{ToastMessage, ToastKind};
 use crate::views::movie_generator::stream_generated_movies;
@@ -517,6 +517,32 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                                     entries.with_mut(|v| v.retain(|e| e.input_title != remove_key));
                                     props.on_title_removed.call(remove_key.clone());
                                 },
+                                on_save: {
+                                    let on_toast_save = props.on_toast.clone();
+                                    let mut next_id_save = next_toast_id;
+                                    move |movie: AiMovieData| {
+                                        let on_toast_save = on_toast_save.clone();
+                                        spawn(async move {
+                                            let base = crate::views::movie_generator::get_api_base().await;
+                                            let id = *next_id_save.peek();
+                                            next_id_save.with_mut(|n| *n += 1);
+                                            match save_movie_to_catalog(movie, base).await {
+                                                Ok(saved) => on_toast_save.call(ToastMessage {
+                                                    id,
+                                                    kind: ToastKind::Success,
+                                                    message: format!("'{}' saved to catalog", saved.name),
+                                                    duration_ms: 4000,
+                                                }),
+                                                Err(e) => on_toast_save.call(ToastMessage {
+                                                    id,
+                                                    kind: ToastKind::Warning,
+                                                    message: format!("Save failed: {}", e),
+                                                    duration_ms: 5000,
+                                                }),
+                                            }
+                                        });
+                                    }
+                                },
                                 on_disabled_click: move |_| {
                                     let id = *next_id_card.peek();
                                     next_id_card.with_mut(|n| *n += 1);
@@ -534,6 +560,24 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
             }
         }
     }
+}
+
+/// POST /saveMovie — saves an AiMovieData to the catalog, returns the saved FullMovie.
+async fn save_movie_to_catalog(movie: AiMovieData, base: String) -> Result<FullMovie, String> {
+    let body = serde_json::to_string(&movie).map_err(|e| e.to_string())?;
+    let response = gloo_net::http::Request::post(&format!("{}/saveMovie", base))
+        .header("Content-Type", "application/json")
+        .body(body)
+        .map_err(|e| e.to_string())?
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.ok() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Server error {}: {}", status, body));
+    }
+    response.json::<FullMovie>().await.map_err(|e| e.to_string())
 }
 
 /// Call this from the parent once a regenerate API response comes back.

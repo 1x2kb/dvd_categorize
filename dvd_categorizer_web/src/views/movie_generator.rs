@@ -257,7 +257,7 @@ pub fn MoviePrompt() -> Element {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async fn get_api_base() -> String {
+pub async fn get_api_base() -> String {
     let window = web_sys::window().unwrap();
     let location = window.location();
     let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
