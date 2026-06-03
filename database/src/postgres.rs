@@ -502,6 +502,12 @@ impl InsertMovie for PostgresMovieRepository {
 
         let movie_id = diesel::insert_into(schema::movie::table)
             .values(&new_movie)
+            .on_conflict((
+                schema::movie::name,
+                schema::movie::release_year,
+            ))
+            .do_update()
+            .set(schema::movie::id.eq(schema::movie::id))
             .returning(schema::movie::id)
             .get_result::<i32>(&mut conn)
             .await?;
