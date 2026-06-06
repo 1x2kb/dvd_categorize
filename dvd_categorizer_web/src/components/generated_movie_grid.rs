@@ -308,33 +308,21 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
     let is_generating = snapshot.iter().any(|e| e.generating);
     drop(snapshot);
 
-    let on_toast_toolbar = props.on_toast.clone();
-    let mut next_toast_toolbar = next_toast_id;
-
     rsx! {
         div { class: "gen-grid-toolbar",
             button {
                 class: "gen-btn gen-btn-lock-all",
                 disabled: is_generating,
-                onclick: move |_| {
-                    if is_generating {
-                        let id = *next_toast_toolbar.peek();
-                        next_toast_toolbar.with_mut(|n| *n += 1);
-                        on_toast_toolbar.call(ToastMessage {
-                            id,
-                            kind: ToastKind::Warning,
-                            message: "Card buttons disabled until generation completes".to_string(),
-                            duration_ms: 3000,
-                        });
-                        return;
-                    }
-                    entries.with_mut(|v| v.iter_mut().filter(|e| !e.data.already_in_catalog).for_each(|e| e.locked = !all_locked));
-                },
+                onclick: move |_| handle_lock_all_toggle(
+                    is_generating,
+                    all_locked,
+                    entries,
+                    next_toast_id,
+                    props.on_toast.clone(),
+                ),
                 if all_locked { "🔓 Unlock All" } else { "🔒 Lock All" }
             }
             {
-                let on_toast_save_all = props.on_toast.clone();
-                let next_id_save_all = next_toast_id;
                 let saveable: Vec<(String, AiMovieData)> = entries().iter()
                     .filter(|e| !e.data.already_in_catalog && e.pending.is_none() && !e.generating && e.data.year > 0)
                     .map(|e| (e.input_title.clone(), e.data.clone()))
@@ -345,81 +333,31 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                         class: if save_all_disabled { "gen-btn gen-btn-save gen-btn-disabled" } else { "gen-btn gen-btn-save" },
                         disabled: save_all_disabled,
                         onclick: move |_| {
-                            let items = saveable.clone();
-                            let on_toast = on_toast_save_all.clone();
-                            let mut next_id = next_id_save_all;
-                            spawn(async move {
-                                let base = crate::views::movie_generator::get_api_base().await;
-                                let mut saved_count = 0usize;
-                                let mut failed: Vec<String> = vec![];
-                                for (key, movie) in items {
-                                    let title = movie.title.clone();
-                                    match save_movie_to_catalog(movie, base.clone()).await {
-                                        Ok(_) => {
-                                            saved_count += 1;
-                                            entries.with_mut(|v| v.retain(|e| e.input_title != key));
-                                        }
-                                        Err(e) => failed.push(format!("{}: {}", title, e)),
-                                    }
-                                }
-                                let id = *next_id.peek();
-                                next_id.with_mut(|n| *n += 1);
-                                if failed.is_empty() {
-                                    on_toast.call(ToastMessage {
-                                        id,
-                                        kind: ToastKind::Success,
-                                        message: format!("{} movie{} saved to catalog", saved_count, if saved_count == 1 { "" } else { "s" }),
-                                        duration_ms: 4000,
-                                    });
-                                } else {
-                                    on_toast.call(ToastMessage {
-                                        id,
-                                        kind: ToastKind::Warning,
-                                        message: format!("{} saved, {} failed: {}", saved_count, failed.len(), failed.join(", ")),
-                                        duration_ms: 6000,
-                                    });
-                                }
-                            });
+                            spawn(handle_save_all(
+                                saveable.clone(),
+                                entries,
+                                next_toast_id,
+                                props.on_toast.clone(),
+                            ));
                         },
                         "💾 Save All"
                     }
                 }
             }
             if any_in_catalog {
-                {
-                    let on_toast_rm = props.on_toast.clone();
-                    let mut next_id_rm = next_toast_id;
-                    rsx! {
-                        button {
-                            class: "gen-btn gen-btn-remove-catalog",
-                            disabled: is_generating,
-                            onclick: move |_| {
-                                if is_generating {
-                                    let id = *next_id_rm.peek();
-                                    next_id_rm.with_mut(|n| *n += 1);
-                                    on_toast_rm.call(ToastMessage {
-                                        id,
-                                        kind: ToastKind::Warning,
-                                        message: "Card buttons disabled until generation completes".to_string(),
-                                        duration_ms: 3000,
-                                    });
-                                    return;
-                                }
-                                let removed = entries.peek().iter().filter(|e| e.data.already_in_catalog).count();
-                                entries.with_mut(|v| v.retain(|e| !e.data.already_in_catalog));
-                                let id = *next_id_rm.peek();
-                                next_id_rm.with_mut(|n| *n += 1);
-                                on_toast_rm.call(ToastMessage {
-                                    id,
-                                    kind: ToastKind::Info,
-                                    message: format!("Removed {} item{} already in catalog", removed, if removed == 1 { "" } else { "s" }),
-                                    duration_ms: 3000,
-                                });
-                            },
-                            "🗑 Remove Already in DB"
-                        }
+                {rsx! {
+                    button {
+                        class: "gen-btn gen-btn-remove-catalog",
+                        disabled: is_generating,
+                        onclick: move |_| handle_remove_catalog_items(
+                            is_generating,
+                            entries,
+                            next_toast_id,
+                            props.on_toast.clone(),
+                        ),
+                        "🗑 Remove Already in DB"
                     }
-                }
+                }}
             }
         }
 
@@ -578,7 +516,17 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                                         let on_toast = on_toast_save.clone();
                                         let mut next_id = next_toast_id;
                                         spawn(async move {
-                                            let base = crate::views::movie_generator::get_api_base().await;
+                                            let Ok(base) = crate::views::movie_generator::get_api_base().await else {
+                                                let id = *next_id.peek();
+                                                next_id.with_mut(|n| *n += 1);
+                                                on_toast.call(ToastMessage {
+                                                    id,
+                                                    kind: ToastKind::Warning,
+                                                    message: "Failed to get API base URL".to_string(),
+                                                    duration_ms: 3000,
+                                                });
+                                                return;
+                                            };
                                             let id = *next_id.peek();
                                             next_id.with_mut(|n| *n += 1);
                                             let msg = match save_movie_to_catalog(movie, base).await {
@@ -637,6 +585,110 @@ async fn save_movie_to_catalog(movie: AiMovieData, base: String) -> Result<FullM
         return Err(format!("Server error {}: {}", status, body));
     }
     response.json::<FullMovie>().await.map_err(|e| e.to_string())
+}
+
+/// Handle Lock All / Unlock All button click.
+fn handle_lock_all_toggle(
+    is_generating: bool,
+    all_locked: bool,
+    mut entries: Signal<Vec<MovieEntry>>,
+    mut next_toast_id: Signal<u32>,
+    on_toast: EventHandler<ToastMessage>,
+) {
+    if is_generating {
+        let id = *next_toast_id.peek();
+        next_toast_id.with_mut(|n| *n += 1);
+        on_toast.call(ToastMessage {
+            id,
+            kind: ToastKind::Warning,
+            message: "Card buttons disabled until generation completes".to_string(),
+            duration_ms: 3000,
+        });
+        return;
+    }
+    entries.with_mut(|v| v.iter_mut().filter(|e| !e.data.already_in_catalog).for_each(|e| e.locked = !all_locked));
+}
+
+/// Handle Remove Already in DB button click — removes all catalog items from the grid.
+fn handle_remove_catalog_items(
+    is_generating: bool,
+    mut entries: Signal<Vec<MovieEntry>>,
+    mut next_toast_id: Signal<u32>,
+    on_toast: EventHandler<ToastMessage>,
+) {
+    if is_generating {
+        let id = *next_toast_id.peek();
+        next_toast_id.with_mut(|n| *n += 1);
+        on_toast.call(ToastMessage {
+            id,
+            kind: ToastKind::Warning,
+            message: "Card buttons disabled until generation completes".to_string(),
+            duration_ms: 3000,
+        });
+        return;
+    }
+    let removed = entries.peek().iter().filter(|e| e.data.already_in_catalog).count();
+    entries.with_mut(|v| v.retain(|e| !e.data.already_in_catalog));
+    let id = *next_toast_id.peek();
+    next_toast_id.with_mut(|n| *n += 1);
+    on_toast.call(ToastMessage {
+        id,
+        kind: ToastKind::Info,
+        message: format!("Removed {} item{} already in catalog", removed, if removed == 1 { "" } else { "s" }),
+        duration_ms: 3000,
+    });
+}
+
+/// Handle Save All button click — saves all saveable movies to catalog.
+async fn handle_save_all(
+    items: Vec<(String, AiMovieData)>,
+    mut entries: Signal<Vec<MovieEntry>>,
+    mut next_toast_id: Signal<u32>,
+    on_toast: EventHandler<ToastMessage>,
+) {
+    let base = match crate::views::movie_generator::get_api_base().await {
+        Ok(b) => b,
+        Err(_) => {
+            let id = *next_toast_id.peek();
+            next_toast_id.with_mut(|n| *n += 1);
+            on_toast.call(ToastMessage {
+                id,
+                kind: ToastKind::Warning,
+                message: "Failed to get API base URL".to_string(),
+                duration_ms: 3000,
+            });
+            return;
+        }
+    };
+    let mut saved_count = 0usize;
+    let mut failed: Vec<String> = vec![];
+    for (key, movie) in items {
+        let title = movie.title.clone();
+        match save_movie_to_catalog(movie, base.clone()).await {
+            Ok(_) => {
+                saved_count += 1;
+                entries.with_mut(|v| v.retain(|e| e.input_title != key));
+            }
+            Err(e) => failed.push(format!("{}: {}", title, e)),
+        }
+    }
+    let id = *next_toast_id.peek();
+    next_toast_id.with_mut(|n| *n += 1);
+    if failed.is_empty() {
+        on_toast.call(ToastMessage {
+            id,
+            kind: ToastKind::Success,
+            message: format!("{} movie{} saved to catalog", saved_count, if saved_count == 1 { "" } else { "s" }),
+            duration_ms: 4000,
+        });
+    } else {
+        on_toast.call(ToastMessage {
+            id,
+            kind: ToastKind::Warning,
+            message: format!("{} saved, {} failed: {}", saved_count, failed.len(), failed.join(", ")),
+            duration_ms: 6000,
+        });
+    }
 }
 
 /// Call this from the parent once a regenerate API response comes back.

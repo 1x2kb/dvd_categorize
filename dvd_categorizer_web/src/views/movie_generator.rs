@@ -37,11 +37,11 @@ pub fn MoviePrompt() -> Element {
     // Fetch available models on component mount
     use_effect(move || {
         spawn(async move {
-            let window = web_sys::window().unwrap();
-            let location = window.location();
-            let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
-            let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
-            let url = format!("http://{}:{}/ai/models", hostname, server_port);
+            let Ok(base) = get_api_base().await else {
+                error!("Failed to determine API base URL");
+                return;
+            };
+            let url = format!("{}/ai/models", base);
             match gloo_net::http::Request::get(&url).send().await {
                 Ok(response) => {
                     if let Ok(parsed) = response.json::<AvailableModelsResponse>().await {
@@ -257,12 +257,13 @@ pub fn MoviePrompt() -> Element {
 // Helpers
 // ---------------------------------------------------------------------------
 
-pub async fn get_api_base() -> String {
-    let window = web_sys::window().unwrap();
+pub async fn get_api_base() -> Result<String, String> {
+    let window = web_sys::window().ok_or("No window object available")?;
     let location = window.location();
-    let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
-    let port = std::env::var("server_port").unwrap_or("3000".to_string());
-    format!("http://{}:{}", hostname, port)
+    let hostname = location.hostname().map_err(|_| "127.0.0.1".to_string())
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
+    let port = std::env::var("server_port").unwrap_or_else(|_| "3000".to_string());
+    Ok(format!("http://{}:{}", hostname, port))
 }
 
 /// Stream movie generation via SSE. Calls `on_movie` for each generated card,
@@ -275,7 +276,10 @@ pub async fn stream_generated_movies(
     on_done: impl FnOnce(),
     on_err: impl FnOnce(String),
 ) {
-    let base = get_api_base().await;
+    let base = match get_api_base().await {
+        Ok(b) => b,
+        Err(e) => { on_err(format!("API base error: {}", e)); return; }
+    };
     let request = GenerateMoviesRequest {
         titles,
         model: if model.is_empty() { None } else { Some(model) },
@@ -313,10 +317,13 @@ pub async fn stream_generated_movies(
         None => { on_err("No response body".to_string()); return; }
     };
 
-    let reader: ReadableStreamDefaultReader = body_stream
+    let reader: ReadableStreamDefaultReader = match body_stream
         .get_reader()
         .dyn_into()
-        .expect("reader cast");
+    {
+        Ok(r) => r,
+        Err(_) => { on_err("Failed to create stream reader".to_string()); return; }
+    };
     let mut buf = String::new();
 
     loop {
@@ -333,7 +340,10 @@ pub async fn stream_generated_movies(
                     .unwrap_or(true);
                 if done { break; }
 
-                let chunk_val = js_sys::Reflect::get(&val, &"value".into()).unwrap();
+                let Ok(chunk_val) = js_sys::Reflect::get(&val, &"value".into()) else {
+                    on_err("Failed to read chunk value".to_string());
+                    return;
+                };
                 let chunk_u8: js_sys::Uint8Array = chunk_val.dyn_into().expect("Uint8Array");
                 let text = String::from_utf8_lossy(&chunk_u8.to_vec()).into_owned();
                 buf.push_str(&text);
@@ -380,20 +390,3 @@ pub async fn stream_generated_movies(
     on_done();
 }
 
-/// Kept for the grid's re-generate path (unlocked titles only, returns all at once).
-pub async fn fetch_generated_movies(
-    titles: Vec<String>,
-    model: String,
-) -> Result<Vec<AiMovieData>, String> {
-    let mut results = Vec::new();
-    let mut error: Option<String> = None;
-    stream_generated_movies(
-        titles,
-        vec![],
-        model,
-        |m, _| results.push(m),
-        || {},
-        |e| error = Some(e),
-    ).await;
-    if let Some(e) = error { Err(e) } else { Ok(results) }
-}
