@@ -24,6 +24,19 @@ impl PostgresMovieRepository {
         Self { pool }
     }
 
+    pub fn pool(&self) -> &Pool<AsyncPgConnection> {
+        &self.pool
+    }
+}
+
+impl std::fmt::Debug for PostgresMovieRepository {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PostgresMovieRepository").finish_non_exhaustive()
+    }
+}
+
+impl PostgresMovieRepository {
+
     /// Builds a repository using the `DATABASE_URL` environment variable.
     pub async fn from_env() -> Result<Self, DatabaseError> {
         let pool = crate::get_connection_pool().await?;
@@ -502,6 +515,12 @@ impl InsertMovie for PostgresMovieRepository {
 
         let movie_id = diesel::insert_into(schema::movie::table)
             .values(&new_movie)
+            .on_conflict((
+                schema::movie::name,
+                schema::movie::release_year,
+            ))
+            .do_update()
+            .set(schema::movie::id.eq(schema::movie::id))
             .returning(schema::movie::id)
             .get_result::<i32>(&mut conn)
             .await?;

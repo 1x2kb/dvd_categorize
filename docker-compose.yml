@@ -1,6 +1,8 @@
 services:
   postgres:
     image: pgvector/pgvector:pg17
+    networks:
+      - dvd-net
     environment:
       POSTGRES_USER: app_user # Change for your use
       POSTGRES_PASSWORD: strongpassword # Change for your use
@@ -17,6 +19,8 @@ services:
 
   ollama:
     image: ollama/ollama:rocm
+    networks:
+      - dvd-net
     ports:
       - "0.0.0.0:11434:11434"
     volumes:
@@ -40,6 +44,8 @@ services:
     restart: unless-stopped
 
   dvd_categorize_api:
+    networks:
+      - dvd-net
     build:
       context: .
       dockerfile: docker/run/api.Dockerfile
@@ -66,6 +72,8 @@ services:
       OLLAMA_NUM_CTX: "18000"
 
   dvd_categorize_web:
+    networks:
+      - dvd-net
     build:
       context: .
       dockerfile: docker/run/web.Dockerfile
@@ -76,6 +84,8 @@ services:
 
   redis:
     image: redis:alpine
+    networks:
+      - dvd-net
     ports:
       - "6379:6379"
     volumes:
@@ -83,6 +93,8 @@ services:
     restart: unless-stopped
 
   diesel_migrate:
+    networks:
+      - dvd-net
     build:
       context: .
       dockerfile: docker/run/diesel.Dockerfile
@@ -102,9 +114,110 @@ services:
     command: ["diesel", "migration", "run"]
     restart: "no"  # Don't restart after completion
 
+  loki:
+    networks:
+      - dvd-net
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+
+  grafana:
+    networks:
+      - dvd-net
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./dashboards:/etc/grafana/provisioning/dashboards
+    depends_on:
+      - loki
+
+  promtail:
+    networks:
+      - dvd-net
+    image: grafana/promtail:latest
+    volumes:
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./promtail-config.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+  prometheus:
+    networks:
+      - dvd-net
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    depends_on:
+      - cadvisor
+
+  cadvisor:
+    networks:
+      - dvd-net
+    image: gcr.io/cadvisor/cadvisor:latest
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    privileged: true
+    restart: unless-stopped
+
+  node-exporter:
+    networks:
+      - dvd-net
+    image: prom/node-exporter:latest
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
   pgdata:
-  ollama_data: # Note that this must be created manually. Prevents it from being deleted on docker compose down -v since models are very large files.
-    external: true 
+  loki_data:
+  grafana_data:
+  prometheus_data:
+  ollama_data:
+    external: true
+
+networks:
+  dvd-net:
+    driver: bridge 

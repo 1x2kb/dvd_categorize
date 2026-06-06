@@ -1,5 +1,5 @@
 # Multi-stage build for production Web
-FROM rust:latest AS builder
+FROM rust:bookworm AS builder
 
 WORKDIR /app
 

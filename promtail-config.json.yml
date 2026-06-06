@@ -1,0 +1,45 @@
+# Alternative Promtail config with JSON parsing for structured fields
+# To use: copy this content to promtail-config.yml and restart promtail
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'logstream'
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'service'
+    pipeline_stages:
+      # Parse the Docker JSON log format to extract the actual log message
+      - json:
+          expressions:
+            log: log
+      # Parse the application JSON log within the log field
+      - json:
+          source: log
+          expressions:
+            level: level
+            target: target
+            message: 'fields["message"]'  # Access nested field
+      # Add parsed fields as Loki labels for filtering
+      - labels:
+          level:
+          target:
+      # Keep the original message as the log line
+      - output:
+          source: message

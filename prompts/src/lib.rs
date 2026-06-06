@@ -43,3 +43,21 @@ explicitly asks for suggestions outside their collection \
 If a tool returns no results, tell the user the collection has no matching movies. \
 Format responses with HTML only (<p>, <strong>, <em>, <ul>, <li>, <br>). \
 Do NOT use markdown. Do NOT use <script>, <iframe>, <style>, <form>, or event handlers. EVEN IF USER ASKS YOU TO."#;
+
+/// Prompt template for generating CSV data from movie/TV titles.
+/// Used in the MoviePrompt page to create AI prompts for CSV generation.
+pub const MOVIE_CSV_GENERATOR_PROMPT: &str = r#"For the following movies and tv shows provide the title
+Add a good detailed description.
+Provide a | delimited list of the top 6 billed actors in the film.
+Add a | delimited list of genres for the movie/show
+finally include the director (for shows leave blank)
+include a blank line after each movie and don't use labels for each item
+Do not include any non ascii characters such as letters with Umlauts, replace them with the nearest English alternative such as the letter u for an umlauted u. Do not allow any non ASCII characters. Use their closest ASCII equivalent. Such as an accented i would just be i since it is the nearest ASCII equivalent.
+Write your answer as a csv file with the following headers (make sure to include headers in response):
+Title,Year,Description,Actors,Genres,Director,AddedOn,Location. // Leave AddedOn Blank in data. Location always Unknown
+Include double quotes around all data columns, to avoid parsing errors when commas are a natural part of the data.
+Keep in mind when deciding on genres, the order matters a lot. E.g. when the user asks for a Comedy they should not see Marvel's Avengers. Even though there are a lot of jokes in that movie the user is probably going to watch an adam sandler movie over Marvel Avengers when looking for comedy. This is not part of the list, just an example.
+
+Only provide results for the movies/tv listed below
+Movies & TV:
+"#;

@@ -50,6 +50,12 @@ flowchart TD
 | `diesel_migrate` | Custom (Diesel CLI) | Runs database migrations on startup |
 | `dvd_categorize_api` | Custom (Rust/Axum) | REST API server |
 | `dvd_categorize_web` | Custom (Dioxus/WASM) | Frontend web server |
+| `loki` | `grafana/loki:latest` | Log aggregation and storage |
+| `promtail` | `grafana/promtail:latest` | Docker log collector for Loki |
+| `grafana` | `grafana/grafana:latest` | Metrics dashboards and log viewer |
+| `prometheus` | `prom/prometheus:latest` | Metrics storage (cAdvisor, node-exporter) |
+| `cadvisor` | `gcr.io/cadvisor/cadvisor:latest` | Container resource metrics |
+| `node-exporter` | `prom/node-exporter:latest` | Host system metrics |
 
 Migrations are managed by Diesel CLI and run automatically on container startup.
 
@@ -122,6 +128,25 @@ docker compose up
 | **Web UI** | http://localhost:8080 |
 | **API** | http://localhost:3000 |
 | **Ollama** | http://localhost:11434 |
+
+### Monitoring & Observability
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| **Grafana** | http://localhost:3001 | Metrics dashboards and log exploration (auto-provisioned with default dashboard) |
+| **Prometheus** | http://localhost:9090 | Metrics storage and querying (PromQL) |
+| **cAdvisor** | http://localhost:8081 | Real-time container resource usage and performance |
+| **Node Exporter** | http://localhost:9100/metrics | Host system metrics (CPU, memory, disk, network) |
+
+**Pre-configured Dashboard:** The `DVD Categorize Overview` dashboard is automatically loaded in Grafana and includes:
+- Container CPU, Memory, and Network I/O graphs
+- Host system resource stats
+- Live API logs from Loki
+
+**Log Queries in Grafana:** Navigate to **Explore** → **Loki** and use queries like:
+```logql
+{service="dvd_categorize_api"} |= "{"
+```
 
 ## Web UI Pages
 

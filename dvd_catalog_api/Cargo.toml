@@ -19,8 +19,8 @@ async-stream.workspace = true
 futures-util = "0.3"
 tokio-stream = "0.1"
 log.workspace = true
-env_logger.workspace = true
 tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tokio.workspace = true
 database = { path = "../database" }
 models = { path = "../models", features = [
@@ -35,3 +35,6 @@ csv_utils = { path = "../csv_utils" }
 categorizer_utilities = { path = "../categorizer_utilities" }
 prompts = { path = "../prompts" }
 serde.workspace = true
+
+[features]
+internet = ["ai_chat/internet"]

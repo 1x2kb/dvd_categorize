@@ -34,14 +34,16 @@ pub mod query_enhancement;
 pub mod rag;
 pub mod schema;
 pub mod structured_query_parser;
+#[cfg(feature = "internet")]
+pub mod web_scraper;
 
 // Re-export all prompts from the prompts crate
 pub use prompts::*;
 
 use std::sync::Arc;
 
-use log::{debug, info};
-use models::{dvd_filters::DvdFilters, question::AiAction, FullMovie};
+use log::{debug, error, info};
+use models::{AiMovieData, dvd_filters::DvdFilters, question::AiAction, FullMovie};
 use ollama_rs::{
     generation::{
         chat::{request::ChatMessageRequest, ChatMessage},
@@ -369,6 +371,485 @@ pub async fn pull_model(model_name: &str) -> Result<String, String> {
                 model_name, e
             );
             log::error!("{}", error_msg);
+            Err(error_msg)
+        }
+    }
+}
+
+/// Generate movie data from titles using structured Ollama output
+/// Returns a list of AiMovieData structs with complete movie information
+#[instrument(level = Level::INFO)]
+pub async fn generate_movies_structured(
+    titles: &[String],
+    model: Option<&str>,
+) -> Result<Vec<AiMovieData>, String> {
+    info!("Generating structured movie data for {} titles", titles.len());
+
+    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
+    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
+    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
+
+    let ollama = match ollama_url.parse() {
+        Ok(url) => Ollama::from_url(url),
+        Err(e) => {
+            let error_msg = format!("Failed to parse Ollama URL: {}", e);
+            error!("{}", error_msg);
+            return Err(error_msg);
+        }
+    };
+
+    let titles_text = titles.join("\n");
+    let system_prompt = r#"You are a movie database assistant. For each movie title provided, generate complete movie information.
+
+Provide detailed, accurate information for each movie:
+- title: The exact movie title
+- year: Release year as integer (0 if unknown)
+- description: A detailed plot description (2-3 sentences)
+- actors: Top 6 billed actors as an array of strings
+- genres: Array of genres in order of relevance (primary genre first)
+- director: Director name (empty string for TV shows or if unknown)
+
+CRITICAL: Respond with a valid JSON array containing one object per movie title provided.
+Each object must match the exact schema requested.
+
+Example for "The Matrix":
+[{
+  "title": "The Matrix",
+  "year": 1999,
+  "description": "A computer hacker learns about the true nature of reality and his role in the war against its controllers.",
+  "actors": ["Keanu Reeves", "Laurence Fishburne", "Carrie-Anne Moss", "Hugo Weaving", "Joe Pantoliano", "Gloria Foster"],
+  "genres": ["Sci-Fi", "Action"],
+  "director": "The Wachowskis"
+}]"#;
+
+    let user_message = format!("Generate movie data for these titles:\n{}", titles_text);
+    let model_name = model.unwrap_or("qwen2.5:7b");
+
+    debug!("Using model for movie generation: {}", model_name);
+
+    let request = ChatMessageRequest::new(
+        model_name.to_string(),
+        vec![
+            ChatMessage::system(system_prompt.to_string()),
+            ChatMessage::user(user_message),
+        ],
+    )
+    .format(crate::schema::ai_movie_data_array_schema());
+
+    match ollama.send_chat_messages(request).await {
+        Ok(response) => {
+            let content = response.message.content.trim();
+            debug!("AI response: {}", content);
+
+            match serde_json::from_str::<Vec<AiMovieData>>(content) {
+                Ok(movies) => {
+                    info!("Successfully generated {} movies", movies.len());
+                    Ok(movies)
+                }
+                Err(e) => {
+                    let error_msg = format!("Failed to parse JSON response: {}. Content was: {}", e, content);
+                    error!("{}", error_msg);
+                    Err(error_msg)
+                }
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("Failed to get AI response: {}", e);
+            error!("{}", error_msg);
+            Err(error_msg)
+        }
+    }
+}
+
+/// Correct a batch of movie titles in a single Ollama call.
+/// Returns one corrected title per input, in the same order.
+/// If a title is already correct, the model returns it unchanged.
+#[instrument(level = Level::DEBUG, skip(titles, model), fields(title_count = titles.len()))]
+pub async fn correct_movie_titles(
+    titles: &[String],
+    model: Option<&str>,
+) -> Result<Vec<String>, String> {
+    debug!("Starting title correction for {} titles: {:?}", titles.len(), titles);
+
+    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
+    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
+    let ollama = match format!("http://{}:{}", ollama_host, ollama_port).parse() {
+        Ok(url) => Ollama::from_url(url),
+        Err(e) => {
+            error!("Failed to parse Ollama URL: {}", e);
+            return Err(format!("Failed to parse Ollama URL: {}", e));
+        }
+    };
+
+    let numbered = titles.iter().enumerate()
+        .map(|(i, t)| format!("{}. {}", i + 1, t))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let prompt = format!(
+        "You are a movie title normalizer. For each input, return the exact canonical title of the well-known movie or TV show it refers to.\n\
+Rules:\n\
+- Fix spelling errors\n\
+- Restore missing words (articles like \"The\", \"A\", trailing words)\n\
+- Fix capitalization\n\
+- Return the full official release title as it appears in movie databases\n\
+- If the input does not resemble any known title, return it UNCHANGED\n\
+- Do NOT add, remove, or reorder entries\n\
+- Respond with ONLY a JSON array of strings, one per input, in the same order\n\n\
+Examples:\n\
+Input:  [\"Gaurdians of the Galaxy\", \"Matrix Reloaded\", \"Dark Kight\", \"Shawsank Redemption\", \"Termiantor 2\", \"Happy Glmore\", \"Naked GUn\", \"Matrix Revolution\", \"Figt Club\", \"Shindlers List\"]\n\
+Output: [\"Guardians of the Galaxy\", \"The Matrix Reloaded\", \"The Dark Knight\", \"The Shawshank Redemption\", \"Terminator 2: Judgment Day\", \"Happy Gilmore\", \"The Naked Gun\", \"The Matrix Revolutions\", \"Fight Club\", \"Schindler's List\"]\n\n\
+Input titles:\n{}\n\nJSON array only, no explanation:",
+        numbered
+    );
+
+    debug!("Sending title correction prompt to AI (model: {:?})", model);
+
+    let request = ChatMessageRequest::new(
+        model.unwrap_or("qwen2.5:7b").to_string(),
+        vec![ChatMessage::user(prompt)],
+    );
+
+    match ollama.send_chat_messages(request).await {
+        Ok(response) => {
+            let content = response.message.content.trim();
+            debug!("Raw AI response for title correction: '{}'", content);
+
+            // Strip markdown code fences if present
+            let json = content
+                .trim_start_matches("```json")
+                .trim_start_matches("```")
+                .trim_end_matches("```")
+                .trim();
+
+            debug!("Stripped JSON for parsing: '{}'", json);
+
+            match serde_json::from_str::<Vec<String>>(json) {
+                Ok(corrected) => {
+                    debug!("Successfully parsed {} corrected titles: {:?}", corrected.len(), corrected);
+
+                    // Log each individual correction for detailed debugging
+                    for (i, (orig, corr)) in titles.iter().zip(corrected.iter()).enumerate() {
+                        if orig != corr {
+                            debug!("Title {}: '{}' -> '{}' (CHANGED)", i, orig, corr);
+                        } else {
+                            debug!("Title {}: '{}' (unchanged)", i, orig);
+                        }
+                    }
+
+                    if corrected.len() != titles.len() {
+                        error!("Title correction count mismatch: sent {}, received {}", titles.len(), corrected.len());
+                        return Err(format!("Response count mismatch: expected {} titles, got {}", titles.len(), corrected.len()));
+                    }
+
+                    Ok(corrected)
+                }
+                Err(e) => {
+                    error!("Failed to parse title corrections JSON: {}. Raw content: '{}'", e, json);
+                    Err(format!("Failed to parse title corrections: {}. Content: {}", e, json))
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to get AI response for title correction: {}", e);
+            Err(format!("Failed to get AI response: {}", e))
+        }
+    }
+}
+
+/// Generate data for a single movie title using structured Ollama output.
+#[instrument(level = Level::INFO)]
+pub async fn generate_movie_single(
+    title: &str,
+    model: Option<&str>,
+) -> Result<AiMovieData, String> {
+    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
+    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
+    let ollama = match format!("http://{}:{}", ollama_host, ollama_port).parse() {
+        Ok(url) => Ollama::from_url(url),
+        Err(e) => return Err(format!("Failed to parse Ollama URL: {}", e)),
+    };
+
+    let system_prompt = r#"You are a movie database assistant. Generate complete movie information for the title provided.
+
+Provide:
+- title: The exact movie title
+- year: Release year as integer (0 if unknown)
+- description: A detailed plot description (2-3 sentences)
+- actors: Top 6 billed actors as an array of strings
+- genres: Array of genres in order of relevance (primary genre first)
+- director: Director name (empty string for TV shows or if unknown)
+
+CRITICAL: Respond with a single valid JSON object matching the exact schema."#;
+
+    let request = ChatMessageRequest::new(
+        model.unwrap_or("qwen2.5:7b").to_string(),
+        vec![
+            ChatMessage::system(system_prompt.to_string()),
+            ChatMessage::user(format!("Generate movie data for: {}", title)),
+        ],
+    )
+    .format(crate::schema::ai_movie_data_schema());
+
+    match ollama.send_chat_messages(request).await {
+        Ok(response) => {
+            let content = response.message.content.trim();
+            serde_json::from_str::<AiMovieData>(content)
+                .map_err(|e| format!("Failed to parse JSON: {}. Content: {}", e, content))
+        }
+        Err(e) => Err(format!("Failed to get AI response: {}", e)),
+    }
+}
+
+/// Scrape Wikipedia context for a single title. Returns the raw context string.
+/// Separated from the Ollama call so callers can pipeline scraping alongside inference.
+#[cfg(feature = "internet")]
+pub async fn scrape_single(title: &str) -> String {
+    let scraped = web_scraper::scrape_movie_contexts(&[title.to_string()]).await;
+    scraped
+        .into_iter()
+        .next()
+        .filter(|ctx| !ctx.context.is_empty())
+        .map(|ctx| ctx.context)
+        .unwrap_or_else(|| "No web context found. Use your best knowledge.".to_string())
+}
+
+/// Run Ollama inference for a single title with a pre-scraped RAG context string.
+/// Use this together with `scrape_single` to pipeline scraping and inference.
+#[cfg(feature = "internet")]
+#[instrument(level = Level::INFO)]
+pub async fn generate_movie_with_context(
+    title: &str,
+    rag_context: String,
+    model: Option<&str>,
+) -> Result<AiMovieData, String> {
+    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
+    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
+    let ollama = match format!("http://{}:{}", ollama_host, ollama_port).parse() {
+        Ok(url) => Ollama::from_url(url),
+        Err(e) => return Err(format!("Failed to parse Ollama URL: {}", e)),
+    };
+
+    let system_prompt = format!(
+        r#"You are a movie database assistant. Generate complete movie information for the title provided.
+
+IMPORTANT: Use the Wikipedia reference data below for accuracy.
+
+=== WIKIPEDIA REFERENCE DATA ===
+{}
+=== END REFERENCE DATA ===
+
+Provide:
+- title: The exact movie title
+- year: Release year as integer (0 if unknown)
+- description: A detailed plot description (2-3 sentences) using the reference data
+- actors: Top 6 billed actors from the reference data
+- genres: Array of genres in order of relevance
+- director: Director name (empty string if unknown)
+
+CRITICAL: Respond with a single valid JSON object matching the exact schema."#,
+        rag_context
+    );
+
+    let request = ChatMessageRequest::new(
+        model.unwrap_or("qwen2.5:7b").to_string(),
+        vec![
+            ChatMessage::system(system_prompt),
+            ChatMessage::user(format!("Generate movie data for: {}", title)),
+        ],
+    )
+    .format(crate::schema::ai_movie_data_schema());
+
+    match ollama.send_chat_messages(request).await {
+        Ok(response) => {
+            let content = response.message.content.trim();
+            serde_json::from_str::<AiMovieData>(content)
+                .map_err(|e| format!("Failed to parse JSON: {}. Content: {}", e, content))
+        }
+        Err(e) => Err(format!("Failed to get AI response: {}", e)),
+    }
+}
+
+/// Single-title version of generate_movie_single with Wikipedia RAG grounding.
+#[cfg(feature = "internet")]
+#[instrument(level = Level::INFO)]
+pub async fn generate_movie_single_with_rag(
+    title: &str,
+    model: Option<&str>,
+) -> Result<AiMovieData, String> {
+    let rag_context = scrape_single(title).await;
+
+    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
+    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
+    let ollama = match format!("http://{}:{}", ollama_host, ollama_port).parse() {
+        Ok(url) => Ollama::from_url(url),
+        Err(e) => return Err(format!("Failed to parse Ollama URL: {}", e)),
+    };
+
+    let system_prompt = format!(
+        r#"You are a movie database assistant. Generate complete movie information for the title provided.
+
+IMPORTANT: Use the Wikipedia reference data below for accuracy.
+
+=== WIKIPEDIA REFERENCE DATA ===
+{}
+=== END REFERENCE DATA ===
+
+Provide:
+- title: The exact movie title
+- year: Release year as integer (0 if unknown)
+- description: A detailed plot description (2-3 sentences) using the reference data
+- actors: Top 6 billed actors from the reference data
+- genres: Array of genres in order of relevance
+- director: Director name (empty string if unknown)
+
+CRITICAL: Respond with a single valid JSON object matching the exact schema."#,
+        rag_context
+    );
+
+    let request = ChatMessageRequest::new(
+        model.unwrap_or("qwen2.5:7b").to_string(),
+        vec![
+            ChatMessage::system(system_prompt),
+            ChatMessage::user(format!("Generate movie data for: {}", title)),
+        ],
+    )
+    .format(crate::schema::ai_movie_data_schema());
+
+    match ollama.send_chat_messages(request).await {
+        Ok(response) => {
+            let content = response.message.content.trim();
+            serde_json::from_str::<AiMovieData>(content)
+                .map_err(|e| format!("Failed to parse JSON: {}. Content: {}", e, content))
+        }
+        Err(e) => Err(format!("Failed to get AI response: {}", e)),
+    }
+}
+
+/// Generate movie data from titles using web-scraped context as RAG grounding.
+///
+/// This is the internet-enabled version of `generate_movies_structured`. Before
+/// calling Ollama it scrapes Wikipedia for each title and injects the raw factual
+/// text into the system prompt, dramatically reducing hallucinations.
+///
+/// Enabled only when the `internet` cargo feature is active.
+#[cfg(feature = "internet")]
+#[instrument(level = Level::INFO)]
+pub async fn generate_movies_structured_with_rag(
+    titles: &[String],
+    model: Option<&str>,
+) -> Result<Vec<AiMovieData>, String> {
+    info!(
+        "[internet RAG] Scraping web context for {} titles",
+        titles.len()
+    );
+
+    let scraped = web_scraper::scrape_movie_contexts(titles).await;
+
+    let ollama_host =
+        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
+    let ollama_port =
+        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
+    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
+
+    let ollama = match ollama_url.parse() {
+        Ok(url) => Ollama::from_url(url),
+        Err(e) => {
+            let error_msg = format!("Failed to parse Ollama URL: {}", e);
+            error!("{}", error_msg);
+            return Err(error_msg);
+        }
+    };
+
+    let mut rag_sections: Vec<String> = Vec::new();
+    for ctx in &scraped {
+        if !ctx.context.is_empty() {
+            rag_sections.push(format!(
+                "=== Wikipedia context for \"{}\" ===\n{}\n",
+                ctx.title, ctx.context
+            ));
+        } else {
+            info!("[internet RAG] No web context found for '{}'", ctx.title);
+        }
+    }
+
+    let rag_context = if rag_sections.is_empty() {
+        "No web context could be retrieved. Use your best knowledge.".to_string()
+    } else {
+        rag_sections.join("\n")
+    };
+
+    let titles_text = titles.join("\n");
+    let system_prompt = format!(
+        r#"You are a movie database assistant. For each movie title provided, generate complete movie information.
+
+IMPORTANT: You have been given factual reference data scraped from Wikipedia for these movies.
+Always prefer the Wikipedia data over your own training knowledge for:
+- Cast members (actors)
+- Director
+- Release year
+- Genres
+- Plot description
+
+Only fall back to your training knowledge for fields where no Wikipedia data is available.
+
+=== WIKIPEDIA REFERENCE DATA ===
+{}
+=== END REFERENCE DATA ===
+
+Provide the following for each movie title:
+- title: The exact movie title
+- year: Release year as integer (0 if unknown)
+- description: A detailed plot description (2-3 sentences) using the reference data above
+- actors: Top 6 billed actors as an array of strings, taken from the reference data
+- genres: Array of genres in order of relevance (primary genre first)
+- director: Director name (empty string if unknown)
+
+CRITICAL: Respond with a valid JSON array containing one object per movie title provided.
+Each object must match the exact schema requested."#,
+        rag_context
+    );
+
+    let user_message = format!("Generate movie data for these titles:\n{}", titles_text);
+    let model_name = model.unwrap_or("qwen2.5:7b");
+
+    debug!("[internet RAG] Using model: {}", model_name);
+
+    let request = ChatMessageRequest::new(
+        model_name.to_string(),
+        vec![
+            ChatMessage::system(system_prompt),
+            ChatMessage::user(user_message),
+        ],
+    )
+    .format(crate::schema::ai_movie_data_array_schema());
+
+    match ollama.send_chat_messages(request).await {
+        Ok(response) => {
+            let content = response.message.content.trim();
+            debug!("[internet RAG] AI response: {}", content);
+
+            match serde_json::from_str::<Vec<AiMovieData>>(content) {
+                Ok(movies) => {
+                    info!(
+                        "[internet RAG] Successfully generated {} movies",
+                        movies.len()
+                    );
+                    Ok(movies)
+                }
+                Err(e) => {
+                    let error_msg = format!(
+                        "Failed to parse JSON response: {}. Content was: {}",
+                        e, content
+                    );
+                    error!("{}", error_msg);
+                    Err(error_msg)
+                }
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("Failed to get AI response: {}", e);
+            error!("{}", error_msg);
             Err(error_msg)
         }
     }

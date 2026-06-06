@@ -10,22 +10,21 @@ use dotenvy::dotenv;
 use dvd_catalog::*;
 use log::{error, info, warn};
 use tower_http::cors::{Any, CorsLayer};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
 async fn main() {
-    // Initialize logger with timestamp and module info
-    let env = env_logger::Env::default()
-        .filter_or(
-            "RUST_LOG", "info",
+    // Initialize JSON logging
+    tracing_subscriber::registry()
+        .with(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info,dvd_catalog=debug,database=debug,ai_chat=debug")),
         )
-        .write_style_or(
-            "RUST_LOG_STYLE",
-            "always",
-        );
-
-    env_logger::Builder::from_env(env)
-        .format_timestamp(Some(env_logger::TimestampPrecision::Millis))
-        .format_module_path(false)
+        .with(
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_current_span(false),
+        )
         .init();
 
     info!("Starting DVD Catalog API");
@@ -105,6 +104,7 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
     // Create state with the provided movies wrapped in Arc<RwLock<>>
     let state = CacheState {
         movies: Arc::new(tokio::sync::RwLock::new(movies)),
+        repo: db_pool.clone(),
     };
 
     // Create DB state for chat history
@@ -132,6 +132,14 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
             "/csv/export",
             get(export_csv),
         )
+        .route(
+            "/ai/validate-titles",
+            post(validate_titles),
+        )
+        .route(
+            "/ai/generate-movies-stream",
+            post(generate_movies_stream),
+        )
         .with_state(state);
 
     // Create router for chat (tool-enabled non-streaming) and streaming, both need DbState
@@ -155,6 +163,10 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
         .route(
             "/dvd/structured-search",
             post(structured_search),
+        )
+        .route(
+            "/saveMovie",
+            post(save_movie),
         )
         .with_state(db_state);
 
@@ -199,6 +211,10 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
         .route(
             "/ai/models",
             get(list_available_models),
+        )
+        .route(
+            "/ai/generate-movies",
+            post(generate_movies),
         )
         .route(
             "/ai/recent",

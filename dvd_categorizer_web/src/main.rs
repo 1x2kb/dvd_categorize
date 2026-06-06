@@ -8,6 +8,7 @@ use dotenvy::dotenv;
 use log::error;
 pub use views::insert_media::InsertMedia;
 pub use views::model_pull::ModelPull;
+pub use views::movie_generator::MoviePrompt;
 pub use views::stats::Stats;
 pub use views::{ai_chat::AiChat, ai_live_results::AiLiveResults};
 
@@ -25,6 +26,8 @@ enum Route {
     InsertMedia {},
     #[route("/ai/models")]
     ModelPull {},
+    #[route("/generator")]
+    MoviePrompt {},
     #[route("/stats")]
     Stats {},
 }
@@ -96,6 +99,9 @@ pub fn Hero() -> Element {
                     to: Route::InsertMedia {}, "Insert"
                 }
                 Link {
+                    to: Route::MoviePrompt {}, "Generator"
+                }
+                Link {
                     to: Route::ModelPull {}, "Models"
                 }
                 Link {
@@ -131,6 +137,9 @@ fn Navbar() -> Element {
             }
             Link {
                     to: Route::InsertMedia {}, "Insert"
+            }
+            Link {
+                    to: Route::MoviePrompt {}, "Generator"
             }
             Link {
                     to: Route::ModelPull {}, "Models"
