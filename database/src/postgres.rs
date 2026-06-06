@@ -43,6 +43,128 @@ impl PostgresMovieRepository {
         Ok(Self::new(pool))
     }
 
+    /// Search movies by a single text query across title, actors, director, and genres.
+    /// Uses database-level ILIKE matching with scoring.
+    /// Returns (movie, score) tuples sorted by score descending.
+    pub async fn search_movies_by_text(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<(FullMovie, f32)>, DatabaseError> {
+        use schema::{actor, director, movie, movie_actor, movie_genre};
+
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| {
+                DatabaseError::ConnectionError(
+                    diesel::ConnectionError::BadConnection(e.to_string()),
+                )
+            })?;
+
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let pattern = format!("%{}%", query.to_lowercase());
+
+        // Build query to find movies where query matches any field
+        let matching_movies = movie::table
+            .left_join(director::table.on(movie::director_id.eq(director::id.nullable())))
+            .select((movie::all_columns, director::all_columns.nullable()))
+            .filter(
+                // Match movie name
+                movie::name.ilike(pattern.clone())
+                // Match actor name (via subquery)
+                .or(movie::id.eq_any(
+                    movie_actor::table
+                        .inner_join(actor::table.on(movie_actor::actor_id.eq(actor::id)))
+                        .select(movie_actor::movie_id)
+                        .filter(actor::name.ilike(pattern.clone()))
+                ))
+                // Match director name
+                .or(director::name.is_not_null().and(
+                    director::name.ilike(pattern.clone())
+                ))
+                // Match genre (via subquery)
+                .or(movie::id.eq_any(
+                    movie_genre::table
+                        .select(movie_genre::movie_id)
+                        .filter(movie_genre::genre.ilike(pattern.clone()))
+                ))
+            )
+            .limit(limit * 2)
+            .load::<(Movie, Option<Director>)>(&mut conn)
+            .await?;
+
+        // Score results
+        let mut scored_results: Vec<(FullMovie, f32)> = Vec::new();
+
+        for (movie_row, director) in matching_movies {
+            let mut score: f32 = 0.0;
+
+            // Title scoring
+            if movie_row.name.to_lowercase().contains(&query.to_lowercase()) {
+                score += 100.0;
+            }
+
+            // Fetch actors for scoring
+            let movie_actors: Vec<Actor> = movie_actor::table
+                .inner_join(actor::table.on(movie_actor::actor_id.eq(actor::id)))
+                .select(actor::all_columns)
+                .filter(movie_actor::movie_id.eq(movie_row.id))
+                .load(&mut conn)
+                .await?;
+
+            // Actor scoring
+            for movie_actor in &movie_actors {
+                if movie_actor.name.to_lowercase().contains(&query.to_lowercase()) {
+                    score += 20.0;
+                    break;
+                }
+            }
+
+            // Director scoring
+            if let Some(ref d) = director {
+                if d.name.to_lowercase().contains(&query.to_lowercase()) {
+                    score += 25.0;
+                }
+            }
+
+            // Fetch genres for scoring
+            let movie_genres: Vec<String> = movie_genre::table
+                .select(movie_genre::genre)
+                .filter(movie_genre::movie_id.eq(movie_row.id))
+                .load(&mut conn)
+                .await?;
+
+            // Genre scoring
+            for genre in &movie_genres {
+                if genre.to_lowercase().contains(&query.to_lowercase()) {
+                    score += 15.0;
+                    break;
+                }
+            }
+
+            if score > 0.0 {
+                let full_movie = FullMovie::from((
+                    movie_row,
+                    director,
+                    movie_actors,
+                    movie_genres,
+                ));
+                scored_results.push((full_movie, score));
+            }
+        }
+
+        // Sort by score descending
+        scored_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored_results.truncate(limit as usize);
+
+        Ok(scored_results)
+    }
+
     // Chat history methods
 
     pub async fn create_chat_session(&self) -> Result<uuid::Uuid, DatabaseError> {
@@ -690,194 +812,6 @@ impl SearchMoviesByEmbedding for PostgresMovieRepository {
             self, movie_ids,
         )
         .await
-    }
-}
-
-#[async_trait]
-impl SearchMoviesByText for PostgresMovieRepository {
-    async fn search_by_text(
-        &self,
-        query: &str,
-        limit: i64,
-    ) -> Result<Vec<(FullMovie, f32)>, DatabaseError> {
-        let mut conn = self
-            .pool
-            .get()
-            .await
-            .map_err(
-                |e| {
-                    DatabaseError::ConnectionError(
-                        diesel::ConnectionError::BadConnection(e.to_string()),
-                    )
-                },
-            )?;
-
-        let pattern = format!("%{}%", query.to_lowercase());
-
-        // Diesel raw query to search across all columns with scoring
-        let results = sql_query(
-            r#"
-            SELECT 
-                m.id,
-                m.name,
-                m.description,
-                m.release_year,
-                m.box_office_revenue,
-                m.location,
-                m.dvd_summary,
-                m.added_on,
-                m.imdb_id,
-                m.studio,
-                m.runtime,
-                d.id as director_id,
-                d.name as director_name,
-                d.birth_date as director_birth_date,
-                d.birth_location as director_birth_location,
-                ARRAY_AGG(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL) as actors,
-                ARRAY_AGG(DISTINCT mg.genre) FILTER (WHERE mg.genre IS NOT NULL) as genres,
-                (
-                    CASE WHEN LOWER(m.name) LIKE $1 THEN 100 ELSE 0 END +
-                    CASE WHEN EXISTS (
-                        SELECT 1 FROM movie_actor ma2
-                        JOIN actor a2 ON ma2.actor_id = a2.id
-                        WHERE ma2.movie_id = m.id AND LOWER(a2.name) LIKE $1
-                    ) THEN 20 ELSE 0 END +
-                    CASE WHEN d.name IS NOT NULL AND LOWER(d.name) LIKE $1 THEN 25 ELSE 0 END +
-                    CASE WHEN EXISTS (
-                        SELECT 1 FROM movie_genre mg2
-                        WHERE mg2.movie_id = m.id AND LOWER(mg2.genre) LIKE $1
-                    ) THEN 15 ELSE 0 END
-                )::float4 as score
-            FROM movie m
-            LEFT JOIN director d ON m.director_id = d.id
-            LEFT JOIN movie_actor ma ON m.id = ma.movie_id
-            LEFT JOIN actor a ON ma.actor_id = a.id
-            LEFT JOIN movie_genre mg ON m.id = mg.movie_id
-            WHERE 
-                LOWER(m.name) LIKE $1
-                OR EXISTS (
-                    SELECT 1 FROM movie_actor ma2
-                    JOIN actor a2 ON ma2.actor_id = a2.id
-                    WHERE ma2.movie_id = m.id AND LOWER(a2.name) LIKE $1
-                )
-                OR (d.name IS NOT NULL AND LOWER(d.name) LIKE $1)
-                OR EXISTS (
-                    SELECT 1 FROM movie_genre mg2
-                    WHERE mg2.movie_id = m.id AND LOWER(mg2.genre) LIKE $1
-                )
-            GROUP BY m.id, m.name, m.description, m.release_year, m.box_office_revenue,
-                     m.location, m.dvd_summary, m.added_on, m.imdb_id, m.studio, m.runtime,
-                     d.id, d.name, d.birth_date, d.birth_location
-            HAVING (
-                CASE WHEN LOWER(m.name) LIKE $1 THEN 100 ELSE 0 END +
-                CASE WHEN EXISTS (
-                    SELECT 1 FROM movie_actor ma2
-                    JOIN actor a2 ON ma2.actor_id = a2.id
-                    WHERE ma2.movie_id = m.id AND LOWER(a2.name) LIKE $1
-                ) THEN 20 ELSE 0 END +
-                CASE WHEN d.name IS NOT NULL AND LOWER(d.name) LIKE $1 THEN 25 ELSE 0 END +
-                CASE WHEN EXISTS (
-                    SELECT 1 FROM movie_genre mg2
-                    WHERE mg2.movie_id = m.id AND LOWER(mg2.genre) LIKE $1
-                ) THEN 15 ELSE 0 END
-            ) > 0
-            ORDER BY score DESC
-            LIMIT $2
-            "#
-        )
-        .bind::<diesel::sql_types::Text, _>(&pattern)
-        .bind::<diesel::sql_types::BigInt, _>(limit)
-        .load::<SearchResultRow>(&mut conn)
-        .await
-        .map_err(DatabaseError::from)?;
-
-        Ok(results.into_iter().map(|r| (r.to_full_movie(), r.score)).collect())
-    }
-}
-
-// Row type for search_by_text query
-#[derive(QueryableByName)]
-#[diesel(table_name = schema::movie)]
-struct SearchResultRow {
-    #[diesel(sql_type = diesel::sql_types::Integer)]
-    id: i32,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    name: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    description: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
-    release_year: Option<i32>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    box_office_revenue: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    location: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    dvd_summary: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Timestamp)]
-    added_on: chrono::NaiveDateTime,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    imdb_id: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    studio: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
-    runtime: Option<i32>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
-    director_id: Option<i32>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    director_name: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Date>)]
-    director_birth_date: Option<chrono::NaiveDate>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    director_birth_location: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Array<diesel::sql_types::Nullable<diesel::sql_types::Text>>)]
-    actors: Vec<Option<String>>,
-    #[diesel(sql_type = diesel::sql_types::Array<diesel::sql_types::Nullable<diesel::sql_types::Text>>)]
-    genres: Vec<Option<String>>,
-    #[diesel(sql_type = diesel::sql_types::Float)]
-    score: f32,
-}
-
-impl SearchResultRow {
-    fn to_full_movie(self) -> FullMovie {
-        use models::Director;
-
-        let director = self.director_id.map(|id| Director {
-            id,
-            name: self.director_name.unwrap_or_default(),
-            birth_date: self.director_birth_date,
-            birth_location: self.director_birth_location,
-        });
-
-        let actors: Vec<models::Actor> = self.actors.into_iter()
-            .flatten()
-            .enumerate()
-            .map(|(idx, name)| models::Actor {
-                id: idx as i32, // placeholder, not used for display
-                name,
-            })
-            .collect();
-
-        let genres: Vec<String> = self.genres.into_iter().flatten().collect();
-
-        FullMovie::from((
-            models::Movie {
-                id: self.id,
-                name: self.name.unwrap_or_default(),
-                description: self.description,
-                release_year: self.release_year,
-                box_office_revenue: self.box_office_revenue,
-                location: self.location,
-                dvd_summary: self.dvd_summary,
-                added_on: self.added_on,
-                imdb_id: self.imdb_id,
-                studio: self.studio,
-                runtime: self.runtime,
-                director_id: self.director_id,
-            },
-            director,
-            actors,
-            genres,
-        ))
     }
 }
 

@@ -448,10 +448,11 @@ fn reciprocal_rank_fusion(
 }
 
 /// Performs text-only keyword search without AI enhancement or vector operations
-#[instrument(skip(movies))]
+/// Uses database-level ILIKE matching with scoring
+#[instrument(skip(repo))]
 async fn text_only_search(
     query: &str,
-    movies: &Arc<Vec<FullMovie>>,
+    repo: &PostgresMovieRepository,
     limit: usize,
 ) -> (
     Vec<(
@@ -460,66 +461,30 @@ async fn text_only_search(
     )>,
     String,
 ) {
-    let start_time = std::time::Instant::now();
+    let _start_time = std::time::Instant::now();
     info!("Text-only search mode");
 
-    // Extract entities for keyword matching
-    let (titles, actors, genres) = extract_entities(
-        query, movies,
-    )
-    .await;
-    info!(
-        "Entity extraction - titles: {:?}, actors: {:?}, genres: {:?}",
-        titles, actors, genres
-    );
-
-    let criteria = SearchCriteria {
-        titles,
-        actors,
-        genres,
+    // Use database-level text search
+    let db_start = std::time::Instant::now();
+    let matching_movies = match repo.search_movies_by_text(query, limit as i64).await {
+        Ok(results) => {
+            info!(
+                "DB text search found {} results in {:.2?}",
+                results.len(),
+                db_start.elapsed()
+            );
+            results.into_iter()
+                .map(|(movie, score)| (movie.id, score))
+                .collect()
+        }
+        Err(e) => {
+            error!("DB text search failed: {:?}", e);
+            Vec::new()
+        }
     };
 
-    // Run keyword search only
-    let keyword_start = std::time::Instant::now();
-    let keyword_results = keyword_search(
-        movies,
-        &criteria,
-        limit * 2,
-    );
-
-    info!(
-        "Text search found {} results in {:.2?}",
-        keyword_results.len(),
-        keyword_start.elapsed()
-    );
-
-    if !keyword_results.is_empty() {
-        info!(
-            "Top matches (ID, score): {:?}",
-            keyword_results
-                .iter()
-                .take(5)
-                .collect::<Vec<_>>()
-        );
-    }
-
-    // Return raw keyword scores
-    let final_results: Vec<(
-        i32,
-        f32,
-    )> = keyword_results
-        .into_iter()
-        .take(limit)
-        .collect();
-
-    info!(
-        "Text search completed in {:.2?}, returning {} results",
-        start_time.elapsed(),
-        final_results.len()
-    );
-
     (
-        final_results,
+        matching_movies,
         query.to_string(),
     )
 }
@@ -965,7 +930,7 @@ pub async fn hybrid_search(
     match search_mode {
         models::SearchMode::Text => {
             text_only_search(
-                query, &movies, limit,
+                query, repo, limit,
             )
             .await
         }
