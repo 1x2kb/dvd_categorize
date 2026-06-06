@@ -104,6 +104,7 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
     // Create state with the provided movies wrapped in Arc<RwLock<>>
     let state = CacheState {
         movies: Arc::new(tokio::sync::RwLock::new(movies)),
+        repo: db_pool.clone(),
     };
 
     // Create DB state for chat history

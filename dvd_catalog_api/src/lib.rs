@@ -16,7 +16,10 @@ use database::{
     FullMovie, PostgresMovieRepository, SearchRequest,
 };
 use log::{debug, error, info};
-use models::{CsvInput, GenerateStreamEvent, NeedsInputReason, ScoredMovie, TitleValidation, ValidateTitlesRequest};
+use models::{
+    CsvInput, GenerateStreamEvent, NeedsInputReason, ScoredMovie, TitleValidation,
+    ValidateTitlesRequest,
+};
 use ollama_rs::error::OllamaError;
 use prompts::{DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
 use serde::{Deserialize, Serialize};
@@ -42,6 +45,7 @@ pub use movie_search::extract_entities;
 #[derive(Clone, Debug)]
 pub struct CacheState {
     pub movies: Arc<tokio::sync::RwLock<Vec<FullMovie>>>,
+    pub repo: PostgresMovieRepository,
 }
 
 #[derive(Clone)]
@@ -468,12 +472,26 @@ pub async fn chat_stream(
             let movie_titles: Vec<String> = results
                 .iter()
                 .take(15)
-                .map(|m| format!("{} ({})", m.name, m.release_year))
+                .map(
+                    |m| {
+                        format!(
+                            "{} ({})",
+                            m.name, m.release_year
+                        )
+                    },
+                )
                 .collect();
-            info!("RAG movies sent to AI: {:?}", movie_titles);
+            info!(
+                "RAG movies sent to AI: {:?}",
+                movie_titles
+            );
 
             let movie_context = ai_chat::rag::format_movies_for_context(&results);
-            debug!("RAG movie_context (length {}): {}", movie_context.len(), movie_context);
+            debug!(
+                "RAG movie_context (length {}): {}",
+                movie_context.len(),
+                movie_context
+            );
             movie_context
         } else {
             info!("RAG: User query is not a movie search query");
@@ -489,7 +507,10 @@ pub async fn chat_stream(
     let base_prompt = request
         .system_prompt
         .unwrap_or_else(|| DEFAULT_RAG_PROMPT.to_string());
-    let system_prompt = format!("{}\n\n{}", base_prompt, movie_context);
+    let system_prompt = format!(
+        "{}\n\n{}",
+        base_prompt, movie_context
+    );
 
     // DEBUG: Log the complete system prompt
     debug!(
@@ -806,7 +827,7 @@ pub async fn parse_csv(
         String,
     ),
 > {
-    let movies = match csv_utils::parse_csv(
+    let mut movies = match csv_utils::parse_csv(
         value
             .input
             .as_bytes(),
@@ -828,7 +849,48 @@ pub async fn parse_csv(
         }
     };
 
-    if let Err(e) = database::insert_full_movies(movies).await {
+    let embedding_texts: Vec<String> = movies
+        .iter()
+        .map(|m| m.embedding_str())
+        .collect();
+
+    let embeddings = ai_chat::get_embeddings(
+        embedding_texts,
+        ai_chat::EMBEDDING_MODEL,
+    )
+    .await
+    .map_err(
+        |e| {
+            let error = format!(
+                "Failed to generate embeddings: {}",
+                e
+            );
+            error!(
+                "{}",
+                error
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error,
+            )
+        },
+    )?;
+
+    for (movie, emb) in movies
+        .iter_mut()
+        .zip(embeddings)
+    {
+        movie.embedding = Some(emb);
+    }
+
+    if let Err(e) = database::insert_full_movies(
+        movies,
+        cache_state
+            .repo
+            .pool(),
+    )
+    .await
+    {
         let error = format!(
             "Failed to insert movies: {}",
             e
@@ -843,47 +905,11 @@ pub async fn parse_csv(
         ));
     }
 
-    // Refresh the cache with the latest movies
-    let refresh_result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            repo.get_all()
-                .await
-        }
-        Err(e) => Err(e),
-    };
-    match refresh_result {
-        Ok(updated_movies) => {
-            info!("Movies saved successfully");
-            let mut movies = cache_state
-                .movies
-                .write()
-                .await;
-            *movies = updated_movies;
-            let count = movies.len();
-            info!(
-                "Successfully refreshed movie cache with {} movies",
-                count
-            );
-            Ok((
-                StatusCode::OK,
-                Json(()),
-            ))
-        }
-        Err(e) => {
-            let error = format!(
-                "Failed to refresh movie cache: {}",
-                e
-            );
-            error!(
-                "{}",
-                error
-            );
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error,
-            ))
-        }
-    }
+    info!("Movies saved successfully");
+    Ok((
+        StatusCode::OK,
+        Json(()),
+    ))
 }
 
 /// Generate movie data from titles using AI structured output
@@ -898,9 +924,17 @@ pub async fn generate_movies(
         String,
     ),
 > {
-    info!("Generating movie data for {} titles", request.titles.len());
+    info!(
+        "Generating movie data for {} titles",
+        request
+            .titles
+            .len()
+    );
 
-    if request.titles.is_empty() {
+    if request
+        .titles
+        .is_empty()
+    {
         return Err((
             StatusCode::BAD_REQUEST,
             "No movie titles provided".to_string(),
@@ -908,26 +942,44 @@ pub async fn generate_movies(
     }
 
     #[cfg(feature = "internet")]
-    let generate_result =
-        ai_chat::generate_movies_structured_with_rag(&request.titles, request.model.as_deref())
-            .await;
+    let generate_result = ai_chat::generate_movies_structured_with_rag(
+        &request.titles,
+        request
+            .model
+            .as_deref(),
+    )
+    .await;
     #[cfg(not(feature = "internet"))]
-    let generate_result =
-        ai_chat::generate_movies_structured(&request.titles, request.model.as_deref()).await;
+    let generate_result = ai_chat::generate_movies_structured(
+        &request.titles,
+        request
+            .model
+            .as_deref(),
+    )
+    .await;
 
     match generate_result {
         Ok(ai_movies) => {
-            info!("Successfully generated {} movies", ai_movies.len());
+            info!(
+                "Successfully generated {} movies",
+                ai_movies.len()
+            );
             Ok((
                 StatusCode::OK,
                 Json(ai_movies),
             ))
         }
         Err(e) => {
-            error!("Failed to generate movies: {}", e);
+            error!(
+                "Failed to generate movies: {}",
+                e
+            );
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to generate movies: {}", e),
+                format!(
+                    "Failed to generate movies: {}",
+                    e
+                ),
             ))
         }
     }
@@ -941,72 +993,160 @@ pub async fn validate_titles(
     State(cache): State<CacheState>,
     Json(request): Json<ValidateTitlesRequest>,
 ) -> Json<Vec<TitleValidation>> {
-    info!("Validating {} titles: {:?}", request.titles.len(), request.titles);
-    debug!("Using model for validation: {:?}", request.model);
+    info!(
+        "Validating {} titles: {:?}",
+        request
+            .titles
+            .len(),
+        request.titles
+    );
+    debug!(
+        "Using model for validation: {:?}",
+        request.model
+    );
 
-    let movies = cache.movies.read().await;
-    let catalog: Vec<String> = movies.iter().map(|m| m.name.to_lowercase()).collect();
-    debug!("Catalog has {} movies for duplicate check", catalog.len());
+    let movies = cache
+        .movies
+        .read()
+        .await;
+    let catalog: Vec<String> = movies
+        .iter()
+        .map(
+            |m| {
+                m.name
+                    .to_lowercase()
+            },
+        )
+        .collect();
+    debug!(
+        "Catalog has {} movies for duplicate check",
+        catalog.len()
+    );
 
     // Ask the model to correct spelling in one batch call — it's already hot
     // since it's the same model the user will use for generation.
-    let correction_result = ai_chat::correct_movie_titles(&request.titles, request.model.as_deref()).await;
+    let correction_result = ai_chat::correct_movie_titles(
+        &request.titles,
+        request
+            .model
+            .as_deref(),
+    )
+    .await;
     let corrected = match &correction_result {
-        Ok(c) if c.len() == request.titles.len() => {
-            info!("Title correction succeeded for all {} titles", c.len());
+        Ok(c)
+            if c.len()
+                == request
+                    .titles
+                    .len() =>
+        {
+            info!(
+                "Title correction succeeded for all {} titles",
+                c.len()
+            );
             debug!("Correction mapping: original -> corrected");
-            for (orig, corr) in request.titles.iter().zip(c.iter()) {
+            for (orig, corr) in request
+                .titles
+                .iter()
+                .zip(c.iter())
+            {
                 if orig != corr {
-                    debug!("  '{}' -> '{}'", orig, corr);
+                    debug!(
+                        "  '{}' -> '{}'",
+                        orig, corr
+                    );
                 }
             }
             c.clone()
         }
         Ok(c) => {
-            error!("Title correction returned wrong count: sent {}, got {}", request.titles.len(), c.len());
-            request.titles.clone()
+            error!(
+                "Title correction returned wrong count: sent {}, got {}",
+                request
+                    .titles
+                    .len(),
+                c.len()
+            );
+            request
+                .titles
+                .clone()
         }
         Err(e) => {
-            error!("Title correction failed: {}. Falling back to originals.", e);
-            request.titles.clone()
+            error!(
+                "Title correction failed: {}. Falling back to originals.",
+                e
+            );
+            request
+                .titles
+                .clone()
         }
     };
 
-    let strip_the = |s: &str| s.strip_prefix("the ").unwrap_or(s).to_string();
+    let strip_the = |s: &str| {
+        s.strip_prefix("the ")
+            .unwrap_or(s)
+            .to_string()
+    };
 
-    let results: Vec<TitleValidation> = request.titles.iter().zip(corrected.iter()).map(|(original, corrected)| {
-        let corrected_lower = corrected.to_lowercase();
-        let original_lower = original.to_lowercase();
+    let results: Vec<TitleValidation> = request
+        .titles
+        .iter()
+        .zip(corrected.iter())
+        .map(
+            |(original, corrected)| {
+                let corrected_lower = corrected.to_lowercase();
+                let original_lower = original.to_lowercase();
 
-        // Match with and without leading "The " so "Matrix Reloaded" finds "The Matrix Reloaded".
-        let in_catalog = |s: &str| {
-            catalog.contains(&s.to_string())
-                || catalog.contains(&strip_the(s))
-                || catalog.iter().any(|c| strip_the(c) == strip_the(s))
-        };
+                // Match with and without leading "The " so "Matrix Reloaded" finds "The Matrix Reloaded".
+                let in_catalog = |s: &str| {
+                    catalog.contains(&s.to_string())
+                        || catalog.contains(&strip_the(s))
+                        || catalog
+                            .iter()
+                            .any(|c| strip_the(c) == strip_the(s))
+                };
 
-        let already_in_catalog = in_catalog(&corrected_lower) || in_catalog(&original_lower);
+                let already_in_catalog =
+                    in_catalog(&corrected_lower) || in_catalog(&original_lower);
 
-        let suggestion = if already_in_catalog {
-            None
-        } else if corrected_lower != original_lower {
-            Some(corrected.clone())
-        } else {
-            None
-        };
+                let suggestion = if already_in_catalog {
+                    None
+                } else if corrected_lower != original_lower {
+                    Some(corrected.clone())
+                } else {
+                    None
+                };
 
-        TitleValidation {
-            original: original.clone(),
-            already_in_catalog,
-            suggestion,
-        }
-    }).collect();
+                TitleValidation {
+                    original: original.clone(),
+                    already_in_catalog,
+                    suggestion,
+                }
+            },
+        )
+        .collect();
 
     // Log summary of validation results
-    let with_suggestions = results.iter().filter(|r| r.suggestion.is_some()).count();
-    let in_catalog_count = results.iter().filter(|r| r.already_in_catalog).count();
-    info!("Validation complete: {} suggestions, {} already in catalog", with_suggestions, in_catalog_count);
-    debug!("Full validation results: {:?}", results);
+    let with_suggestions = results
+        .iter()
+        .filter(
+            |r| {
+                r.suggestion
+                    .is_some()
+            },
+        )
+        .count();
+    let in_catalog_count = results
+        .iter()
+        .filter(|r| r.already_in_catalog)
+        .count();
+    info!(
+        "Validation complete: {} suggestions, {} already in catalog",
+        with_suggestions, in_catalog_count
+    );
+    debug!(
+        "Full validation results: {:?}",
+        results
+    );
 
     Json(results)
 }
@@ -1026,60 +1166,134 @@ pub async fn generate_movies_stream(
 ) -> Sse<impl futures_util::stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
     use async_stream::stream;
 
-    info!("Streaming movie generation for {} titles: {:?}", request.titles.len(), request.titles);
-    debug!("Model: {:?}, Positions: {:?}", request.model, request.positions);
+    info!(
+        "Streaming movie generation for {} titles: {:?}",
+        request
+            .titles
+            .len(),
+        request.titles
+    );
+    debug!(
+        "Model: {:?}, Positions: {:?}",
+        request.model, request.positions
+    );
 
-    let titles = request.titles.clone();
-    let model = request.model.clone();
+    let titles = request
+        .titles
+        .clone();
+    let model = request
+        .model
+        .clone();
 
     // Snapshot full catalog for duplicate detection and data lookup.
-    let catalog_movies: Vec<models::FullMovie> = cache.movies.read().await.clone();
-    let catalog_names: Vec<String> = catalog_movies.iter().map(|m| m.name.to_lowercase()).collect();
-    debug!("Catalog snapshot: {} movies available for duplicate detection", catalog_movies.len());
+    let catalog_movies: Vec<models::FullMovie> = cache
+        .movies
+        .read()
+        .await
+        .clone();
+    let catalog_names: Vec<String> = catalog_movies
+        .iter()
+        .map(
+            |m| {
+                m.name
+                    .to_lowercase()
+            },
+        )
+        .collect();
+    debug!(
+        "Catalog snapshot: {} movies available for duplicate detection",
+        catalog_movies.len()
+    );
 
     // Validate + correct titles upfront — one fast Ollama call.
-    let correction_result = ai_chat::correct_movie_titles(&titles, model.as_deref()).await;
+    let correction_result = ai_chat::correct_movie_titles(
+        &titles,
+        model.as_deref(),
+    )
+    .await;
     let corrected = match &correction_result {
         Ok(c) if c.len() == titles.len() => {
-            info!("Title correction succeeded for {} titles in stream", c.len());
-            for (i, (orig, corr)) in titles.iter().zip(c.iter()).enumerate() {
+            info!(
+                "Title correction succeeded for {} titles in stream",
+                c.len()
+            );
+            for (i, (orig, corr)) in titles
+                .iter()
+                .zip(c.iter())
+                .enumerate()
+            {
                 if orig != corr {
-                    debug!("  Stream title {}: '{}' -> '{}'", i, orig, corr);
+                    debug!(
+                        "  Stream title {}: '{}' -> '{}'",
+                        i, orig, corr
+                    );
                 }
             }
             c.clone()
         }
         Ok(c) => {
-            error!("Title correction wrong count in stream: sent {}, got {}", titles.len(), c.len());
+            error!(
+                "Title correction wrong count in stream: sent {}, got {}",
+                titles.len(),
+                c.len()
+            );
             titles.clone()
         }
         Err(e) => {
-            error!("Title correction failed in stream: {}. Using originals.", e);
+            error!(
+                "Title correction failed in stream: {}. Using originals.",
+                e
+            );
             titles.clone()
         }
     };
 
-    let strip_the = |s: &str| s.strip_prefix("the ").unwrap_or(s).to_string();
+    let strip_the = |s: &str| {
+        s.strip_prefix("the ")
+            .unwrap_or(s)
+            .to_string()
+    };
     let find_in_catalog = |s: &str| -> Option<&models::FullMovie> {
         let lower = s.to_lowercase();
-        catalog_movies.iter().find(|m| {
-            let ml = m.name.to_lowercase();
-            ml == lower || strip_the(&ml) == strip_the(&lower)
-        })
+        catalog_movies
+            .iter()
+            .find(
+                |m| {
+                    let ml = m
+                        .name
+                        .to_lowercase();
+                    ml == lower || strip_the(&ml) == strip_the(&lower)
+                },
+            )
     };
     let _ = catalog_names; // used implicitly via find_in_catalog
 
     let mut events_to_yield: Vec<GenerateStreamEvent> = Vec::new();
 
     // Build a parallel positions vec, defaulting to index if not provided.
-    let positions: Vec<usize> = (0..titles.len()).map(|i| {
-        request.positions.get(i).copied().unwrap_or(i)
-    }).collect();
+    let positions: Vec<usize> = (0..titles.len())
+        .map(
+            |i| {
+                request
+                    .positions
+                    .get(i)
+                    .copied()
+                    .unwrap_or(i)
+            },
+        )
+        .collect();
 
     // Track which original title maps to which clean title + its position.
-    let mut clean_titles: Vec<(String, usize)> = Vec::new();
+    let mut clean_titles: Vec<(
+        String,
+        usize,
+    )> = Vec::new();
 
-    for (idx, (original, corrected)) in titles.iter().zip(corrected.iter()).enumerate() {
+    for (idx, (original, corrected)) in titles
+        .iter()
+        .zip(corrected.iter())
+        .enumerate()
+    {
         let corrected_lower = corrected.to_lowercase();
         let original_lower = original.to_lowercase();
         let catalog_match = find_in_catalog(corrected).or_else(|| find_in_catalog(original));
@@ -1088,33 +1302,91 @@ pub async fn generate_movies_stream(
 
         if let Some(full_movie) = catalog_match {
             let movie = models::AiMovieData {
-                title: full_movie.name.clone(),
+                title: full_movie
+                    .name
+                    .clone(),
                 year: full_movie.release_year,
-                description: full_movie.description.clone().unwrap_or_default(),
-                actors: full_movie.actors.iter().map(|a| a.name.clone()).collect(),
-                genres: full_movie.genres.clone(),
-                director: full_movie.director.as_ref().map(|d| d.name.clone()).unwrap_or_default(),
+                description: full_movie
+                    .description
+                    .clone()
+                    .unwrap_or_default(),
+                actors: full_movie
+                    .actors
+                    .iter()
+                    .map(
+                        |a| {
+                            a.name
+                                .clone()
+                        },
+                    )
+                    .collect(),
+                genres: full_movie
+                    .genres
+                    .clone(),
+                director: full_movie
+                    .director
+                    .as_ref()
+                    .map(
+                        |d| {
+                            d.name
+                                .clone()
+                        },
+                    )
+                    .unwrap_or_default(),
                 already_in_catalog: true,
                 input_title: Some(original.clone()),
                 position: pos,
             };
             events_to_yield.push(GenerateStreamEvent::Movie(movie));
         } else if has_suggestion {
-            events_to_yield.push(GenerateStreamEvent::NeedsInput {
-                original: original.clone(),
-                reason: NeedsInputReason::Suggestion(corrected.clone()),
-                position: pos,
-            });
+            events_to_yield.push(
+                GenerateStreamEvent::NeedsInput {
+                    original: original.clone(),
+                    reason: NeedsInputReason::Suggestion(corrected.clone()),
+                    position: pos,
+                },
+            );
         } else {
-            clean_titles.push((original.clone(), pos));
+            clean_titles.push((
+                original.clone(),
+                pos,
+            ));
         }
     }
 
     // Log summary of streaming events
-    let movies_count = events_to_yield.iter().filter(|e| matches!(e, GenerateStreamEvent::Movie(_))).count();
-    let needs_input_count = events_to_yield.iter().filter(|e| matches!(e, GenerateStreamEvent::NeedsInput { .. })).count();
-    info!("Stream event summary: {} catalog movies, {} needs_input, {} to generate", movies_count, needs_input_count, clean_titles.len());
-    debug!("Clean titles to generate: {:?}", clean_titles);
+    let movies_count = events_to_yield
+        .iter()
+        .filter(
+            |e| {
+                matches!(
+                    e,
+                    GenerateStreamEvent::Movie(_)
+                )
+            },
+        )
+        .count();
+    let needs_input_count = events_to_yield
+        .iter()
+        .filter(
+            |e| {
+                matches!(
+                    e,
+                    GenerateStreamEvent::NeedsInput { .. }
+                )
+            },
+        )
+        .count();
+    info!(
+        "Stream event summary: {} catalog movies, {} needs_input, {} to generate",
+        movies_count,
+        needs_input_count,
+        clean_titles.len()
+    );
+    debug!(
+        "Clean titles to generate: {:?}",
+        clean_titles
+    );
 
     let s = stream! {
         // Immediately yield all needs_input events.
@@ -2232,21 +2504,40 @@ pub async fn save_movie(
         String,
     ),
 > {
-    info!("Saving generated movie to catalog: {}", movie.title);
+    info!(
+        "Saving generated movie to catalog: {}",
+        movie.title
+    );
     let full_movie = movie.to_full_movie(0);
-    
+
     db_state
         .pool
         .insert(full_movie)
         .await
-        .map(|saved| {
-            info!("Saved movie '{}' with id {}", saved.name, saved.id);
-            Json(saved)
-        })
-        .map_err(|e| {
-            error!("Failed to save movie: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save movie: {}", e))
-        })
+        .map(
+            |saved| {
+                info!(
+                    "Saved movie '{}' with id {}",
+                    saved.name, saved.id
+                );
+                Json(saved)
+            },
+        )
+        .map_err(
+            |e| {
+                error!(
+                    "Failed to save movie: {}",
+                    e
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!(
+                        "Failed to save movie: {}",
+                        e
+                    ),
+                )
+            },
+        )
 }
 
 /// Get top actors data
