@@ -13,7 +13,7 @@ use database::{
         GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies, GetUniqueLocations,
         GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies,
     },
-    FullMovie, PostgresMovieRepository, SearchRequest,
+    FullMovie, SearchRequest,
 };
 use log::{debug, error, info};
 use models::{
@@ -41,12 +41,6 @@ use tracing::instrument;
 // Movie search functionality module
 pub mod movie_search;
 pub use movie_search::extract_entities;
-
-#[derive(Clone, Debug)]
-pub struct CacheState {
-    pub movies: Arc<tokio::sync::RwLock<Vec<FullMovie>>>,
-    pub repo: PostgresMovieRepository,
-}
 
 #[derive(Clone)]
 pub struct DbState {
@@ -92,54 +86,50 @@ pub async fn hello_world() -> &'static str {
 
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_dvds(State(state): State<CacheState>) -> Json<Option<Vec<FullMovie>>> {
-    let movies = state
-        .movies
-        .read()
-        .await;
-    if movies.is_empty() {
-        Json(None)
-    } else {
-        Json(Some(movies.clone()))
+pub async fn get_dvds(State(state): State<DbState>) -> Json<Option<Vec<FullMovie>>> {
+    match state.pool.get_all().await {
+        Ok(movies) => {
+            if movies.is_empty() {
+                Json(None)
+            } else {
+                Json(Some(movies))
+            }
+        }
+        Err(e) => {
+            error!("Failed to get movies: {}", e);
+            Json(None)
+        }
     }
 }
 
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_dvd(Path(id): Path<i32>) -> Json<Option<FullMovie>> {
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => repo
-            .get_by_id(id)
-            .await
-            .ok(),
+pub async fn get_dvd(
+    State(state): State<DbState>,
+    Path(id): Path<i32>,
+) -> Json<Option<FullMovie>> {
+    match state.pool.get_by_id(id).await {
+        Ok(movie) => Json(Some(movie)),
         Err(e) => {
-            error!(
-                "Failed to get repo: {}",
-                e
-            );
-            None
+            error!("Failed to get movie {}: {}", id, e);
+            Json(None)
         }
-    };
-    Json(result)
+    }
 }
 
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn insert_dvd(Json(dvd): Json<FullMovie>) -> Json<Option<FullMovie>> {
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => repo
-            .insert(dvd)
-            .await
-            .ok(),
+pub async fn insert_dvd(
+    State(state): State<DbState>,
+    Json(dvd): Json<FullMovie>,
+) -> Json<Option<FullMovie>> {
+    match state.pool.insert(dvd).await {
+        Ok(movie) => Json(Some(movie)),
         Err(e) => {
-            error!(
-                "Failed to get repo: {}",
-                e
-            );
-            None
+            error!("Failed to insert movie: {}", e);
+            Json(None)
         }
-    };
-    Json(result)
+    }
 }
 
 /// Non-streaming chat endpoint with tool calling.
@@ -706,27 +696,29 @@ pub async fn chat_stream(
         .into_response()
 }
 
-#[instrument(skip(cache_state), fields(movie_count))]
+#[instrument(skip(state), fields(movie_count))]
 #[debug_handler]
 pub async fn export_csv(
-    State(cache_state): State<CacheState>,
+    State(state): State<DbState>,
 ) -> impl axum::response::IntoResponse {
-    let movies = cache_state
-        .movies
-        .read()
-        .await
-        .clone();
+    let movies = match state.pool.get_all().await {
+        Ok(movies) => movies,
+        Err(e) => {
+            error!("Failed to get movies for export: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                [
+                    ("Content-Type", "text/plain"),
+                    ("Content-Disposition", ""),
+                ],
+                format!("Failed to get movies: {}", e),
+            );
+        }
+    };
 
     let movie_count = movies.len();
-    tracing::Span::current().record(
-        "movie_count",
-        movie_count,
-    );
-
-    info!(
-        "Starting CSV export for {} movies",
-        movie_count
-    );
+    tracing::Span::current().record("movie_count", movie_count);
+    info!("Starting CSV export for {} movies", movie_count);
 
     match csv_utils::movies_to_csv(&movies) {
         Ok(csv) => {
@@ -738,39 +730,21 @@ pub async fn export_csv(
             (
                 StatusCode::OK,
                 [
-                    (
-                        "Content-Type",
-                        "text/csv",
-                    ),
-                    (
-                        "Content-Disposition",
-                        "attachment; filename=movies.csv",
-                    ),
+                    ("Content-Type", "text/csv"),
+                    ("Content-Disposition", "attachment; filename=movies.csv"),
                 ],
                 csv,
             )
         }
         Err(e) => {
-            error!(
-                "Failed to export CSV for {} movies: {}",
-                movie_count, e
-            );
+            error!("Failed to export CSV for {} movies: {}", movie_count, e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 [
-                    (
-                        "Content-Type",
-                        "text/plain",
-                    ),
-                    (
-                        "Content-Disposition",
-                        "",
-                    ),
+                    ("Content-Type", "text/plain"),
+                    ("Content-Disposition", ""),
                 ],
-                format!(
-                    "Failed to export CSV: {}",
-                    e
-                ),
+                format!("Failed to export CSV: {}", e),
             )
         }
     }
@@ -815,101 +789,43 @@ pub async fn preview_csv(
     ))
 }
 
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
 pub async fn parse_csv(
-    State(cache_state): State<CacheState>,
+    State(state): State<DbState>,
     Json(value): Json<CsvInput>,
-) -> Result<
-    impl IntoResponse,
-    (
-        StatusCode,
-        String,
-    ),
-> {
-    let mut movies = match csv_utils::parse_csv(
-        value
-            .input
-            .as_bytes(),
-    ) {
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let mut movies = match csv_utils::parse_csv(value.input.as_bytes()) {
         Ok(movies) => movies,
         Err(e) => {
-            let error = format!(
-                "Failed to parse CSV: {}",
-                e
-            );
-            error!(
-                "{}",
-                error
-            );
-            return Err((
-                StatusCode::BAD_REQUEST,
-                error,
-            ));
+            let error = format!("Failed to parse CSV: {}", e);
+            error!("{}", error);
+            return Err((StatusCode::BAD_REQUEST, error));
         }
     };
 
-    let embedding_texts: Vec<String> = movies
-        .iter()
-        .map(|m| m.embedding_str())
-        .collect();
+    let embedding_texts: Vec<String> = movies.iter().map(|m| m.embedding_str()).collect();
 
-    let embeddings = ai_chat::get_embeddings(
-        embedding_texts,
-        ai_chat::EMBEDDING_MODEL,
-    )
-    .await
-    .map_err(
-        |e| {
-            let error = format!(
-                "Failed to generate embeddings: {}",
-                e
-            );
-            error!(
-                "{}",
-                error
-            );
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error,
-            )
-        },
-    )?;
+    let embeddings = ai_chat::get_embeddings(embedding_texts, ai_chat::EMBEDDING_MODEL)
+        .await
+        .map_err(|e| {
+            let error = format!("Failed to generate embeddings: {}", e);
+            error!("{}", error);
+            (StatusCode::INTERNAL_SERVER_ERROR, error)
+        })?;
 
-    for (movie, emb) in movies
-        .iter_mut()
-        .zip(embeddings)
-    {
+    for (movie, emb) in movies.iter_mut().zip(embeddings) {
         movie.embedding = Some(emb);
     }
 
-    if let Err(e) = database::insert_full_movies(
-        movies,
-        cache_state
-            .repo
-            .pool(),
-    )
-    .await
-    {
-        let error = format!(
-            "Failed to insert movies: {}",
-            e
-        );
-        error!(
-            "{}",
-            error
-        );
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            error,
-        ));
+    if let Err(e) = database::insert_full_movies(movies, state.pool.pool()).await {
+        let error = format!("Failed to insert movies: {}", e);
+        error!("{}", error);
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
     }
 
     info!("Movies saved successfully");
-    Ok((
-        StatusCode::OK,
-        Json(()),
-    ))
+    Ok((StatusCode::OK, Json(())))
 }
 
 /// Generate movie data from titles using AI structured output
@@ -987,41 +903,28 @@ pub async fn generate_movies(
 
 /// Validate a list of movie titles against the catalog.
 /// Returns per-title status: already in catalog and/or a spelling suggestion.
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
 pub async fn validate_titles(
-    State(cache): State<CacheState>,
+    State(state): State<DbState>,
     Json(request): Json<ValidateTitlesRequest>,
 ) -> Json<Vec<TitleValidation>> {
     info!(
         "Validating {} titles: {:?}",
-        request
-            .titles
-            .len(),
+        request.titles.len(),
         request.titles
     );
-    debug!(
-        "Using model for validation: {:?}",
-        request.model
-    );
+    debug!("Using model for validation: {:?}", request.model);
 
-    let movies = cache
-        .movies
-        .read()
-        .await;
-    let catalog: Vec<String> = movies
-        .iter()
-        .map(
-            |m| {
-                m.name
-                    .to_lowercase()
-            },
-        )
-        .collect();
-    debug!(
-        "Catalog has {} movies for duplicate check",
-        catalog.len()
-    );
+    let movies = match state.pool.get_all().await {
+        Ok(movies) => movies,
+        Err(e) => {
+            error!("Failed to get movies for validation: {}", e);
+            return Json(Vec::new());
+        }
+    };
+    let catalog: Vec<String> = movies.iter().map(|m| m.name.to_lowercase()).collect();
+    debug!("Catalog has {} movies for duplicate check", catalog.len());
 
     // Ask the model to correct spelling in one batch call — it's already hot
     // since it's the same model the user will use for generation.
@@ -1158,50 +1061,44 @@ pub async fn validate_titles(
 /// 2. For each title that needs user input, immediately stream a `NeedsInput` event.
 /// 3. For clean titles, pipeline scrape+generate and stream `Movie` events.
 /// 4. End with `event: done`.
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
 pub async fn generate_movies_stream(
-    State(cache): State<CacheState>,
+    State(state): State<DbState>,
     Json(request): Json<GenerateMoviesRequest>,
-) -> Sse<impl futures_util::stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
+) -> impl IntoResponse {
     use async_stream::stream;
 
     info!(
         "Streaming movie generation for {} titles: {:?}",
-        request
-            .titles
-            .len(),
+        request.titles.len(),
         request.titles
     );
-    debug!(
-        "Model: {:?}, Positions: {:?}",
-        request.model, request.positions
-    );
+    debug!("Model: {:?}, Positions: {:?}", request.model, request.positions);
 
-    let titles = request
-        .titles
-        .clone();
-    let model = request
-        .model
-        .clone();
+    let titles = request.titles.clone();
+    let model = request.model.clone();
 
-    // Snapshot full catalog for duplicate detection and data lookup.
-    let catalog_movies: Vec<models::FullMovie> = cache
-        .movies
-        .read()
-        .await
-        .clone();
+    // Get full catalog for duplicate detection and data lookup.
+    let catalog_movies: Vec<models::FullMovie> = match state.pool.get_all().await {
+        Ok(movies) => movies,
+        Err(e) => {
+            error!("Failed to get movies for generation stream: {}", e);
+            let error_stream = stream! {
+                yield Ok::<Event, std::convert::Infallible>(Event::default()
+                    .event("error")
+                    .data(format!("Failed to load catalog: {}", e)));
+                yield Ok::<Event, std::convert::Infallible>(Event::default().event("done").data(""));
+            };
+            return Sse::new(error_stream).into_response();
+        }
+    };
     let catalog_names: Vec<String> = catalog_movies
         .iter()
-        .map(
-            |m| {
-                m.name
-                    .to_lowercase()
-            },
-        )
+        .map(|m| m.name.to_lowercase())
         .collect();
     debug!(
-        "Catalog snapshot: {} movies available for duplicate detection",
+        "Catalog loaded: {} movies available for duplicate detection",
         catalog_movies.len()
     );
 
@@ -1392,8 +1289,8 @@ pub async fn generate_movies_stream(
         // Immediately yield all needs_input events.
         for event in events_to_yield {
             match serde_json::to_string(&event) {
-                Ok(json) => yield Ok(Event::default().data(json)),
-                Err(e) => yield Ok(Event::default().event("error").data(e.to_string())),
+                Ok(json) => yield Ok::<Event, std::convert::Infallible>(Event::default().data(json)),
+                Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e.to_string())),
             }
         }
 
@@ -1425,11 +1322,11 @@ pub async fn generate_movies_stream(
                         movie.position = pos;
                         let event = GenerateStreamEvent::Movie(movie);
                         match serde_json::to_string(&event) {
-                            Ok(json) => yield Ok(Event::default().data(json)),
-                            Err(e) => yield Ok(Event::default().event("error").data(e.to_string())),
+                            Ok(json) => yield Ok::<Event, std::convert::Infallible>(Event::default().data(json)),
+                            Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e.to_string())),
                         }
                     },
-                    Err(e) => yield Ok(Event::default().event("error").data(e)),
+                    Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e)),
                 }
             }
         }
@@ -1443,18 +1340,20 @@ pub async fn generate_movies_stream(
                         movie.position = pos;
                         let event = GenerateStreamEvent::Movie(movie);
                         match serde_json::to_string(&event) {
-                            Ok(json) => yield Ok(Event::default().data(json)),
-                            Err(e) => yield Ok(Event::default().event("error").data(e.to_string())),
+                            Ok(json) => yield Ok::<Event, std::convert::Infallible>(Event::default().data(json)),
+                            Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e.to_string())),
                         }
                     },
-                    Err(e) => yield Ok(Event::default().event("error").data(e)),
+                    Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e)),
                 }
             }
         }
-        yield Ok(Event::default().event("done").data(""));
+        yield Ok::<Event, std::convert::Infallible>(Event::default().event("done").data(""));
     };
 
     Sse::new(s)
+        .keep_alive(axum::response::sse::KeepAlive::default())
+        .into_response()
 }
 
 /// Generates vector embeddings for a given text question using the Ollama AI service.
@@ -1510,6 +1409,7 @@ pub async fn embedding(text: &str) -> Result<Vec<f32>, OllamaError> {
 async fn combined_search(
     query: &str,
     all_movies: &Arc<Vec<FullMovie>>,
+    repo: &database::PostgresMovieRepository,
     disable_enhancement: bool,
     search_mode: models::SearchMode,
     model: Option<&str>,
@@ -1530,6 +1430,7 @@ async fn combined_search(
     let (movie_results, enhanced_query) = movie_search::hybrid_search(
         query,
         Arc::clone(all_movies),
+        repo,
         50,
         disable_enhancement,
         search_mode,
@@ -1627,16 +1528,19 @@ async fn combined_search(
 )]
 #[debug_handler]
 pub async fn get_matching_movies(
-    State(state): State<CacheState>,
+    State(state): State<DbState>,
     Json(search_request): Json<SearchRequest>,
 ) -> Json<Option<models::SearchResponse>> {
-    let movies = Arc::new(
-        state
-            .movies
-            .read()
-            .await
-            .clone(),
-    );
+    // Get repo reference first so we can use it for both loading and search
+    let repo = &state.pool;
+
+    let movies = match repo.get_all().await {
+        Ok(movies) => Arc::new(movies),
+        Err(e) => {
+            error!("Failed to get movies for search: {}", e);
+            return Json(None);
+        }
+    };
 
     tracing::Span::current().record(
         "movie_count",
@@ -1661,6 +1565,7 @@ pub async fn get_matching_movies(
     match combined_search(
         query,
         &movies,
+        repo,
         search_request.disable_enhancement,
         search_request.search_mode,
         search_request
@@ -1689,77 +1594,30 @@ pub async fn get_matching_movies(
 }
 
 /// Update the location of a movie
-#[instrument(skip(state))]
+#[instrument(skip(_state))]
 #[debug_handler]
 pub async fn update_movie_location(
-    State(state): State<CacheState>,
+    State(_state): State<DbState>,
     Json(request): Json<models::UpdateLocationRequest>,
-) -> Result<
-    Json<()>,
-    (
-        StatusCode,
-        String,
-    ),
-> {
+) -> Result<Json<()>, (StatusCode, String)> {
     info!(
         "Updating location for movie ID {} to '{}'",
         request.movie_id, request.location
     );
 
     // Update the database
-    database::update_movie_location(
-        request.movie_id,
-        request.location,
-    )
-    .await
-    .map_err(
-        |e| {
-            error!(
-                "Failed to update movie location: {}",
-                e
-            );
+    database::update_movie_location(request.movie_id, request.location)
+        .await
+        .map_err(|e| {
+            error!("Failed to update movie location: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "Failed to update movie location: {}",
-                    e
-                ),
+                format!("Failed to update movie location: {}", e),
             )
-        },
-    )?;
+        })?;
 
-    // Refresh the cache with updated movies
-    let refresh_result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            repo.get_all()
-                .await
-        }
-        Err(e) => Err(e),
-    };
-    match refresh_result {
-        Ok(updated_movies) => {
-            let mut movies = state
-                .movies
-                .write()
-                .await;
-            *movies = updated_movies;
-            info!("Successfully updated movie location and refreshed cache");
-            Ok(Json(()))
-        }
-        Err(e) => {
-            error!(
-                "Failed to refresh movie cache after location update: {}",
-                e
-            );
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "Location updated but failed to refresh cache: {}",
-                    e
-                ),
-            ))
-        }
-    }
+    info!("Successfully updated movie location");
+    Ok(Json(()))
 }
 
 /// Pull an Ollama model to make it available for use
@@ -1841,50 +1699,32 @@ pub async fn list_available_models() -> Result<
 }
 
 /// Get recent movies ordered by added_on descending
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_recent_movies() -> Json<Vec<ScoredMovie>> {
+pub async fn get_recent_movies(State(state): State<DbState>) -> Json<Vec<ScoredMovie>> {
     info!("Getting recent movies");
 
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            repo.get_recent(50)
-                .await
-        }
-        Err(e) => Err(e),
-    };
-
-    match result {
+    match state.pool.get_recent(50).await {
         Ok(movies) => {
-            info!(
-                "Found {} recent movies",
-                movies.len()
-            );
+            info!("Found {} recent movies", movies.len());
             let scored_movies: Vec<ScoredMovie> = movies
                 .into_iter()
-                .map(
-                    |movie| ScoredMovie {
-                        movie,
-                        vector_score: 0.0,
-                    },
-                )
+                .map(|movie| ScoredMovie { movie, vector_score: 0.0 })
                 .collect();
             Json(scored_movies)
         }
         Err(e) => {
-            error!(
-                "Failed to get recent movies: {}",
-                e
-            );
+            error!("Failed to get recent movies: {}", e);
             Json(Vec::new())
         }
     }
 }
 
 /// Get movies by release year range
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
 pub async fn get_recent_releases(
+    State(state): State<DbState>,
     Query(params): Query<RecentReleasesQuery>,
 ) -> Json<Vec<ScoredMovie>> {
     info!(
@@ -1892,19 +1732,11 @@ pub async fn get_recent_releases(
         params.min_year, params.max_year, params.limit
     );
 
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            repo.get_by_release_year(
-                params.min_year,
-                params.max_year,
-                params.limit,
-            )
-            .await
-        }
-        Err(e) => Err(e),
-    };
-
-    match result {
+    match state
+        .pool
+        .get_by_release_year(params.min_year, params.max_year, params.limit)
+        .await
+    {
         Ok(movies) => {
             info!(
                 "Found {} movies released between {} and {}",
@@ -1914,392 +1746,211 @@ pub async fn get_recent_releases(
             );
             let scored_movies: Vec<ScoredMovie> = movies
                 .into_iter()
-                .map(
-                    |movie| ScoredMovie {
-                        movie,
-                        vector_score: 0.0,
-                    },
-                )
+                .map(|movie| ScoredMovie { movie, vector_score: 0.0 })
                 .collect();
             Json(scored_movies)
         }
         Err(e) => {
-            error!(
-                "Failed to get movies by release year: {}",
-                e
-            );
+            error!("Failed to get movies by release year: {}", e);
             Json(Vec::new())
         }
     }
 }
 
 /// Get random movies from the database
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_random_movies(Query(params): Query<RandomMoviesQuery>) -> Json<Vec<ScoredMovie>> {
-    info!(
-        "Getting {} random movies",
-        params.count
-    );
+pub async fn get_random_movies(
+    State(state): State<DbState>,
+    Query(params): Query<RandomMoviesQuery>,
+) -> Json<Vec<ScoredMovie>> {
+    info!("Getting {} random movies", params.count);
 
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            repo.get_random(params.count)
-                .await
-        }
-        Err(e) => Err(e),
-    };
-
-    match result {
+    match state.pool.get_random(params.count).await {
         Ok(movies) => {
-            info!(
-                "Found {} random movies",
-                movies.len()
-            );
+            info!("Found {} random movies", movies.len());
             let scored_movies: Vec<ScoredMovie> = movies
                 .into_iter()
-                .map(
-                    |movie| ScoredMovie {
-                        movie,
-                        vector_score: 0.0,
-                    },
-                )
+                .map(|movie| ScoredMovie { movie, vector_score: 0.0 })
                 .collect();
             Json(scored_movies)
         }
         Err(e) => {
-            error!(
-                "Failed to get random movies: {}",
-                e
-            );
+            error!("Failed to get random movies: {}", e);
             Json(Vec::new())
         }
     }
 }
 
 /// Get movies with unknown location from the database
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_unknown_location_movies() -> Json<Vec<ScoredMovie>> {
+pub async fn get_unknown_location_movies(State(state): State<DbState>) -> Json<Vec<ScoredMovie>> {
     info!("Getting movies with unknown location");
 
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            repo.get_unknown_location(50)
-                .await
-        }
-        Err(e) => Err(e),
-    };
-
-    match result {
+    match state.pool.get_unknown_location(50).await {
         Ok(movies) => {
-            info!(
-                "Found {} movies with unknown location",
-                movies.len()
-            );
+            info!("Found {} movies with unknown location", movies.len());
             let scored_movies: Vec<ScoredMovie> = movies
                 .into_iter()
-                .map(
-                    |movie| ScoredMovie {
-                        movie,
-                        vector_score: 0.0,
-                    },
-                )
+                .map(|movie| ScoredMovie { movie, vector_score: 0.0 })
                 .collect();
             Json(scored_movies)
         }
         Err(e) => {
-            error!(
-                "Failed to get movies with unknown location: {}",
-                e
-            );
+            error!("Failed to get movies with unknown location: {}", e);
             Json(Vec::new())
         }
     }
 }
 
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn unique_locations() -> Json<Vec<String>> {
+pub async fn unique_locations(State(state): State<DbState>) -> Json<Vec<String>> {
     info!("Getting unique list of all locations");
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            repo.unique_locations()
-                .await
-        }
-        Err(e) => Err(e),
-    };
 
-    result
-        .map(Json)
-        .unwrap_or_else(
-            |e| {
-                error!(
-                    "Failed to get unique locations: {}",
-                    e
-                );
-                Json(Vec::new())
-            },
-        )
+    match state.pool.unique_locations().await {
+        Ok(locations) => Json(locations),
+        Err(e) => {
+            error!("Failed to get unique locations: {}", e);
+            Json(Vec::new())
+        }
+    }
 }
 
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_movies_by_location(Path(location): Path<String>) -> Json<Vec<FullMovie>> {
-    info!(
-        "Getting movies for location: {}",
-        location
-    );
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            repo.movies_by_location(&location)
-                .await
-        }
-        Err(e) => Err(e),
-    };
+pub async fn get_movies_by_location(
+    State(state): State<DbState>,
+    Path(location): Path<String>,
+) -> Json<Vec<FullMovie>> {
+    info!("Getting movies for location: {}", location);
 
-    match result {
+    match state.pool.movies_by_location(&location).await {
         Ok(movies) => {
-            info!(
-                "Found {} movies for location '{}'",
-                movies.len(),
-                location
-            );
+            info!("Found {} movies for location '{}'", movies.len(), location);
             Json(movies)
         }
         Err(e) => {
-            error!(
-                "Failed to get movies by location: {}",
-                e
-            );
+            error!("Failed to get movies by location: {}", e);
             Json(Vec::new())
         }
     }
 }
 
 /// Get stats overview
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn stats_overview() -> Json<models::StatsOverview> {
+pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsOverview> {
     info!("Getting stats overview");
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            repo.get_all()
-                .await
-        }
+
+    let movies = match state.pool.get_all().await {
+        Ok(movies) => movies,
         Err(e) => {
-            error!(
-                "Failed to create repository: {}",
-                e
-            );
-            return Json(
-                models::StatsOverview {
-                    total_movies: 0,
-                    total_directors: 0,
-                    total_actors: 0,
-                },
-            );
+            error!("Failed to get movies for stats: {}", e);
+            return Json(models::StatsOverview {
+                total_movies: 0,
+                total_directors: 0,
+                total_actors: 0,
+            });
         }
     };
 
-    match result {
-        Ok(movies) => {
-            use std::collections::HashSet;
+    use std::collections::HashSet;
 
-            let total_movies = movies.len();
-            let total_directors = movies
-                .iter()
-                .filter_map(
-                    |m| {
-                        m.director
-                            .as_ref()
-                    },
-                )
-                .map(
-                    |d| {
-                        d.name
-                            .clone()
-                    },
-                )
-                .collect::<HashSet<_>>()
-                .len();
-            let total_actors = movies
-                .iter()
-                .flat_map(|m| &m.actors)
-                .map(
-                    |a| {
-                        a.name
-                            .clone()
-                    },
-                )
-                .collect::<HashSet<_>>()
-                .len();
+    let total_movies = movies.len();
+    let total_directors = movies
+        .iter()
+        .filter_map(|m| m.director.as_ref())
+        .map(|d| d.name.clone())
+        .collect::<HashSet<_>>()
+        .len();
+    let total_actors = movies
+        .iter()
+        .flat_map(|m| &m.actors)
+        .map(|a| a.name.clone())
+        .collect::<HashSet<_>>()
+        .len();
 
-            Json(
-                models::StatsOverview {
-                    total_movies,
-                    total_directors,
-                    total_actors,
-                },
-            )
-        }
-        Err(e) => {
-            error!(
-                "Failed to get movies: {}",
-                e
-            );
-            Json(
-                models::StatsOverview {
-                    total_movies: 0,
-                    total_directors: 0,
-                    total_actors: 0,
-                },
-            )
-        }
-    }
+    Json(models::StatsOverview {
+        total_movies,
+        total_directors,
+        total_actors,
+    })
 }
 
 /// Get movies by year data (top 15 years by count)
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn stats_movies_by_year() -> Json<models::BarChartData> {
+pub async fn stats_movies_by_year(State(state): State<DbState>) -> Json<models::BarChartData> {
     info!("Getting movies by year stats");
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            repo.get_all()
-                .await
-        }
+
+    let movies = match state.pool.get_all().await {
+        Ok(movies) => movies,
         Err(e) => {
-            error!(
-                "Failed to create repository: {}",
-                e
-            );
-            return Json(
-                models::BarChartData {
-                    labels: vec![],
-                    values: vec![],
-                },
-            );
+            error!("Failed to get movies for stats: {}", e);
+            return Json(models::BarChartData {
+                labels: vec![],
+                values: vec![],
+            });
         }
     };
 
-    match result {
-        Ok(movies) => {
-            use std::collections::HashMap;
+    use std::collections::HashMap;
 
-            let mut year_counts: HashMap<i32, usize> = HashMap::new();
-            for movie in movies {
-                if movie.release_year > 0 {
-                    *year_counts
-                        .entry(movie.release_year)
-                        .or_insert(0) += 1;
-                }
-            }
-
-            let mut year_data: Vec<(
-                i32,
-                usize,
-            )> = year_counts
-                .into_iter()
-                .collect();
-            // Sort by count descending and take top 15
-            year_data.sort_by(|(_, a), (_, b)| b.cmp(a));
-            year_data.truncate(15);
-            // Re-sort by year for display
-            year_data.sort_by_key(|(year, _)| *year);
-
-            let labels: Vec<String> = year_data
-                .iter()
-                .map(|(y, _)| y.to_string())
-                .collect();
-            let values: Vec<f64> = year_data
-                .iter()
-                .map(|(_, c)| *c as f64)
-                .collect();
-
-            Json(models::BarChartData { labels, values })
-        }
-        Err(e) => {
-            error!(
-                "Failed to get movies: {}",
-                e
-            );
-            Json(
-                models::BarChartData {
-                    labels: vec![],
-                    values: vec![],
-                },
-            )
+    let mut year_counts: HashMap<i32, usize> = HashMap::new();
+    for movie in movies {
+        if movie.release_year > 0 {
+            *year_counts.entry(movie.release_year).or_insert(0) += 1;
         }
     }
+
+    let mut year_data: Vec<(i32, usize)> = year_counts.into_iter().collect();
+    // Sort by count descending and take top 15
+    year_data.sort_by(|(_, a), (_, b)| b.cmp(a));
+    year_data.truncate(15);
+    // Re-sort by year for display
+    year_data.sort_by_key(|(year, _)| *year);
+
+    let labels: Vec<String> = year_data.iter().map(|(y, _)| y.to_string()).collect();
+    let values: Vec<f64> = year_data.iter().map(|(_, c)| *c as f64).collect();
+
+    Json(models::BarChartData { labels, values })
 }
 
 /// Get genre distribution data (top 10)
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn stats_genres() -> Json<models::PieChartData> {
+pub async fn stats_genres(State(state): State<DbState>) -> Json<models::PieChartData> {
     info!("Getting genre distribution stats");
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            repo.get_all()
-                .await
-        }
+
+    let movies = match state.pool.get_all().await {
+        Ok(movies) => movies,
         Err(e) => {
-            error!(
-                "Failed to create repository: {}",
-                e
-            );
+            error!("Failed to get movies for stats: {}", e);
             return Json(models::PieChartData { data: vec![] });
         }
     };
 
-    match result {
-        Ok(movies) => {
-            use std::collections::HashMap;
+    use std::collections::HashMap;
 
-            let mut genre_counts: HashMap<String, usize> = HashMap::new();
-            for movie in movies {
-                for genre in &movie.genres {
-                    *genre_counts
-                        .entry(genre.clone())
-                        .or_insert(0) += 1;
-                }
-            }
-
-            let mut data: Vec<(
-                String,
-                f64,
-            )> = genre_counts
-                .into_iter()
-                .map(
-                    |(genre, count)| {
-                        (
-                            genre,
-                            count as f64,
-                        )
-                    },
-                )
-                .collect();
-
-            // Sort by count descending and take top 10
-            data.sort_by(
-                |(_, a), (_, b)| {
-                    b.partial_cmp(a)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                },
-            );
-            data.truncate(10);
-
-            Json(models::PieChartData { data })
-        }
-        Err(e) => {
-            error!(
-                "Failed to get movies: {}",
-                e
-            );
-            Json(models::PieChartData { data: vec![] })
+    let mut genre_counts: HashMap<String, usize> = HashMap::new();
+    for movie in movies {
+        for genre in &movie.genres {
+            *genre_counts.entry(genre.clone()).or_insert(0) += 1;
         }
     }
+
+    let mut data: Vec<(String, f64)> = genre_counts
+        .into_iter()
+        .map(|(genre, count)| (genre, count as f64))
+        .collect();
+
+    // Sort by count descending and take top 10
+    data.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    data.truncate(10);
+
+    Json(models::PieChartData { data })
 }
 
 /// Chat session with first query preview
@@ -2541,77 +2192,37 @@ pub async fn save_movie(
 }
 
 /// Get top actors data
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn stats_top_actors() -> Json<models::BarChartData> {
+pub async fn stats_top_actors(State(state): State<DbState>) -> Json<models::BarChartData> {
     info!("Getting top actors stats");
-    let result = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            repo.get_all()
-                .await
-        }
+
+    let movies = match state.pool.get_all().await {
+        Ok(movies) => movies,
         Err(e) => {
-            error!(
-                "Failed to create repository: {}",
-                e
-            );
-            return Json(
-                models::BarChartData {
-                    labels: vec![],
-                    values: vec![],
-                },
-            );
+            error!("Failed to get movies for stats: {}", e);
+            return Json(models::BarChartData {
+                labels: vec![],
+                values: vec![],
+            });
         }
     };
 
-    match result {
-        Ok(movies) => {
-            use std::collections::HashMap;
+    use std::collections::HashMap;
 
-            let mut actor_counts: HashMap<String, usize> = HashMap::new();
-            for movie in movies {
-                for actor in &movie.actors {
-                    *actor_counts
-                        .entry(
-                            actor
-                                .name
-                                .clone(),
-                        )
-                        .or_insert(0) += 1;
-                }
-            }
-
-            let mut actor_data: Vec<(
-                String,
-                usize,
-            )> = actor_counts
-                .into_iter()
-                .collect();
-            actor_data.sort_by(|(_, a), (_, b)| b.cmp(a));
-            actor_data.truncate(10);
-
-            let labels: Vec<String> = actor_data
-                .iter()
-                .map(|(name, _)| name.clone())
-                .collect();
-            let values: Vec<f64> = actor_data
-                .iter()
-                .map(|(_, count)| *count as f64)
-                .collect();
-
-            Json(models::BarChartData { labels, values })
-        }
-        Err(e) => {
-            error!(
-                "Failed to get movies: {}",
-                e
-            );
-            Json(
-                models::BarChartData {
-                    labels: vec![],
-                    values: vec![],
-                },
-            )
+    let mut actor_counts: HashMap<String, usize> = HashMap::new();
+    for movie in movies {
+        for actor in &movie.actors {
+            *actor_counts.entry(actor.name.clone()).or_insert(0) += 1;
         }
     }
+
+    let mut actor_data: Vec<(String, usize)> = actor_counts.into_iter().collect();
+    actor_data.sort_by(|(_, a), (_, b)| b.cmp(a));
+    actor_data.truncate(10);
+
+    let labels: Vec<String> = actor_data.iter().map(|(name, _)| name.clone()).collect();
+    let values: Vec<f64> = actor_data.iter().map(|(_, count)| *count as f64).collect();
+
+    Json(models::BarChartData { labels, values })
 }

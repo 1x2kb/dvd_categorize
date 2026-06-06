@@ -57,6 +57,18 @@ pub trait SearchMoviesByEmbedding: Send + Sync {
 }
 
 #[async_trait]
+pub trait SearchMoviesByText: Send + Sync {
+    /// Search movies by text query across name, actors, director, and genres.
+    /// Returns scored results: (movie, score) where score is calculated
+    /// based on matching titles (100), actors (20), directors (25), genres (15)
+    async fn search_by_text(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<(FullMovie, f32)>, DatabaseError>;
+}
+
+#[async_trait]
 pub trait GetRecentMovies: Send + Sync {
     async fn get_recent(&self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError>;
 }

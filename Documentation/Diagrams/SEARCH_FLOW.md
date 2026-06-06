@@ -25,12 +25,12 @@ flowchart TD
 
 ## Text Search
 
-Pure keyword matching against the in-memory movie cache. No AI involvement.
+Pure keyword matching against all movies in the database. No AI involvement.
 
 ```mermaid
 flowchart TD
     Q["User Query"] --> EE["Extract Entities"]
-    EE --> |"Scan all movies"| Entities["Titles, Actors, Directors, Genres"]
+    EE --> |"Scan all movies from DB"| Entities["Titles, Actors, Directors, Genres"]
     Entities --> KW["Keyword Scoring"]
     KW --> |"Title: 100pts exact, 50pts partial<br/>Actor: 20pts<br/>Director: 25pts<br/>Genre: 15pts"| Ranked["Ranked Results"]
 ```
@@ -73,7 +73,7 @@ flowchart TD
     Fork --> Branch1["Entity Extraction"]
     Fork --> Branch2["Query Enhancement"]
 
-    Branch1 --> KW["Keyword Search<br/>(in-memory cache)"]
+    Branch1 --> KW["Keyword Search<br/>(DB via get_all)"]
     Branch2 --> Embed["Generate Embedding<br/>(Ollama)"]
     Embed --> VS["Vector Search<br/>(pgvector)"]
 

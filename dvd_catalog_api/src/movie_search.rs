@@ -2,11 +2,11 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use ai_chat::OllamaClient;
-use axum::extract::Json;
+use axum::extract::{Json, State};
 use axum_macros::debug_handler;
 use categorizer_utilities::strip_punctuation;
 use database::{
-    question::AiAction, traits::SearchMoviesByEmbedding, FullMovie, PostgresMovieRepository,
+    question::AiAction, traits::{GetAllMovies, SearchMoviesByEmbedding}, FullMovie, PostgresMovieRepository,
 };
 use log::{error, info};
 use ollama_rs::Ollama;
@@ -525,9 +525,10 @@ async fn text_only_search(
 }
 
 /// Performs vector-only search with query enhancement
-#[instrument]
+#[instrument(skip(repo))]
 async fn vector_only_search(
     query: &str,
+    repo: &PostgresMovieRepository,
     limit: usize,
     disable_enhancement: bool,
     model: Option<&str>,
@@ -561,17 +562,12 @@ async fn vector_only_search(
     let vector_start = std::time::Instant::now();
     let vector_results = match embedding(&enhanced_query).await {
         Ok(embedding_vec) => {
-            let search_result = match PostgresMovieRepository::from_env().await {
-                Ok(repo) => {
-                    repo.search_by_embedding(
-                        embedding_vec,
-                        (limit * 2) as i64,
-                    )
-                    .await
-                }
-                Err(e) => Err(e),
-            };
-            match search_result {
+            match repo.search_by_embedding(
+                embedding_vec,
+                (limit * 2) as i64,
+            )
+            .await
+            {
                 Ok(movies_from_db) => {
                     let ids: Vec<i32> = movies_from_db
                         .into_iter()
@@ -633,10 +629,11 @@ async fn vector_only_search(
 }
 
 /// Performs hybrid search combining both keyword and vector search with RRF fusion
-#[instrument(skip(movies))]
+#[instrument(skip(movies, repo))]
 async fn hybrid_both_search(
     query: &str,
     movies: Arc<Vec<FullMovie>>,
+    repo: &PostgresMovieRepository,
     limit: usize,
     disable_enhancement: bool,
     model: Option<&str>,
@@ -724,17 +721,12 @@ async fn hybrid_both_search(
             let vector_start = std::time::Instant::now();
             match embedding(&enhanced_query_clone).await {
                 Ok(embedding_vec) => {
-                    let search_result = match PostgresMovieRepository::from_env().await {
-                        Ok(repo) => {
-                            repo.search_by_embedding(
-                                embedding_vec,
-                                (limit * 2) as i64,
-                            )
-                            .await
-                        }
-                        Err(e) => Err(e),
-                    };
-                    match search_result {
+                    match repo.search_by_embedding(
+                        embedding_vec,
+                        (limit * 2) as i64,
+                    )
+                    .await
+                    {
                         Ok(movies_from_db) => {
                             let ids: Vec<i32> = movies_from_db
                                 .into_iter()
@@ -954,10 +946,11 @@ async fn structured_query_search(
 /// - Vector: cosine similarity (0-1, higher is better)
 /// - Both: RRF score combining both methods
 /// - Structured: AI-parsed query with dynamic Diesel queries
-#[instrument(skip(movies))]
+#[instrument(skip(movies, repo))]
 pub async fn hybrid_search(
     query: &str,
     movies: Arc<Vec<FullMovie>>,
+    repo: &PostgresMovieRepository,
     limit: usize,
     disable_enhancement: bool,
     search_mode: models::SearchMode,
@@ -979,6 +972,7 @@ pub async fn hybrid_search(
         models::SearchMode::Vector => {
             vector_only_search(
                 query,
+                repo,
                 limit,
                 disable_enhancement,
                 model,
@@ -989,6 +983,7 @@ pub async fn hybrid_search(
             hybrid_both_search(
                 query,
                 movies,
+                repo,
                 limit,
                 disable_enhancement,
                 model,
@@ -1084,16 +1079,16 @@ async fn extract_entities_from_movies(
 ///
 /// # Returns
 /// JSON response containing the AI's response to the query
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
-    let dvds = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            use database::traits::GetAllMovies;
-            repo.get_all()
-                .await
-                .unwrap_or_else(|_| Vec::new())
-        }
+pub async fn chat(
+    State(state): State<crate::DbState>,
+    Json(action): Json<AiAction>,
+) -> Json<AiAction> {
+    let repo = &state.pool;
+
+    let dvds = match repo.get_all().await {
+        Ok(movies) => movies,
         Err(_) => Vec::new(),
     };
 
@@ -1116,6 +1111,7 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
     let (movie_results, _enhanced_query) = hybrid_search(
         &question,
         Arc::clone(&arc_dvds),
+        repo,
         15,
         false,
         models::SearchMode::Both,
