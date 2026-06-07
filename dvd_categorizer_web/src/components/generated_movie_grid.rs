@@ -128,7 +128,9 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
     // batch-generate all Resolved titles at once.
     let on_toast_auto = props.on_toast;
     let on_dismiss_auto = props.on_dismiss_toast;
-    let model_auto = props.model.clone();
+    let model_auto = props
+        .model
+        .clone();
     let on_error_auto = props.on_error;
     let on_loading_auto = props.on_loading;
     use_effect(
@@ -250,12 +252,16 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
     );
 
     let trigger_signal = props.generate_trigger;
-    let model = props.model.clone();
+    let model = props
+        .model
+        .clone();
     let on_loading = props.on_loading;
     let on_error = props.on_error;
     let on_pending = props.on_pending;
     let on_title_corrected = props.on_title_corrected;
-    let input_titles_regen = props.input_titles.clone();
+    let input_titles_regen = props
+        .input_titles
+        .clone();
     use_effect(
         move || {
             let trigger = *trigger_signal.read(); // reactive subscription
