@@ -131,12 +131,12 @@ impl Display for DatabaseError {
 /// # Errors
 /// Returns `DatabaseError` if the DATABASE_URL environment variable is not set
 /// or if the pool cannot be created.
-///
-/// # Panics
-/// Panics if the DATABASE_URL environment variable is not set.
 pub async fn get_connection_pool() -> Result<Pool<AsyncPgConnection>, DatabaseError> {
-    let database_url =
-        env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
+    let database_url = env::var("DATABASE_URL").map_err(|_| {
+        DatabaseError::ConnectionError(diesel::ConnectionError::BadConnection(
+            "DATABASE_URL environment variable must be set".to_string(),
+        ))
+    })?;
 
     let manager =
         diesel_async::pooled_connection::AsyncDieselConnectionManager::<AsyncPgConnection>::new(
