@@ -60,7 +60,7 @@ use std::fmt::Display;
 
 use diesel::ConnectionError;
 use diesel_async::pooled_connection::deadpool::Pool;
-use diesel_async::{AsyncConnection, AsyncPgConnection};
+use diesel_async::AsyncPgConnection;
 pub use models::{schema::*, *};
 
 pub use actors::*;
@@ -151,21 +151,4 @@ pub async fn get_connection_pool() -> Result<Pool<AsyncPgConnection>, DatabaseEr
         )?;
 
     Ok(pool)
-}
-
-/// Establishes a connection to the PostgreSQL database.
-///
-/// # Errors
-/// Returns `DatabaseError` if the DATABASE_URL environment variable is not set
-/// or if the connection cannot be established.
-///
-/// # Panics
-/// Panics if the DATABASE_URL environment variable is not set.
-#[deprecated(note = "Use get_connection_pool() instead")]
-pub async fn get_database_connection() -> Result<AsyncPgConnection, DatabaseError> {
-    let database_url =
-        env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
-    AsyncPgConnection::establish(&database_url)
-        .await
-        .map_err(DatabaseError::from)
 }

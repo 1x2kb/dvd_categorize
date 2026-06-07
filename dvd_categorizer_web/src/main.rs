@@ -22,7 +22,7 @@ enum Route {
     AiChat {},
     #[route("/ai/live")]
     AiLiveResults {},
-    #[route("/moives/new")]
+    #[route("/movies/new")]
     InsertMedia {},
     #[route("/ai/models")]
     ModelPull {},

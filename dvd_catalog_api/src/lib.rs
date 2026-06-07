@@ -117,21 +117,6 @@ pub async fn get_dvd(
     }
 }
 
-#[instrument(skip(state))]
-#[debug_handler]
-pub async fn insert_dvd(
-    State(state): State<DbState>,
-    Json(dvd): Json<FullMovie>,
-) -> Json<Option<FullMovie>> {
-    match state.pool.insert(dvd).await {
-        Ok(movie) => Json(Some(movie)),
-        Err(e) => {
-            error!("Failed to insert movie: {}", e);
-            Json(None)
-        }
-    }
-}
-
 /// Non-streaming chat endpoint with tool calling.
 ///
 /// Uses `ollama_rs::coordinator::Coordinator` so the model can invoke
