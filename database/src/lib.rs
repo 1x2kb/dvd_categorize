@@ -48,6 +48,7 @@ pub mod directors;
 pub mod embedding;
 pub mod full_movies;
 pub mod genres;
+#[cfg(any(test, feature = "testing"))]
 pub mod mocks;
 pub mod movies;
 pub mod postgres;
@@ -68,6 +69,7 @@ pub use directors::*;
 pub use embedding::*;
 pub use full_movies::*;
 pub use genres::*;
+#[cfg(any(test, feature = "testing"))]
 pub use mocks::*;
 pub use movies::*;
 pub use postgres::*;

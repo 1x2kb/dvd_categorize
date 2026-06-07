@@ -253,41 +253,6 @@ body {
     100% { transform: rotate(360deg); }
 }
 
-#hero {
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-}
-
-#links {
-    width: 400px;
-    text-align: left;
-    font-size: x-large;
-    color: white;
-    display: flex;
-    flex-direction: column;
-}
-
-#links a {
-    color: white;
-    text-decoration: none;
-    margin-top: 20px;
-    margin: 10px 0px;
-    border: white 1px solid;
-    border-radius: 5px;
-    padding: 10px;
-}
-
-#links a:hover {
-    background-color: #1f1f1f;
-    cursor: pointer;
-}
-
-#header {
-    max-width: 62.5vw; /* 1200px / 1920px */
-}
 
 /* Navbar */
 #navbar {
@@ -305,16 +270,6 @@ body {
 #navbar a:hover {
     cursor: pointer;
     color: #91a4d2;
-}
-
-/* Blog page */
-#blog {
-    margin-top: 50px;
-}
-
-#blog a {
-    color: #ffffff;
-    margin-top: 50px;
 }
 
 .white-space-pre {
@@ -547,10 +502,6 @@ body {
         max-width: 80vw;
     }
 
-    #links {
-        width: 90%;
-        max-width: 400px;
-    }
 }
 
 @media (max-width: 768px) {
@@ -580,11 +531,6 @@ body {
     .button {
         flex: 1;
         min-width: 120px;
-    }
-
-    #links {
-        width: 100%;
-        font-size: large;
     }
 
     #navbar {
@@ -644,10 +590,6 @@ body {
 
     .model-input {
         font-size: 14px;
-    }
-
-    #links {
-        font-size: medium;
     }
 
     .message {

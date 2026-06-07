@@ -61,11 +61,25 @@ pub use query_enhancement::*;
 pub use embedding::EMBEDDING_MODEL;
 
 // AI Model constants
-const DEFAULT_CHAT_MODEL: &str = "qwen2.5:7b";
+pub const DEFAULT_CHAT_MODEL: &str = "qwen2.5:7b";
 const DEFAULT_SMALL_MODEL: &str = DEFAULT_CHAT_MODEL;
 const DEFAULT_OLLAMA_HOST: &str = "ollama";
 const DEFAULT_OLLAMA_PORT: &str = "11434";
 const DEFAULT_CONTEXT_WINDOW: u64 = 64000;
+
+/// Builds an Ollama client from `OLLAMA_HOST` / `OLLAMA_PORT` env vars.
+/// Falls back to `ollama:11434` if the variables are not set.
+///
+/// # Errors
+/// Returns `Err` if the constructed URL is not a valid HTTP URL.
+pub fn make_ollama_client() -> Result<Ollama, String> {
+    let host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
+    let port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
+    let url = format!("http://{}:{}", host, port);
+    url.parse()
+        .map(Ollama::from_url)
+        .map_err(|e| format!("Failed to parse Ollama URL '{}': {}", url, e))
+}
 
 /// Client for interacting with Ollama AI services
 ///
@@ -209,26 +223,7 @@ pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::Oll
         text
     );
 
-    // Use ollama service name for Docker container communication
-    let ollama_host =
-        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
-    let ollama_port =
-        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-
-    let ollama_url = format!(
-        "http://{}:{}",
-        &ollama_host, &ollama_port
-    );
-    debug!(
-        "Connecting to ollama @ {}",
-        &ollama_url
-    );
-
-    let ollama = Ollama::from_url(
-        ollama_url
-            .parse()
-            .unwrap(),
-    );
+    let ollama = make_ollama_client().map_err(ollama_rs::error::OllamaError::Other)?;
 
     let request = GenerateEmbeddingsRequest::new(
         EMBEDDING_MODEL.to_string(),
@@ -257,25 +252,11 @@ pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::Oll
 pub async fn list_models() -> Result<Vec<models::AvailableModel>, String> {
     info!("Fetching available Ollama models");
 
-    let ollama_host =
-        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
-    let ollama_port =
-        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-
-    let ollama_url = format!(
-        "http://{}:{}",
-        &ollama_host, &ollama_port
-    );
-    debug!(
-        "Connecting to ollama @ {}",
-        &ollama_url
-    );
-
-    let ollama = Ollama::from_url(
-        ollama_url
-            .parse()
-            .unwrap(),
-    );
+    let ollama = make_ollama_client().map_err(|e| {
+        let msg = format!("Ollama client error: {}", e);
+        log::error!("{}", msg);
+        msg
+    })?;
 
     match ollama
         .list_local_models()
@@ -326,25 +307,11 @@ pub async fn pull_model(model_name: &str) -> Result<String, String> {
         model_name
     );
 
-    let ollama_host =
-        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
-    let ollama_port =
-        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-
-    let ollama_url = format!(
-        "http://{}:{}",
-        &ollama_host, &ollama_port
-    );
-    debug!(
-        "Connecting to ollama @ {}",
-        &ollama_url
-    );
-
-    let ollama = Ollama::from_url(
-        ollama_url
-            .parse()
-            .unwrap(),
-    );
+    let ollama = make_ollama_client().map_err(|e| {
+        let msg = format!("Ollama client error: {}", e);
+        log::error!("{}", msg);
+        msg
+    })?;
 
     match ollama
         .pull_model(
@@ -385,18 +352,10 @@ pub async fn generate_movies_structured(
 ) -> Result<Vec<AiMovieData>, String> {
     info!("Generating structured movie data for {} titles", titles.len());
 
-    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
-    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
-
-    let ollama = match ollama_url.parse() {
-        Ok(url) => Ollama::from_url(url),
-        Err(e) => {
-            let error_msg = format!("Failed to parse Ollama URL: {}", e);
-            error!("{}", error_msg);
-            return Err(error_msg);
-        }
-    };
+    let ollama = make_ollama_client().map_err(|e| {
+        error!("{}", e);
+        e
+    })?;
 
     let titles_text = titles.join("\n");
     let system_prompt = r#"You are a movie database assistant. For each movie title provided, generate complete movie information.
@@ -423,7 +382,7 @@ Example for "The Matrix":
 }]"#;
 
     let user_message = format!("Generate movie data for these titles:\n{}", titles_text);
-    let model_name = model.unwrap_or("qwen2.5:7b");
+    let model_name = model.unwrap_or(DEFAULT_CHAT_MODEL);
 
     debug!("Using model for movie generation: {}", model_name);
 
@@ -471,15 +430,10 @@ pub async fn correct_movie_titles(
 ) -> Result<Vec<String>, String> {
     debug!("Starting title correction for {} titles: {:?}", titles.len(), titles);
 
-    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
-    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-    let ollama = match format!("http://{}:{}", ollama_host, ollama_port).parse() {
-        Ok(url) => Ollama::from_url(url),
-        Err(e) => {
-            error!("Failed to parse Ollama URL: {}", e);
-            return Err(format!("Failed to parse Ollama URL: {}", e));
-        }
-    };
+    let ollama = make_ollama_client().map_err(|e| {
+        error!("{}", e);
+        e
+    })?;
 
     let numbered = titles.iter().enumerate()
         .map(|(i, t)| format!("{}. {}", i + 1, t))
@@ -506,7 +460,7 @@ Input titles:\n{}\n\nJSON array only, no explanation:",
     debug!("Sending title correction prompt to AI (model: {:?})", model);
 
     let request = ChatMessageRequest::new(
-        model.unwrap_or("qwen2.5:7b").to_string(),
+        model.unwrap_or(DEFAULT_CHAT_MODEL).to_string(),
         vec![ChatMessage::user(prompt)],
     );
 
@@ -563,12 +517,10 @@ pub async fn generate_movie_single(
     title: &str,
     model: Option<&str>,
 ) -> Result<AiMovieData, String> {
-    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
-    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-    let ollama = match format!("http://{}:{}", ollama_host, ollama_port).parse() {
-        Ok(url) => Ollama::from_url(url),
-        Err(e) => return Err(format!("Failed to parse Ollama URL: {}", e)),
-    };
+    let ollama = make_ollama_client().map_err(|e| {
+        error!("{}", e);
+        e
+    })?;
 
     let system_prompt = r#"You are a movie database assistant. Generate complete movie information for the title provided.
 
@@ -583,7 +535,7 @@ Provide:
 CRITICAL: Respond with a single valid JSON object matching the exact schema."#;
 
     let request = ChatMessageRequest::new(
-        model.unwrap_or("qwen2.5:7b").to_string(),
+        model.unwrap_or(DEFAULT_CHAT_MODEL).to_string(),
         vec![
             ChatMessage::system(system_prompt.to_string()),
             ChatMessage::user(format!("Generate movie data for: {}", title)),
@@ -623,12 +575,10 @@ pub async fn generate_movie_with_context(
     rag_context: String,
     model: Option<&str>,
 ) -> Result<AiMovieData, String> {
-    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
-    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-    let ollama = match format!("http://{}:{}", ollama_host, ollama_port).parse() {
-        Ok(url) => Ollama::from_url(url),
-        Err(e) => return Err(format!("Failed to parse Ollama URL: {}", e)),
-    };
+    let ollama = make_ollama_client().map_err(|e| {
+        error!("{}", e);
+        e
+    })?;
 
     let system_prompt = format!(
         r#"You are a movie database assistant. Generate complete movie information for the title provided.
@@ -652,7 +602,7 @@ CRITICAL: Respond with a single valid JSON object matching the exact schema."#,
     );
 
     let request = ChatMessageRequest::new(
-        model.unwrap_or("qwen2.5:7b").to_string(),
+        model.unwrap_or(DEFAULT_CHAT_MODEL).to_string(),
         vec![
             ChatMessage::system(system_prompt),
             ChatMessage::user(format!("Generate movie data for: {}", title)),
@@ -679,12 +629,10 @@ pub async fn generate_movie_single_with_rag(
 ) -> Result<AiMovieData, String> {
     let rag_context = scrape_single(title).await;
 
-    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
-    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-    let ollama = match format!("http://{}:{}", ollama_host, ollama_port).parse() {
-        Ok(url) => Ollama::from_url(url),
-        Err(e) => return Err(format!("Failed to parse Ollama URL: {}", e)),
-    };
+    let ollama = make_ollama_client().map_err(|e| {
+        error!("{}", e);
+        e
+    })?;
 
     let system_prompt = format!(
         r#"You are a movie database assistant. Generate complete movie information for the title provided.
@@ -708,7 +656,7 @@ CRITICAL: Respond with a single valid JSON object matching the exact schema."#,
     );
 
     let request = ChatMessageRequest::new(
-        model.unwrap_or("qwen2.5:7b").to_string(),
+        model.unwrap_or(DEFAULT_CHAT_MODEL).to_string(),
         vec![
             ChatMessage::system(system_prompt),
             ChatMessage::user(format!("Generate movie data for: {}", title)),
@@ -746,20 +694,10 @@ pub async fn generate_movies_structured_with_rag(
 
     let scraped = web_scraper::scrape_movie_contexts(titles).await;
 
-    let ollama_host =
-        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
-    let ollama_port =
-        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-    let ollama_url = format!("http://{}:{}", ollama_host, ollama_port);
-
-    let ollama = match ollama_url.parse() {
-        Ok(url) => Ollama::from_url(url),
-        Err(e) => {
-            let error_msg = format!("Failed to parse Ollama URL: {}", e);
-            error!("{}", error_msg);
-            return Err(error_msg);
-        }
-    };
+    let ollama = make_ollama_client().map_err(|e| {
+        error!("{}", e);
+        e
+    })?;
 
     let mut rag_sections: Vec<String> = Vec::new();
     for ctx in &scraped {
@@ -811,7 +749,7 @@ Each object must match the exact schema requested."#,
     );
 
     let user_message = format!("Generate movie data for these titles:\n{}", titles_text);
-    let model_name = model.unwrap_or("qwen2.5:7b");
+    let model_name = model.unwrap_or(DEFAULT_CHAT_MODEL);
 
     debug!("[internet RAG] Using model: {}", model_name);
 

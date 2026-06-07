@@ -9,7 +9,6 @@ use database::{
     question::AiAction, traits::{GetAllMovies, SearchMoviesByEmbedding}, FullMovie, PostgresMovieRepository,
 };
 use log::{error, info};
-use ollama_rs::Ollama;
 use tracing::instrument;
 
 use crate::embedding;
@@ -1119,33 +1118,29 @@ pub async fn chat(
     );
 
     info!("Sending question to AI.");
+    let ollama_client = match ai_chat::make_ollama_client() {
+        Ok(o) => o,
+        Err(e) => {
+            error!("Failed to create Ollama client: {}", e);
+            return Json(AiAction {
+                uuid,
+                action: "There was an error connecting to the AI service.".to_string(),
+                model,
+                temperature: None,
+            });
+        }
+    };
     let result = ai_chat::ai_message(
         Arc::new(full_movies),
-        Arc::new(
-            OllamaClient {
-                ollama_client: {
-                    let ollama_host =
-                        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
-                    let ollama_port =
-                        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
-                    let ollama_url = format!(
-                        "http://{}:{}",
-                        ollama_host, ollama_port
-                    );
-                    Ollama::from_url(
-                        ollama_url
-                            .parse()
-                            .unwrap(),
-                    )
-                },
-                ai_action: AiAction {
-                    uuid: uuid.to_string(),
-                    action: question,
-                    model: model.clone(),
-                    temperature,
-                },
+        Arc::new(OllamaClient {
+            ollama_client,
+            ai_action: AiAction {
+                uuid: uuid.to_string(),
+                action: question,
+                model: model.clone(),
+                temperature,
             },
-        ),
+        }),
     )
     .await;
     info!("Response received.");

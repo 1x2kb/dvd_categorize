@@ -1,11 +1,8 @@
 use log::{debug, error, info};
 use models::StructuredQuery;
-use ollama_rs::{
-    generation::chat::{request::ChatMessageRequest, ChatMessage},
-    Ollama,
-};
+use ollama_rs::generation::chat::{request::ChatMessageRequest, ChatMessage};
 
-use crate::{DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_PORT, DEFAULT_SMALL_MODEL};
+use crate::{make_ollama_client, DEFAULT_SMALL_MODEL};
 
 /// Parses a natural language query into a structured format for Diesel query building
 ///
@@ -24,29 +21,10 @@ pub async fn parse_query_to_structured(
         query
     );
 
-    let ollama_host =
-        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
-    let ollama_port =
-        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-    let ollama_url = format!(
-        "http://{}:{}",
-        ollama_host, ollama_port
-    );
-
-    let ollama = match ollama_url.parse() {
-        Ok(url) => Ollama::from_url(url),
-        Err(e) => {
-            let error_msg = format!(
-                "Failed to parse Ollama URL: {}",
-                e
-            );
-            error!(
-                "{}",
-                error_msg
-            );
-            return Err(error_msg);
-        }
-    };
+    let ollama = make_ollama_client().map_err(|e| {
+        error!("{}", e);
+        e
+    })?;
 
     let system_prompt = r#"You are a movie search query parser. Your job is to extract structured search criteria from natural language queries.
 

@@ -245,24 +245,17 @@ pub async fn chat(
     let model = request
         .model
         .clone()
-        .unwrap_or_else(|| "qwen2.5:7b".to_string());
+        .unwrap_or_else(|| ai_chat::DEFAULT_CHAT_MODEL.to_string());
     info!(
         "Using model: {}",
         model
     );
 
     // Ollama client
-    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
-    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
-    let ollama_url = format!(
-        "http://{}:{}",
-        ollama_host, ollama_port
-    );
-    let ollama = ollama_rs::Ollama::from_url(
-        ollama_url
-            .parse()
-            .unwrap(),
-    );
+    let ollama = ai_chat::make_ollama_client().map_err(|e| {
+        error!("Failed to create Ollama client: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, e)
+    })?;
 
     // Build coordinator with all tools — each tool shares one ApiClient (cheap clone)
     let api_client = ai_tools::ApiClient::from_env();
@@ -540,25 +533,27 @@ pub async fn chat_stream(
     // Get model name from request or use default
     let model = request
         .model
-        .unwrap_or_else(|| "qwen2.5:7b".to_string());
+        .unwrap_or_else(|| ai_chat::DEFAULT_CHAT_MODEL.to_string());
     info!(
         "Using model: {} for streaming",
         model
     );
 
     // Create Ollama client
-    let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
-    let ollama_port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
-    let ollama_url = format!(
-        "http://{}:{}",
-        ollama_host, ollama_port
-    );
-
-    let ollama = ollama_rs::Ollama::from_url(
-        ollama_url
-            .parse()
-            .unwrap(),
-    );
+    let ollama = match ai_chat::make_ollama_client() {
+        Ok(o) => o,
+        Err(e) => {
+            error!("Failed to create Ollama client: {}", e);
+            let error_stream = async_stream::stream! {
+                yield Ok::<Event, std::convert::Infallible>(Event::default()
+                    .event("error")
+                    .data("Failed to connect to AI service"));
+            };
+            return Sse::new(error_stream)
+                .keep_alive(axum::response::sse::KeepAlive::default())
+                .into_response();
+        }
+    };
 
     // Create chat request
     let chat_request = ollama_rs::generation::chat::request::ChatMessageRequest::new(

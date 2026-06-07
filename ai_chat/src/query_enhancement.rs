@@ -1,10 +1,7 @@
 use log::{debug, error};
-use ollama_rs::{
-    generation::chat::{request::ChatMessageRequest, ChatMessage},
-    Ollama,
-};
+use ollama_rs::generation::chat::{request::ChatMessageRequest, ChatMessage};
 
-use crate::{DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_PORT, DEFAULT_SMALL_MODEL};
+use crate::{make_ollama_client, DEFAULT_SMALL_MODEL};
 
 /// Enhances a user query for better semantic search by expanding it into a more descriptive phrase
 ///
@@ -30,22 +27,10 @@ pub async fn enhance_query_for_embedding(query: &str, model: Option<&str>) -> St
         return query.to_string();
     }
 
-    let ollama_host =
-        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
-    let ollama_port =
-        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-    let ollama_url = format!(
-        "http://{}:{}",
-        ollama_host, ollama_port
-    );
-
-    let ollama = match ollama_url.parse() {
-        Ok(url) => Ollama::from_url(url),
+    let ollama = match make_ollama_client() {
+        Ok(o) => o,
         Err(e) => {
-            error!(
-                "Failed to parse Ollama URL: {}",
-                e
-            );
+            error!("Failed to create Ollama client: {}", e);
             return query.to_string();
         }
     };
