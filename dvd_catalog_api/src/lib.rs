@@ -15,7 +15,7 @@ use database::{
     },
     FullMovie, SearchRequest,
 };
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use models::{
     CsvInput, GenerateStreamEvent, NeedsInputReason, ScoredMovie, TitleValidation,
     ValidateTitlesRequest,
@@ -2139,7 +2139,22 @@ pub async fn save_movie(
         "Saving generated movie to catalog: {}",
         movie.title
     );
-    let full_movie = movie.to_full_movie(0);
+    let mut full_movie = movie.to_full_movie(0);
+
+    let embedding_text = format!(
+        "{} {} {}",
+        movie.title,
+        movie.description,
+        movie.genres.join(" ")
+    );
+    match ai_chat::get_embedding(&embedding_text).await {
+        Ok(embedding) => {
+            full_movie.embedding = Some(embedding);
+        }
+        Err(e) => {
+            warn!("Failed to generate embedding for '{}': {}", movie.title, e);
+        }
+    }
 
     db_state
         .pool

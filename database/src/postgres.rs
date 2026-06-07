@@ -485,9 +485,7 @@ impl InsertMovie for PostgresMovieRepository {
             None => None,
         };
 
-        // TODO: Fix circular dependency - move embedding generation to caller
-        // Get embedding for insert.
-        let embedding: Option<Vec<f32>> = None; // Stub - was: ai_chat::get_embedding(&embedding).await
+        let embedding = full_movie.embedding.clone();
 
         let added_on = full_movie.added_on.and_then(|date_str| {
             // Try parsing as full timestamp first, then fall back to date-only
