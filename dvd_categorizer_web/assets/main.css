@@ -1090,6 +1090,16 @@ body {
     background: rgba(239, 68, 68, 0.2);
 }
 
+.gen-btn-remove-catalog {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+}
+
+.gen-btn-remove-catalog:hover {
+    background: rgba(239, 68, 68, 0.2);
+}
+
 /* Locked card — teal border accent */
 .gen-card-locked {
     border-color: #0891b2;

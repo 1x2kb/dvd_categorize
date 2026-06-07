@@ -111,20 +111,7 @@ pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
                         },
                         "✏ Edit"
                     }
-                    if is_catalog {
-                        button {
-                            class: if disabled { "gen-btn gen-btn-remove gen-btn-disabled" } else { "gen-btn gen-btn-remove" },
-                            onclick: move |evt| {
-                                evt.stop_propagation();
-                                if disabled {
-                                    props.on_disabled_click.call(());
-                                } else {
-                                    props.on_remove.call(());
-                                }
-                            },
-                            "🗑 Remove"
-                        }
-                    } else {
+                    if !is_catalog {
                         button {
                             class: if props.locked { "gen-btn gen-btn-lock gen-btn-lock-active" } else if disabled { "gen-btn gen-btn-lock gen-btn-disabled" } else { "gen-btn gen-btn-lock" },
                             title: if props.locked { "Locked — will not be regenerated" } else { "Unlocked — will be regenerated on next Generate" },
@@ -136,8 +123,20 @@ pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
                                     props.on_lock_toggle.call(!props.locked);
                                 }
                             },
-                            if props.locked { "🔒 Locked" } else { "🔓 Lock" }
+                            if props.locked { "� Locked" } else { "🔓 Lock" }
                         }
+                    }
+                    button {
+                        class: if disabled { "gen-btn gen-btn-remove gen-btn-disabled" } else { "gen-btn gen-btn-remove" },
+                        onclick: move |evt| {
+                            evt.stop_propagation();
+                            if disabled {
+                                props.on_disabled_click.call(());
+                            } else {
+                                props.on_remove.call(());
+                            }
+                        },
+                        "� Remove"
                     }
                 }
             }
