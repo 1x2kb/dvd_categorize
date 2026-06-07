@@ -1,7 +1,9 @@
+use crate::components::toast::{ToastContainer, ToastMessage};
 use dioxus::prelude::*;
 use log::error;
-use models::{AiMovieData, AvailableModel, AvailableModelsResponse, GenerateStreamEvent, NeedsInputReason};
-use crate::components::toast::{ToastContainer, ToastMessage};
+use models::{
+    AiMovieData, AvailableModel, AvailableModelsResponse, GenerateStreamEvent, NeedsInputReason,
+};
 use serde::Serialize;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -26,7 +28,12 @@ pub fn MoviePrompt() -> Element {
     let mut is_loading = use_signal(|| false);
     let mut error_message = use_signal(|| None::<String>);
     let mut generated_movies: Signal<Vec<AiMovieData>> = use_signal(Vec::new);
-    let mut pending_inputs: Signal<Vec<(String, NeedsInputReason)>> = use_signal(Vec::new);
+    let mut pending_inputs: Signal<
+        Vec<(
+            String,
+            NeedsInputReason,
+        )>,
+    > = use_signal(Vec::new);
     let mut toasts: Signal<Vec<ToastMessage>> = use_signal(Vec::new);
     let mut has_results = use_signal(|| false);
     let mut generate_trigger: Signal<u32> = use_signal(|| 0);
@@ -35,42 +42,82 @@ pub fn MoviePrompt() -> Element {
     let mut dismiss_toast = move |id: u32| toasts.with_mut(|v| v.retain(|t| t.id != id));
 
     // Fetch available models on component mount
-    use_effect(move || {
-        spawn(async move {
-            let Ok(base) = get_api_base().await else {
-                error!("Failed to determine API base URL");
-                return;
-            };
-            let url = format!("{}/ai/models", base);
-            match gloo_net::http::Request::get(&url).send().await {
-                Ok(response) => {
-                    if let Ok(parsed) = response.json::<AvailableModelsResponse>().await {
-                        if let Some(first_model) = parsed.models.first() {
-                            if selected_model().is_empty() {
-                                selected_model.set(first_model.name.clone());
+    use_effect(
+        move || {
+            spawn(
+                async move {
+                    let Ok(base) = get_api_base().await else {
+                        error!("Failed to determine API base URL");
+                        return;
+                    };
+                    let url = format!(
+                        "{}/ai/models",
+                        base
+                    );
+                    match gloo_net::http::Request::get(&url)
+                        .send()
+                        .await
+                    {
+                        Ok(response) => {
+                            if let Ok(parsed) = response
+                                .json::<AvailableModelsResponse>()
+                                .await
+                            {
+                                if let Some(first_model) = parsed
+                                    .models
+                                    .first()
+                                {
+                                    if selected_model().is_empty() {
+                                        selected_model.set(
+                                            first_model
+                                                .name
+                                                .clone(),
+                                        );
+                                    }
+                                }
+                                available_models.set(parsed.models);
                             }
                         }
-                        available_models.set(parsed.models);
+                        Err(e) => error!(
+                            "Failed to load available models: {:?}",
+                            e
+                        ),
                     }
-                }
-                Err(e) => error!("Failed to load available models: {:?}", e),
-            }
-        });
-    });
+                },
+            );
+        },
+    );
 
     // Add titles as simple string chips.
     let add_title = move |_: MouseEvent| {
         let raw = title_input();
         let new_titles: Vec<String> = raw
             .split('|')
-            .map(|s| s.trim().to_string())
+            .map(
+                |s| {
+                    s.trim()
+                        .to_string()
+                },
+            )
             .filter(|s| !s.is_empty())
             .collect();
-        if new_titles.is_empty() { return; }
-        let added: Vec<String> = new_titles.into_iter().filter(|t| {
-            !chips().iter().any(|c| c.to_lowercase() == t.to_lowercase())
-        }).collect();
-        if added.is_empty() { title_input.set("".to_string()); return; }
+        if new_titles.is_empty() {
+            return;
+        }
+        let added: Vec<String> = new_titles
+            .into_iter()
+            .filter(
+                |t| {
+                    !chips()
+                        .iter()
+                        .any(|c| c.to_lowercase() == t.to_lowercase())
+                },
+            )
+            .collect();
+        if added.is_empty() {
+            title_input.set("".to_string());
+            return;
+        }
         chips.with_mut(|v| v.extend(added));
         title_input.set("".to_string());
     };
@@ -260,10 +307,17 @@ pub fn MoviePrompt() -> Element {
 pub async fn get_api_base() -> Result<String, String> {
     let window = web_sys::window().ok_or("No window object available")?;
     let location = window.location();
-    let hostname = location.hostname().map_err(|_| "127.0.0.1".to_string())
+    let hostname = location
+        .hostname()
+        .map_err(|_| "127.0.0.1".to_string())
         .unwrap_or_else(|_| "127.0.0.1".to_string());
     let port = std::env::var("server_port").unwrap_or_else(|_| "3000".to_string());
-    Ok(format!("http://{}:{}", hostname, port))
+    Ok(
+        format!(
+            "http://{}:{}",
+            hostname, port
+        ),
+    )
 }
 
 /// Stream movie generation via SSE. Calls `on_movie` for each generated card,
@@ -278,7 +332,15 @@ pub async fn stream_generated_movies(
 ) {
     let base = match get_api_base().await {
         Ok(b) => b,
-        Err(e) => { on_err(format!("API base error: {}", e)); return; }
+        Err(e) => {
+            on_err(
+                format!(
+                    "API base error: {}",
+                    e
+                ),
+            );
+            return;
+        }
     };
     let request = GenerateMoviesRequest {
         titles,
@@ -288,33 +350,81 @@ pub async fn stream_generated_movies(
 
     let body = match serde_json::to_string(&request) {
         Ok(b) => b,
-        Err(e) => { on_err(format!("Serialization error: {}", e)); return; }
+        Err(e) => {
+            on_err(
+                format!(
+                    "Serialization error: {}",
+                    e
+                ),
+            );
+            return;
+        }
     };
 
-    let response = match gloo_net::http::Request::post(&format!("{}/ai/generate-movies-stream", base))
-        .header("Content-Type", "application/json")
-        .body(body)
-        .map_err(|e| format!("Failed to build request: {}", e))
-        .and_then(|r| Ok(r))
-    {
-        Ok(req) => match req.send().await {
-            Ok(r) => r,
-            Err(e) => { on_err(format!("Request failed: {}", e)); return; }
+    let response = match gloo_net::http::Request::post(
+        &format!(
+            "{}/ai/generate-movies-stream",
+            base
+        ),
+    )
+    .header(
+        "Content-Type",
+        "application/json",
+    )
+    .body(body)
+    .map_err(
+        |e| {
+            format!(
+                "Failed to build request: {}",
+                e
+            )
         },
-        Err(e) => { on_err(e); return; }
+    )
+    .and_then(|r| Ok(r))
+    {
+        Ok(req) => match req
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                on_err(
+                    format!(
+                        "Request failed: {}",
+                        e
+                    ),
+                );
+                return;
+            }
+        },
+        Err(e) => {
+            on_err(e);
+            return;
+        }
     };
 
     if !response.ok() {
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        on_err(format!("Server error {}: {}", status, body));
+        let body = response
+            .text()
+            .await
+            .unwrap_or_default();
+        on_err(
+            format!(
+                "Server error {}: {}",
+                status, body
+            ),
+        );
         return;
     }
 
     // Read the SSE stream line-by-line from the raw response body.
     let body_stream = match response.body() {
         Some(s) => s,
-        None => { on_err("No response body".to_string()); return; }
+        None => {
+            on_err("No response body".to_string());
+            return;
+        }
     };
 
     let reader: ReadableStreamDefaultReader = match body_stream
@@ -322,7 +432,10 @@ pub async fn stream_generated_movies(
         .dyn_into()
     {
         Ok(r) => r,
-        Err(_) => { on_err("Failed to create stream reader".to_string()); return; }
+        Err(_) => {
+            on_err("Failed to create stream reader".to_string());
+            return;
+        }
     };
     let mut buf = String::new();
 
@@ -330,36 +443,61 @@ pub async fn stream_generated_movies(
         let chunk = JsFuture::from(reader.read()).await;
         match chunk {
             Err(e) => {
-                on_err(format!("Stream read error: {:?}", e));
+                on_err(
+                    format!(
+                        "Stream read error: {:?}",
+                        e
+                    ),
+                );
                 return;
             }
             Ok(val) => {
-                let done = js_sys::Reflect::get(&val, &"done".into())
-                    .ok()
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
-                if done { break; }
+                let done = js_sys::Reflect::get(
+                    &val,
+                    &"done".into(),
+                )
+                .ok()
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+                if done {
+                    break;
+                }
 
-                let Ok(chunk_val) = js_sys::Reflect::get(&val, &"value".into()) else {
+                let Ok(chunk_val) = js_sys::Reflect::get(
+                    &val,
+                    &"value".into(),
+                ) else {
                     on_err("Failed to read chunk value".to_string());
                     return;
                 };
-                let chunk_u8: js_sys::Uint8Array = chunk_val.dyn_into().expect("Uint8Array");
+                let chunk_u8: js_sys::Uint8Array = chunk_val
+                    .dyn_into()
+                    .expect("Uint8Array");
                 let text = String::from_utf8_lossy(&chunk_u8.to_vec()).into_owned();
                 buf.push_str(&text);
 
                 // SSE lines look like: "data: {...}\n\n" or "event: done\n\n"
                 while let Some(pos) = buf.find("\n\n") {
-                    let block = buf[..pos].trim().to_string();
+                    let block = buf[..pos]
+                        .trim()
+                        .to_string();
                     buf = buf[pos + 2..].to_string();
 
                     for line in block.lines() {
                         if let Some(data) = line.strip_prefix("data:") {
                             let data = data.trim();
-                            if data.is_empty() { continue; }
+                            if data.is_empty() {
+                                continue;
+                            }
                             match serde_json::from_str::<GenerateStreamEvent>(data) {
-                                Ok(GenerateStreamEvent::Movie(movie)) => on_movie(movie, None),
-                                Ok(GenerateStreamEvent::NeedsInput { original, reason, position }) => {
+                                Ok(GenerateStreamEvent::Movie(movie)) => on_movie(
+                                    movie, None,
+                                ),
+                                Ok(GenerateStreamEvent::NeedsInput {
+                                    original,
+                                    reason,
+                                    position,
+                                }) => {
                                     let placeholder = AiMovieData {
                                         title: original.clone(),
                                         year: 0,
@@ -371,15 +509,24 @@ pub async fn stream_generated_movies(
                                         input_title: Some(original.clone()),
                                         position,
                                     };
-                                    on_movie(placeholder, Some(reason));
-                                },
-                                Err(e) => error!("Failed to parse SSE event: {} — {}", e, data),
+                                    on_movie(
+                                        placeholder,
+                                        Some(reason),
+                                    );
+                                }
+                                Err(e) => error!(
+                                    "Failed to parse SSE event: {} — {}",
+                                    e, data
+                                ),
                             }
                         } else if line.starts_with("event: done") {
                             on_done();
                             return;
                         } else if let Some(err) = line.strip_prefix("event: error") {
-                            on_err(err.trim().to_string());
+                            on_err(
+                                err.trim()
+                                    .to_string(),
+                            );
                             return;
                         }
                     }
@@ -389,4 +536,3 @@ pub async fn stream_generated_movies(
     }
     on_done();
 }
-

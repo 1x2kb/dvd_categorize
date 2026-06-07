@@ -1,6 +1,6 @@
 use database::{
-    get_connection_pool, GetMovieById, GetRecentMovies, MockEmbeddingProvider,
-    MockMovieRepository, PostgresMovieRepository, SearchMoviesStructured, StructuredQuery,
+    get_connection_pool, GetMovieById, GetRecentMovies, MockEmbeddingProvider, MockMovieRepository,
+    PostgresMovieRepository, SearchMoviesStructured, StructuredQuery,
 };
 use models::FullMovie;
 

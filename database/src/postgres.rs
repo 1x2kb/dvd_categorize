@@ -29,20 +29,27 @@ impl PostgresMovieRepository {
     }
 
     async fn get_conn(&self) -> Result<Object<AsyncPgConnection>, DatabaseError> {
-        self.pool.get().await.map_err(|e| {
-            DatabaseError::ConnectionError(diesel::ConnectionError::BadConnection(e.to_string()))
-        })
+        self.pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )
     }
 }
 
 impl std::fmt::Debug for PostgresMovieRepository {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PostgresMovieRepository").finish_non_exhaustive()
+        f.debug_struct("PostgresMovieRepository")
+            .finish_non_exhaustive()
     }
 }
 
 impl PostgresMovieRepository {
-
     /// Builds a repository using the `DATABASE_URL` environment variable.
     pub async fn from_env() -> Result<Self, DatabaseError> {
         let pool = crate::get_connection_pool().await?;
@@ -56,54 +63,85 @@ impl PostgresMovieRepository {
         &self,
         query: &str,
         limit: i64,
-    ) -> Result<Vec<(FullMovie, f32)>, DatabaseError> {
+    ) -> Result<
+        Vec<(
+            FullMovie,
+            f32,
+        )>,
+        DatabaseError,
+    > {
         use schema::{actor, director, movie, movie_actor, movie_genre};
 
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         if query.is_empty() {
             return Ok(Vec::new());
         }
 
-        let pattern = format!("%{}%", query.to_lowercase());
+        let pattern = format!(
+            "%{}%",
+            query.to_lowercase()
+        );
 
         // Build query to find movies where query matches any field
         let matching_movies = movie::table
             .left_join(director::table.on(movie::director_id.eq(director::id.nullable())))
-            .select((movie::all_columns, director::all_columns.nullable()))
+            .select((
+                movie::all_columns,
+                director::all_columns.nullable(),
+            ))
             .filter(
                 // Match movie name
-                movie::name.ilike(pattern.clone())
-                // Match actor name (via subquery)
-                .or(movie::id.eq_any(
-                    movie_actor::table
-                        .inner_join(actor::table.on(movie_actor::actor_id.eq(actor::id)))
-                        .select(movie_actor::movie_id)
-                        .filter(actor::name.ilike(pattern.clone()))
-                ))
-                // Match director name
-                .or(director::name.is_not_null().and(
-                    director::name.ilike(pattern.clone())
-                ))
-                // Match genre (via subquery)
-                .or(movie::id.eq_any(
-                    movie_genre::table
-                        .select(movie_genre::movie_id)
-                        .filter(movie_genre::genre.ilike(pattern.clone()))
-                ))
+                movie::name
+                    .ilike(pattern.clone())
+                    // Match actor name (via subquery)
+                    .or(
+                        movie::id.eq_any(
+                            movie_actor::table
+                                .inner_join(actor::table.on(movie_actor::actor_id.eq(actor::id)))
+                                .select(movie_actor::movie_id)
+                                .filter(actor::name.ilike(pattern.clone())),
+                        ),
+                    )
+                    // Match director name
+                    .or(
+                        director::name
+                            .is_not_null()
+                            .and(director::name.ilike(pattern.clone())),
+                    )
+                    // Match genre (via subquery)
+                    .or(
+                        movie::id.eq_any(
+                            movie_genre::table
+                                .select(movie_genre::movie_id)
+                                .filter(movie_genre::genre.ilike(pattern.clone())),
+                        ),
+                    ),
             )
             .limit(limit * 2)
-            .load::<(Movie, Option<Director>)>(&mut conn)
+            .load::<(
+                Movie,
+                Option<Director>,
+            )>(&mut conn)
             .await?;
 
         // Score results
-        let mut scored_results: Vec<(FullMovie, f32)> = Vec::new();
+        let mut scored_results: Vec<(
+            FullMovie,
+            f32,
+        )> = Vec::new();
 
         for (movie_row, director) in matching_movies {
             let mut score: f32 = 0.0;
 
             // Title scoring
-            if movie_row.name.to_lowercase().contains(&query.to_lowercase()) {
+            if movie_row
+                .name
+                .to_lowercase()
+                .contains(&query.to_lowercase())
+            {
                 score += 100.0;
             }
 
@@ -117,7 +155,11 @@ impl PostgresMovieRepository {
 
             // Actor scoring
             for movie_actor in &movie_actors {
-                if movie_actor.name.to_lowercase().contains(&query.to_lowercase()) {
+                if movie_actor
+                    .name
+                    .to_lowercase()
+                    .contains(&query.to_lowercase())
+                {
                     score += 20.0;
                     break;
                 }
@@ -125,7 +167,10 @@ impl PostgresMovieRepository {
 
             // Director scoring
             if let Some(ref d) = director {
-                if d.name.to_lowercase().contains(&query.to_lowercase()) {
+                if d.name
+                    .to_lowercase()
+                    .contains(&query.to_lowercase())
+                {
                     score += 25.0;
                 }
             }
@@ -139,7 +184,10 @@ impl PostgresMovieRepository {
 
             // Genre scoring
             for genre in &movie_genres {
-                if genre.to_lowercase().contains(&query.to_lowercase()) {
+                if genre
+                    .to_lowercase()
+                    .contains(&query.to_lowercase())
+                {
                     score += 15.0;
                     break;
                 }
@@ -152,12 +200,19 @@ impl PostgresMovieRepository {
                     movie_actors,
                     movie_genres,
                 ));
-                scored_results.push((full_movie, score));
+                scored_results.push((
+                    full_movie, score,
+                ));
             }
         }
 
         // Sort by score descending
-        scored_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored_results.sort_by(
+            |a, b| {
+                b.1.partial_cmp(&a.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            },
+        );
         scored_results.truncate(limit as usize);
 
         Ok(scored_results)
@@ -171,7 +226,9 @@ impl PostgresMovieRepository {
         let session_id = uuid::Uuid::new_v4();
         let new_session = NewChatSession { session_id };
 
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         diesel::insert_into(chat_sessions::table)
             .values(&new_session)
@@ -187,7 +244,9 @@ impl PostgresMovieRepository {
     ) -> Result<Vec<models::ChatMessage>, DatabaseError> {
         use models::schema::chat_messages;
 
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         chat_messages::table
             .filter(chat_messages::session_id.eq(session_id))
@@ -203,7 +262,9 @@ impl PostgresMovieRepository {
     ) -> Result<(), DatabaseError> {
         use models::schema::{chat_messages, chat_sessions};
 
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         diesel::insert_into(chat_messages::table)
             .values(&message)
@@ -223,7 +284,9 @@ impl PostgresMovieRepository {
     pub async fn list_chat_sessions(&self) -> Result<Vec<models::ChatSession>, DatabaseError> {
         use models::schema::chat_sessions;
 
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         chat_sessions::table
             .order(chat_sessions::updated_at.desc())
@@ -236,7 +299,9 @@ impl PostgresMovieRepository {
         &self,
         query: &models::StructuredQuery,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         crate::structured_search::search_movies_structured(
             query, &mut conn,
@@ -251,7 +316,9 @@ impl PostgresMovieRepository {
 #[async_trait]
 impl GetAllMovies for PostgresMovieRepository {
     async fn get_all(&self) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         let movies = schema::movie::table
             .left_join(schema::director::table)
@@ -299,7 +366,9 @@ impl GetAllMovies for PostgresMovieRepository {
 #[async_trait]
 impl GetMovieById for PostgresMovieRepository {
     async fn get_by_id(&self, id: i32) -> Result<FullMovie, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         let (movie, director) = schema::movie::table
             .find(id)
@@ -338,7 +407,9 @@ impl GetMoviesByIds for PostgresMovieRepository {
             return Ok(Vec::new());
         }
 
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         // Get base movie data with directors (1:1 relationship via LEFT JOIN)
         let movies_with_directors = schema::movie::table
@@ -463,7 +534,9 @@ impl GetMoviesByIds for PostgresMovieRepository {
 #[async_trait]
 impl InsertMovie for PostgresMovieRepository {
     async fn insert(&self, full_movie: FullMovie) -> Result<FullMovie, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         let director_id: Option<i32> = match full_movie.director {
             Some(director) => {
@@ -600,7 +673,9 @@ impl InsertMovies for PostgresMovieRepository {
         )>,
         DatabaseError,
     > {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         diesel::insert_into(schema::movie::table)
             .values(new_movies)
@@ -627,7 +702,9 @@ impl UpdateMovieLocation for PostgresMovieRepository {
         movie_id: i32,
         new_location: String,
     ) -> Result<(), DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         diesel::update(schema::movie::table.find(movie_id))
             .set(schema::movie::location.eq(new_location))
@@ -646,7 +723,9 @@ impl SearchMoviesByEmbedding for PostgresMovieRepository {
         embedding: Vec<f32>,
         limit: i64,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         let movie_ids: Vec<i32> = schema::movie::table
             .select(schema::movie::id)
@@ -674,7 +753,9 @@ impl SearchMoviesByEmbedding for PostgresMovieRepository {
 #[async_trait]
 impl GetRecentMovies for PostgresMovieRepository {
     async fn get_recent(&self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         let movie_ids: Vec<i32> = schema::movie::table
             .select(schema::movie::id)
@@ -703,7 +784,9 @@ impl GetMoviesByReleaseYear for PostgresMovieRepository {
         max_year: i32,
         limit: i64,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         let movie_ids: Vec<i32> = schema::movie::table
             .select(schema::movie::id)
@@ -731,7 +814,9 @@ impl GetMoviesByReleaseYear for PostgresMovieRepository {
 #[async_trait]
 impl RandomMovies for PostgresMovieRepository {
     async fn get_random(&self, count: i64) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         let movie_ids: Vec<i32> = schema::movie::table
             .select(schema::movie::id)
@@ -755,7 +840,9 @@ impl RandomMovies for PostgresMovieRepository {
 #[async_trait]
 impl GetUnknownLocationMovies for PostgresMovieRepository {
     async fn get_unknown_location(&self, limit: i64) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         let movie_ids: Vec<i32> = schema::movie::table
             .select(schema::movie::id)
@@ -783,7 +870,9 @@ impl SearchMoviesStructured for PostgresMovieRepository {
         &self,
         query: &StructuredQuery,
     ) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         structured_search::search_movies_structured(
             query, &mut conn,
@@ -796,7 +885,9 @@ impl SearchMoviesStructured for PostgresMovieRepository {
 #[async_trait]
 impl GetUniqueLocations for PostgresMovieRepository {
     async fn unique_locations(&self) -> Result<Vec<String>, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         schema::movie::table
             .select(schema::movie::location)
@@ -810,7 +901,9 @@ impl GetUniqueLocations for PostgresMovieRepository {
 #[async_trait]
 impl MoviesByLocation for PostgresMovieRepository {
     async fn movies_by_location(&self, location: &str) -> Result<Vec<FullMovie>, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         let movie_ids: Vec<i32> = schema::movie::table
             .select(schema::movie::id)
@@ -842,9 +935,16 @@ impl PostgresActorRepository {
     }
 
     async fn get_conn(&self) -> Result<Object<AsyncPgConnection>, DatabaseError> {
-        self.pool.get().await.map_err(|e| {
-            DatabaseError::ConnectionError(diesel::ConnectionError::BadConnection(e.to_string()))
-        })
+        self.pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )
     }
 }
 
@@ -862,7 +962,9 @@ impl InsertActors for PostgresActorRepository {
         )>,
         DatabaseError,
     > {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         diesel::insert_into(schema::actor::table)
             .values(actors)
@@ -885,7 +987,9 @@ impl InsertActors for PostgresActorRepository {
 #[async_trait]
 impl GetActorsForMovie for PostgresActorRepository {
     async fn get_for_movie(&self, movie: &Movie) -> Result<Vec<Actor>, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         Ok(
             crate::actors_for_movie(
@@ -902,7 +1006,9 @@ impl InsertMovieActorAssociations for PostgresActorRepository {
         &self,
         movie_actors: &[NewMovieActor],
     ) -> Result<usize, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         diesel::insert_into(schema::movie_actor::table)
             .values(movie_actors)
@@ -933,9 +1039,16 @@ impl PostgresDirectorRepository {
     }
 
     async fn get_conn(&self) -> Result<Object<AsyncPgConnection>, DatabaseError> {
-        self.pool.get().await.map_err(|e| {
-            DatabaseError::ConnectionError(diesel::ConnectionError::BadConnection(e.to_string()))
-        })
+        self.pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )
     }
 }
 
@@ -955,7 +1068,9 @@ impl InsertDirectors for PostgresDirectorRepository {
     > {
         use schema::director::dsl::*;
 
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         let mut result = Vec::with_capacity(directors.len());
 
@@ -997,9 +1112,16 @@ impl PostgresGenreRepository {
     }
 
     async fn get_conn(&self) -> Result<Object<AsyncPgConnection>, DatabaseError> {
-        self.pool.get().await.map_err(|e| {
-            DatabaseError::ConnectionError(diesel::ConnectionError::BadConnection(e.to_string()))
-        })
+        self.pool
+            .get()
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::ConnectionError(
+                        diesel::ConnectionError::BadConnection(e.to_string()),
+                    )
+                },
+            )
     }
 }
 
@@ -1010,7 +1132,9 @@ impl GetAllGenres for PostgresGenreRepository {
     async fn get_all(&self) -> Result<Vec<String>, DatabaseError> {
         use schema::movie_genre::dsl::*;
 
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         movie_genre
             .select(genre)
@@ -1024,7 +1148,9 @@ impl GetAllGenres for PostgresGenreRepository {
 #[async_trait]
 impl GetGenresForMovie for PostgresGenreRepository {
     async fn get_for_movie(&self, movie: &Movie) -> Result<Vec<String>, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         Ok(
             crate::genres_for_movie(
@@ -1041,7 +1167,9 @@ impl InsertMovieGenreAssociations for PostgresGenreRepository {
         &self,
         movie_genres: &[NewMovieGenre],
     ) -> Result<usize, DatabaseError> {
-        let mut conn = self.get_conn().await?;
+        let mut conn = self
+            .get_conn()
+            .await?;
 
         diesel::insert_into(schema::movie_genre::table)
             .values(movie_genres)

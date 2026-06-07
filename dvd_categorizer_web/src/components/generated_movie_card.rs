@@ -23,9 +23,14 @@ pub struct GeneratedMovieCardProps {
 
 #[component]
 pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
-    let is_catalog = props.movie.already_in_catalog;
+    let is_catalog = props
+        .movie
+        .already_in_catalog;
     let disabled = props.disabled;
-    let actors_str = props.movie.actors.join(", ");
+    let actors_str = props
+        .movie
+        .actors
+        .join(", ");
 
     rsx! {
         div {
@@ -153,12 +158,54 @@ pub struct EditableMovieCardProps {
 
 #[component]
 pub fn EditableMovieCard(props: EditableMovieCardProps) -> Element {
-    let mut title = use_signal(|| props.movie.title.clone());
-    let mut year = use_signal(|| props.movie.year.to_string());
-    let mut director = use_signal(|| props.movie.director.clone());
-    let mut actors = use_signal(|| props.movie.actors.join(", "));
-    let mut genres = use_signal(|| props.movie.genres.join(", "));
-    let mut description = use_signal(|| props.movie.description.clone());
+    let mut title = use_signal(
+        || {
+            props
+                .movie
+                .title
+                .clone()
+        },
+    );
+    let mut year = use_signal(
+        || {
+            props
+                .movie
+                .year
+                .to_string()
+        },
+    );
+    let mut director = use_signal(
+        || {
+            props
+                .movie
+                .director
+                .clone()
+        },
+    );
+    let mut actors = use_signal(
+        || {
+            props
+                .movie
+                .actors
+                .join(", ")
+        },
+    );
+    let mut genres = use_signal(
+        || {
+            props
+                .movie
+                .genres
+                .join(", ")
+        },
+    );
+    let mut description = use_signal(
+        || {
+            props
+                .movie
+                .description
+                .clone()
+        },
+    );
 
     rsx! {
         div {

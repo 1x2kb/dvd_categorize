@@ -21,10 +21,15 @@ pub async fn parse_query_to_structured(
         query
     );
 
-    let ollama = make_ollama_client().map_err(|e| {
-        error!("{}", e);
-        e
-    })?;
+    let ollama = make_ollama_client().map_err(
+        |e| {
+            error!(
+                "{}",
+                e
+            );
+            e
+        },
+    )?;
 
     let system_prompt = r#"You are a movie search query parser. Your job is to extract structured search criteria from natural language queries.
 

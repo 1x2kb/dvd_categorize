@@ -12,7 +12,10 @@ use models::{FullMovie, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovie
 /// Adds a Vec of FullMovies in bulk to the database.
 ///
 /// TODO: Needs refactor
-pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>, pool: &Pool<AsyncPgConnection>) -> Result<(), Box<dyn Error>> {
+pub async fn insert_full_movies(
+    mut full_movies: Vec<FullMovie>,
+    pool: &Pool<AsyncPgConnection>,
+) -> Result<(), Box<dyn Error>> {
     // Validate all dates before proceeding with insert
     for (index, movie) in full_movies
         .iter()

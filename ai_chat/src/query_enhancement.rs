@@ -30,7 +30,10 @@ pub async fn enhance_query_for_embedding(query: &str, model: Option<&str>) -> St
     let ollama = match make_ollama_client() {
         Ok(o) => o,
         Err(e) => {
-            error!("Failed to create Ollama client: {}", e);
+            error!(
+                "Failed to create Ollama client: {}",
+                e
+            );
             return query.to_string();
         }
     };

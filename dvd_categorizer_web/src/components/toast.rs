@@ -18,13 +18,28 @@ pub struct ToastMessage {
 
 impl ToastMessage {
     pub fn info(id: u32, message: impl Into<String>) -> Self {
-        Self { id, kind: ToastKind::Info, message: message.into(), duration_ms: 4000 }
+        Self {
+            id,
+            kind: ToastKind::Info,
+            message: message.into(),
+            duration_ms: 4000,
+        }
     }
     pub fn success(id: u32, message: impl Into<String>) -> Self {
-        Self { id, kind: ToastKind::Success, message: message.into(), duration_ms: 3000 }
+        Self {
+            id,
+            kind: ToastKind::Success,
+            message: message.into(),
+            duration_ms: 3000,
+        }
     }
     pub fn warning(id: u32, message: impl Into<String>) -> Self {
-        Self { id, kind: ToastKind::Warning, message: message.into(), duration_ms: 0 }
+        Self {
+            id,
+            kind: ToastKind::Warning,
+            message: message.into(),
+            duration_ms: 0,
+        }
     }
 }
 
@@ -84,19 +99,25 @@ struct ToastItemProps {
 
 #[component]
 fn ToastItem(props: ToastItemProps) -> Element {
-    let on_dismiss = props.on_dismiss.clone();
+    let on_dismiss = props
+        .on_dismiss
+        .clone();
     let id = props.toast_id;
     let duration = props.duration_ms;
 
-    use_effect(move || {
-        if duration > 0 {
-            let on_dismiss = on_dismiss.clone();
-            spawn(async move {
-                gloo_timers::future::TimeoutFuture::new(duration).await;
-                on_dismiss.call(id);
-            });
-        }
-    });
+    use_effect(
+        move || {
+            if duration > 0 {
+                let on_dismiss = on_dismiss.clone();
+                spawn(
+                    async move {
+                        gloo_timers::future::TimeoutFuture::new(duration).await;
+                        on_dismiss.call(id);
+                    },
+                );
+            }
+        },
+    );
 
     rsx! {
         div {

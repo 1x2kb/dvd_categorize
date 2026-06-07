@@ -43,7 +43,7 @@ pub use prompts::*;
 use std::sync::Arc;
 
 use log::{debug, error, info};
-use models::{AiMovieData, dvd_filters::DvdFilters, question::AiAction, FullMovie};
+use models::{dvd_filters::DvdFilters, question::AiAction, AiMovieData, FullMovie};
 use ollama_rs::{
     generation::{
         chat::{request::ChatMessageRequest, ChatMessage},
@@ -75,10 +75,20 @@ const DEFAULT_CONTEXT_WINDOW: u64 = 64000;
 pub fn make_ollama_client() -> Result<Ollama, String> {
     let host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
     let port = std::env::var("OLLAMA_PORT").unwrap_or_else(|_| DEFAULT_OLLAMA_PORT.to_string());
-    let url = format!("http://{}:{}", host, port);
+    let url = format!(
+        "http://{}:{}",
+        host, port
+    );
     url.parse()
         .map(Ollama::from_url)
-        .map_err(|e| format!("Failed to parse Ollama URL '{}': {}", url, e))
+        .map_err(
+            |e| {
+                format!(
+                    "Failed to parse Ollama URL '{}': {}",
+                    url, e
+                )
+            },
+        )
 }
 
 /// Client for interacting with Ollama AI services
@@ -252,11 +262,16 @@ pub async fn get_embedding(text: &str) -> Result<Vec<f32>, ollama_rs::error::Oll
 pub async fn list_models() -> Result<Vec<models::AvailableModel>, String> {
     info!("Fetching available Ollama models");
 
-    let ollama = make_ollama_client().map_err(|e| {
-        let msg = format!("Ollama client error: {}", e);
-        log::error!("{}", msg);
-        msg
-    })?;
+    let ollama = make_ollama_client().map_err(
+        |e| {
+            let msg = format!(
+                "Ollama client error: {}",
+                e
+            );
+            log::error!("{}", msg);
+            msg
+        },
+    )?;
 
     match ollama
         .list_local_models()
@@ -307,11 +322,16 @@ pub async fn pull_model(model_name: &str) -> Result<String, String> {
         model_name
     );
 
-    let ollama = make_ollama_client().map_err(|e| {
-        let msg = format!("Ollama client error: {}", e);
-        log::error!("{}", msg);
-        msg
-    })?;
+    let ollama = make_ollama_client().map_err(
+        |e| {
+            let msg = format!(
+                "Ollama client error: {}",
+                e
+            );
+            log::error!("{}", msg);
+            msg
+        },
+    )?;
 
     match ollama
         .pull_model(
@@ -350,12 +370,20 @@ pub async fn generate_movies_structured(
     titles: &[String],
     model: Option<&str>,
 ) -> Result<Vec<AiMovieData>, String> {
-    info!("Generating structured movie data for {} titles", titles.len());
+    info!(
+        "Generating structured movie data for {} titles",
+        titles.len()
+    );
 
-    let ollama = make_ollama_client().map_err(|e| {
-        error!("{}", e);
-        e
-    })?;
+    let ollama = make_ollama_client().map_err(
+        |e| {
+            error!(
+                "{}",
+                e
+            );
+            e
+        },
+    )?;
 
     let titles_text = titles.join("\n");
     let system_prompt = r#"You are a movie database assistant. For each movie title provided, generate complete movie information.
@@ -381,10 +409,16 @@ Example for "The Matrix":
   "director": "The Wachowskis"
 }]"#;
 
-    let user_message = format!("Generate movie data for these titles:\n{}", titles_text);
+    let user_message = format!(
+        "Generate movie data for these titles:\n{}",
+        titles_text
+    );
     let model_name = model.unwrap_or(DEFAULT_CHAT_MODEL);
 
-    debug!("Using model for movie generation: {}", model_name);
+    debug!(
+        "Using model for movie generation: {}",
+        model_name
+    );
 
     let request = ChatMessageRequest::new(
         model_name.to_string(),
@@ -395,26 +429,50 @@ Example for "The Matrix":
     )
     .format(crate::schema::ai_movie_data_array_schema());
 
-    match ollama.send_chat_messages(request).await {
+    match ollama
+        .send_chat_messages(request)
+        .await
+    {
         Ok(response) => {
-            let content = response.message.content.trim();
-            debug!("AI response: {}", content);
+            let content = response
+                .message
+                .content
+                .trim();
+            debug!(
+                "AI response: {}",
+                content
+            );
 
             match serde_json::from_str::<Vec<AiMovieData>>(content) {
                 Ok(movies) => {
-                    info!("Successfully generated {} movies", movies.len());
+                    info!(
+                        "Successfully generated {} movies",
+                        movies.len()
+                    );
                     Ok(movies)
                 }
                 Err(e) => {
-                    let error_msg = format!("Failed to parse JSON response: {}. Content was: {}", e, content);
-                    error!("{}", error_msg);
+                    let error_msg = format!(
+                        "Failed to parse JSON response: {}. Content was: {}",
+                        e, content
+                    );
+                    error!(
+                        "{}",
+                        error_msg
+                    );
                     Err(error_msg)
                 }
             }
         }
         Err(e) => {
-            let error_msg = format!("Failed to get AI response: {}", e);
-            error!("{}", error_msg);
+            let error_msg = format!(
+                "Failed to get AI response: {}",
+                e
+            );
+            error!(
+                "{}",
+                error_msg
+            );
             Err(error_msg)
         }
     }
@@ -428,15 +486,34 @@ pub async fn correct_movie_titles(
     titles: &[String],
     model: Option<&str>,
 ) -> Result<Vec<String>, String> {
-    debug!("Starting title correction for {} titles: {:?}", titles.len(), titles);
+    debug!(
+        "Starting title correction for {} titles: {:?}",
+        titles.len(),
+        titles
+    );
 
-    let ollama = make_ollama_client().map_err(|e| {
-        error!("{}", e);
-        e
-    })?;
+    let ollama = make_ollama_client().map_err(
+        |e| {
+            error!(
+                "{}",
+                e
+            );
+            e
+        },
+    )?;
 
-    let numbered = titles.iter().enumerate()
-        .map(|(i, t)| format!("{}. {}", i + 1, t))
+    let numbered = titles
+        .iter()
+        .enumerate()
+        .map(
+            |(i, t)| {
+                format!(
+                    "{}. {}",
+                    i + 1,
+                    t
+                )
+            },
+        )
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -457,17 +534,31 @@ Input titles:\n{}\n\nJSON array only, no explanation:",
         numbered
     );
 
-    debug!("Sending title correction prompt to AI (model: {:?})", model);
+    debug!(
+        "Sending title correction prompt to AI (model: {:?})",
+        model
+    );
 
     let request = ChatMessageRequest::new(
-        model.unwrap_or(DEFAULT_CHAT_MODEL).to_string(),
+        model
+            .unwrap_or(DEFAULT_CHAT_MODEL)
+            .to_string(),
         vec![ChatMessage::user(prompt)],
     );
 
-    match ollama.send_chat_messages(request).await {
+    match ollama
+        .send_chat_messages(request)
+        .await
+    {
         Ok(response) => {
-            let content = response.message.content.trim();
-            debug!("Raw AI response for title correction: '{}'", content);
+            let content = response
+                .message
+                .content
+                .trim();
+            debug!(
+                "Raw AI response for title correction: '{}'",
+                content
+            );
 
             // Strip markdown code fences if present
             let json = content
@@ -476,37 +567,80 @@ Input titles:\n{}\n\nJSON array only, no explanation:",
                 .trim_end_matches("```")
                 .trim();
 
-            debug!("Stripped JSON for parsing: '{}'", json);
+            debug!(
+                "Stripped JSON for parsing: '{}'",
+                json
+            );
 
             match serde_json::from_str::<Vec<String>>(json) {
                 Ok(corrected) => {
-                    debug!("Successfully parsed {} corrected titles: {:?}", corrected.len(), corrected);
+                    debug!(
+                        "Successfully parsed {} corrected titles: {:?}",
+                        corrected.len(),
+                        corrected
+                    );
 
                     // Log each individual correction for detailed debugging
-                    for (i, (orig, corr)) in titles.iter().zip(corrected.iter()).enumerate() {
+                    for (i, (orig, corr)) in titles
+                        .iter()
+                        .zip(corrected.iter())
+                        .enumerate()
+                    {
                         if orig != corr {
-                            debug!("Title {}: '{}' -> '{}' (CHANGED)", i, orig, corr);
+                            debug!(
+                                "Title {}: '{}' -> '{}' (CHANGED)",
+                                i, orig, corr
+                            );
                         } else {
-                            debug!("Title {}: '{}' (unchanged)", i, orig);
+                            debug!(
+                                "Title {}: '{}' (unchanged)",
+                                i, orig
+                            );
                         }
                     }
 
                     if corrected.len() != titles.len() {
-                        error!("Title correction count mismatch: sent {}, received {}", titles.len(), corrected.len());
-                        return Err(format!("Response count mismatch: expected {} titles, got {}", titles.len(), corrected.len()));
+                        error!(
+                            "Title correction count mismatch: sent {}, received {}",
+                            titles.len(),
+                            corrected.len()
+                        );
+                        return Err(
+                            format!(
+                                "Response count mismatch: expected {} titles, got {}",
+                                titles.len(),
+                                corrected.len()
+                            ),
+                        );
                     }
 
                     Ok(corrected)
                 }
                 Err(e) => {
-                    error!("Failed to parse title corrections JSON: {}. Raw content: '{}'", e, json);
-                    Err(format!("Failed to parse title corrections: {}. Content: {}", e, json))
+                    error!(
+                        "Failed to parse title corrections JSON: {}. Raw content: '{}'",
+                        e, json
+                    );
+                    Err(
+                        format!(
+                            "Failed to parse title corrections: {}. Content: {}",
+                            e, json
+                        ),
+                    )
                 }
             }
         }
         Err(e) => {
-            error!("Failed to get AI response for title correction: {}", e);
-            Err(format!("Failed to get AI response: {}", e))
+            error!(
+                "Failed to get AI response for title correction: {}",
+                e
+            );
+            Err(
+                format!(
+                    "Failed to get AI response: {}",
+                    e
+                ),
+            )
         }
     }
 }
@@ -517,10 +651,15 @@ pub async fn generate_movie_single(
     title: &str,
     model: Option<&str>,
 ) -> Result<AiMovieData, String> {
-    let ollama = make_ollama_client().map_err(|e| {
-        error!("{}", e);
-        e
-    })?;
+    let ollama = make_ollama_client().map_err(
+        |e| {
+            error!(
+                "{}",
+                e
+            );
+            e
+        },
+    )?;
 
     let system_prompt = r#"You are a movie database assistant. Generate complete movie information for the title provided.
 
@@ -535,21 +674,45 @@ Provide:
 CRITICAL: Respond with a single valid JSON object matching the exact schema."#;
 
     let request = ChatMessageRequest::new(
-        model.unwrap_or(DEFAULT_CHAT_MODEL).to_string(),
+        model
+            .unwrap_or(DEFAULT_CHAT_MODEL)
+            .to_string(),
         vec![
             ChatMessage::system(system_prompt.to_string()),
-            ChatMessage::user(format!("Generate movie data for: {}", title)),
+            ChatMessage::user(
+                format!(
+                    "Generate movie data for: {}",
+                    title
+                ),
+            ),
         ],
     )
     .format(crate::schema::ai_movie_data_schema());
 
-    match ollama.send_chat_messages(request).await {
+    match ollama
+        .send_chat_messages(request)
+        .await
+    {
         Ok(response) => {
-            let content = response.message.content.trim();
-            serde_json::from_str::<AiMovieData>(content)
-                .map_err(|e| format!("Failed to parse JSON: {}. Content: {}", e, content))
+            let content = response
+                .message
+                .content
+                .trim();
+            serde_json::from_str::<AiMovieData>(content).map_err(
+                |e| {
+                    format!(
+                        "Failed to parse JSON: {}. Content: {}",
+                        e, content
+                    )
+                },
+            )
         }
-        Err(e) => Err(format!("Failed to get AI response: {}", e)),
+        Err(e) => Err(
+            format!(
+                "Failed to get AI response: {}",
+                e
+            ),
+        ),
     }
 }
 
@@ -561,7 +724,12 @@ pub async fn scrape_single(title: &str) -> String {
     scraped
         .into_iter()
         .next()
-        .filter(|ctx| !ctx.context.is_empty())
+        .filter(
+            |ctx| {
+                !ctx.context
+                    .is_empty()
+            },
+        )
         .map(|ctx| ctx.context)
         .unwrap_or_else(|| "No web context found. Use your best knowledge.".to_string())
 }
@@ -575,10 +743,15 @@ pub async fn generate_movie_with_context(
     rag_context: String,
     model: Option<&str>,
 ) -> Result<AiMovieData, String> {
-    let ollama = make_ollama_client().map_err(|e| {
-        error!("{}", e);
-        e
-    })?;
+    let ollama = make_ollama_client().map_err(
+        |e| {
+            error!(
+                "{}",
+                e
+            );
+            e
+        },
+    )?;
 
     let system_prompt = format!(
         r#"You are a movie database assistant. Generate complete movie information for the title provided.
@@ -602,21 +775,45 @@ CRITICAL: Respond with a single valid JSON object matching the exact schema."#,
     );
 
     let request = ChatMessageRequest::new(
-        model.unwrap_or(DEFAULT_CHAT_MODEL).to_string(),
+        model
+            .unwrap_or(DEFAULT_CHAT_MODEL)
+            .to_string(),
         vec![
             ChatMessage::system(system_prompt),
-            ChatMessage::user(format!("Generate movie data for: {}", title)),
+            ChatMessage::user(
+                format!(
+                    "Generate movie data for: {}",
+                    title
+                ),
+            ),
         ],
     )
     .format(crate::schema::ai_movie_data_schema());
 
-    match ollama.send_chat_messages(request).await {
+    match ollama
+        .send_chat_messages(request)
+        .await
+    {
         Ok(response) => {
-            let content = response.message.content.trim();
-            serde_json::from_str::<AiMovieData>(content)
-                .map_err(|e| format!("Failed to parse JSON: {}. Content: {}", e, content))
+            let content = response
+                .message
+                .content
+                .trim();
+            serde_json::from_str::<AiMovieData>(content).map_err(
+                |e| {
+                    format!(
+                        "Failed to parse JSON: {}. Content: {}",
+                        e, content
+                    )
+                },
+            )
         }
-        Err(e) => Err(format!("Failed to get AI response: {}", e)),
+        Err(e) => Err(
+            format!(
+                "Failed to get AI response: {}",
+                e
+            ),
+        ),
     }
 }
 
@@ -629,10 +826,15 @@ pub async fn generate_movie_single_with_rag(
 ) -> Result<AiMovieData, String> {
     let rag_context = scrape_single(title).await;
 
-    let ollama = make_ollama_client().map_err(|e| {
-        error!("{}", e);
-        e
-    })?;
+    let ollama = make_ollama_client().map_err(
+        |e| {
+            error!(
+                "{}",
+                e
+            );
+            e
+        },
+    )?;
 
     let system_prompt = format!(
         r#"You are a movie database assistant. Generate complete movie information for the title provided.
@@ -656,21 +858,45 @@ CRITICAL: Respond with a single valid JSON object matching the exact schema."#,
     );
 
     let request = ChatMessageRequest::new(
-        model.unwrap_or(DEFAULT_CHAT_MODEL).to_string(),
+        model
+            .unwrap_or(DEFAULT_CHAT_MODEL)
+            .to_string(),
         vec![
             ChatMessage::system(system_prompt),
-            ChatMessage::user(format!("Generate movie data for: {}", title)),
+            ChatMessage::user(
+                format!(
+                    "Generate movie data for: {}",
+                    title
+                ),
+            ),
         ],
     )
     .format(crate::schema::ai_movie_data_schema());
 
-    match ollama.send_chat_messages(request).await {
+    match ollama
+        .send_chat_messages(request)
+        .await
+    {
         Ok(response) => {
-            let content = response.message.content.trim();
-            serde_json::from_str::<AiMovieData>(content)
-                .map_err(|e| format!("Failed to parse JSON: {}. Content: {}", e, content))
+            let content = response
+                .message
+                .content
+                .trim();
+            serde_json::from_str::<AiMovieData>(content).map_err(
+                |e| {
+                    format!(
+                        "Failed to parse JSON: {}. Content: {}",
+                        e, content
+                    )
+                },
+            )
         }
-        Err(e) => Err(format!("Failed to get AI response: {}", e)),
+        Err(e) => Err(
+            format!(
+                "Failed to get AI response: {}",
+                e
+            ),
+        ),
     }
 }
 
@@ -694,20 +920,33 @@ pub async fn generate_movies_structured_with_rag(
 
     let scraped = web_scraper::scrape_movie_contexts(titles).await;
 
-    let ollama = make_ollama_client().map_err(|e| {
-        error!("{}", e);
-        e
-    })?;
+    let ollama = make_ollama_client().map_err(
+        |e| {
+            error!(
+                "{}",
+                e
+            );
+            e
+        },
+    )?;
 
     let mut rag_sections: Vec<String> = Vec::new();
     for ctx in &scraped {
-        if !ctx.context.is_empty() {
-            rag_sections.push(format!(
-                "=== Wikipedia context for \"{}\" ===\n{}\n",
-                ctx.title, ctx.context
-            ));
+        if !ctx
+            .context
+            .is_empty()
+        {
+            rag_sections.push(
+                format!(
+                    "=== Wikipedia context for \"{}\" ===\n{}\n",
+                    ctx.title, ctx.context
+                ),
+            );
         } else {
-            info!("[internet RAG] No web context found for '{}'", ctx.title);
+            info!(
+                "[internet RAG] No web context found for '{}'",
+                ctx.title
+            );
         }
     }
 
@@ -748,10 +987,16 @@ Each object must match the exact schema requested."#,
         rag_context
     );
 
-    let user_message = format!("Generate movie data for these titles:\n{}", titles_text);
+    let user_message = format!(
+        "Generate movie data for these titles:\n{}",
+        titles_text
+    );
     let model_name = model.unwrap_or(DEFAULT_CHAT_MODEL);
 
-    debug!("[internet RAG] Using model: {}", model_name);
+    debug!(
+        "[internet RAG] Using model: {}",
+        model_name
+    );
 
     let request = ChatMessageRequest::new(
         model_name.to_string(),
@@ -762,10 +1007,19 @@ Each object must match the exact schema requested."#,
     )
     .format(crate::schema::ai_movie_data_array_schema());
 
-    match ollama.send_chat_messages(request).await {
+    match ollama
+        .send_chat_messages(request)
+        .await
+    {
         Ok(response) => {
-            let content = response.message.content.trim();
-            debug!("[internet RAG] AI response: {}", content);
+            let content = response
+                .message
+                .content
+                .trim();
+            debug!(
+                "[internet RAG] AI response: {}",
+                content
+            );
 
             match serde_json::from_str::<Vec<AiMovieData>>(content) {
                 Ok(movies) => {
@@ -780,14 +1034,23 @@ Each object must match the exact schema requested."#,
                         "Failed to parse JSON response: {}. Content was: {}",
                         e, content
                     );
-                    error!("{}", error_msg);
+                    error!(
+                        "{}",
+                        error_msg
+                    );
                     Err(error_msg)
                 }
             }
         }
         Err(e) => {
-            let error_msg = format!("Failed to get AI response: {}", e);
-            error!("{}", error_msg);
+            let error_msg = format!(
+                "Failed to get AI response: {}",
+                e
+            );
+            error!(
+                "{}",
+                error_msg
+            );
             Err(error_msg)
         }
     }

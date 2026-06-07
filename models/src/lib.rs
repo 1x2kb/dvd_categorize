@@ -304,7 +304,11 @@ pub enum GenerateStreamEvent {
     /// A fully generated movie card.
     Movie(AiMovieData),
     /// This title needs user input before generation can proceed.
-    NeedsInput { original: String, reason: NeedsInputReason, position: usize },
+    NeedsInput {
+        original: String,
+        reason: NeedsInputReason,
+        position: usize,
+    },
 }
 
 /// Request body for the /ai/validate-titles endpoint.
@@ -354,23 +358,46 @@ impl AiMovieData {
     /// Convert AiMovieData to FullMovie for display
     pub fn to_full_movie(&self, id: i32) -> FullMovie {
         let display_name = if self.year == 0 {
-            self.title.clone()
+            self.title
+                .clone()
         } else {
-            format!("{} ({})", self.title, self.year)
+            format!(
+                "{} ({})",
+                self.title, self.year
+            )
         };
 
         FullMovie {
             id,
             key_hash: FullMovie::generate_key_hash(&display_name),
-            name: self.title.clone(),
-            description: Some(self.description.clone()),
-            actors: self.actors.iter().map(|name| Actor::from(name.clone())).collect(),
-            director: if self.director.is_empty() {
+            name: self
+                .title
+                .clone(),
+            description: Some(
+                self.description
+                    .clone(),
+            ),
+            actors: self
+                .actors
+                .iter()
+                .map(|name| Actor::from(name.clone()))
+                .collect(),
+            director: if self
+                .director
+                .is_empty()
+            {
                 None
             } else {
-                Some(Director::from(self.director.clone()))
+                Some(
+                    Director::from(
+                        self.director
+                            .clone(),
+                    ),
+                )
             },
-            genres: self.genres.clone(),
+            genres: self
+                .genres
+                .clone(),
             #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: None,
             added_on: None,

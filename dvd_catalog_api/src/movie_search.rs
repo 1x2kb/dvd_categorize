@@ -6,7 +6,9 @@ use axum::extract::{Json, State};
 use axum_macros::debug_handler;
 use categorizer_utilities::strip_punctuation;
 use database::{
-    question::AiAction, traits::{GetAllMovies, SearchMoviesByEmbedding}, FullMovie, PostgresMovieRepository,
+    question::AiAction,
+    traits::{GetAllMovies, SearchMoviesByEmbedding},
+    FullMovie, PostgresMovieRepository,
 };
 use log::{error, info};
 use tracing::instrument;
@@ -465,19 +467,35 @@ async fn text_only_search(
 
     // Use database-level text search
     let db_start = std::time::Instant::now();
-    let matching_movies = match repo.search_movies_by_text(query, limit as i64).await {
+    let matching_movies = match repo
+        .search_movies_by_text(
+            query,
+            limit as i64,
+        )
+        .await
+    {
         Ok(results) => {
             info!(
                 "DB text search found {} results in {:.2?}",
                 results.len(),
                 db_start.elapsed()
             );
-            results.into_iter()
-                .map(|(movie, score)| (movie.id, score))
+            results
+                .into_iter()
+                .map(
+                    |(movie, score)| {
+                        (
+                            movie.id, score,
+                        )
+                    },
+                )
                 .collect()
         }
         Err(e) => {
-            error!("DB text search failed: {:?}", e);
+            error!(
+                "DB text search failed: {:?}",
+                e
+            );
             Vec::new()
         }
     };
@@ -526,11 +544,12 @@ async fn vector_only_search(
     let vector_start = std::time::Instant::now();
     let vector_results = match embedding(&enhanced_query).await {
         Ok(embedding_vec) => {
-            match repo.search_by_embedding(
-                embedding_vec,
-                (limit * 2) as i64,
-            )
-            .await
+            match repo
+                .search_by_embedding(
+                    embedding_vec,
+                    (limit * 2) as i64,
+                )
+                .await
             {
                 Ok(movies_from_db) => {
                     let ids: Vec<i32> = movies_from_db
@@ -685,11 +704,12 @@ async fn hybrid_both_search(
             let vector_start = std::time::Instant::now();
             match embedding(&enhanced_query_clone).await {
                 Ok(embedding_vec) => {
-                    match repo.search_by_embedding(
-                        embedding_vec,
-                        (limit * 2) as i64,
-                    )
-                    .await
+                    match repo
+                        .search_by_embedding(
+                            embedding_vec,
+                            (limit * 2) as i64,
+                        )
+                        .await
                     {
                         Ok(movies_from_db) => {
                             let ids: Vec<i32> = movies_from_db
@@ -822,14 +842,20 @@ async fn structured_query_search(
             let pool = match database::get_connection_pool().await {
                 Ok(pool) => pool,
                 Err(e) => {
-                    error!("Failed to get database pool: {:?}", e);
+                    error!(
+                        "Failed to get database pool: {:?}",
+                        e
+                    );
                     return (
                         Vec::new(),
                         query.to_string(),
                     );
                 }
             };
-            match pool.get().await {
+            match pool
+                .get()
+                .await
+            {
                 Ok(mut conn) => {
                     match database::structured_search::search_movies_structured(
                         &structured_query,
@@ -1051,7 +1077,10 @@ pub async fn chat(
 ) -> Json<AiAction> {
     let repo = &state.pool;
 
-    let dvds = repo.get_all().await.unwrap_or_default();
+    let dvds = repo
+        .get_all()
+        .await
+        .unwrap_or_default();
 
     let (uuid, question, model, temperature) = (
         action.uuid,
@@ -1118,26 +1147,33 @@ pub async fn chat(
     let ollama_client = match ai_chat::make_ollama_client() {
         Ok(o) => o,
         Err(e) => {
-            error!("Failed to create Ollama client: {}", e);
-            return Json(AiAction {
-                uuid,
-                action: "There was an error connecting to the AI service.".to_string(),
-                model,
-                temperature: None,
-            });
+            error!(
+                "Failed to create Ollama client: {}",
+                e
+            );
+            return Json(
+                AiAction {
+                    uuid,
+                    action: "There was an error connecting to the AI service.".to_string(),
+                    model,
+                    temperature: None,
+                },
+            );
         }
     };
     let result = ai_chat::ai_message(
         Arc::new(full_movies),
-        Arc::new(OllamaClient {
-            ollama_client,
-            ai_action: AiAction {
-                uuid: uuid.to_string(),
-                action: question,
-                model: model.clone(),
-                temperature,
+        Arc::new(
+            OllamaClient {
+                ollama_client,
+                ai_action: AiAction {
+                    uuid: uuid.to_string(),
+                    action: question,
+                    model: model.clone(),
+                    temperature,
+                },
             },
-        }),
+        ),
     )
     .await;
     info!("Response received.");
