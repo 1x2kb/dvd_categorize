@@ -24,7 +24,7 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>, pool: &Pool<Asy
                 &movie.name,
             );
 
-            if !date_result.is_ok() {
+            if date_result.is_err() {
                 error!(
                     "Movie '{}' at index '{}' had a date parsing issue",
                     movie.name, index

@@ -1051,10 +1051,7 @@ pub async fn chat(
 ) -> Json<AiAction> {
     let repo = &state.pool;
 
-    let dvds = match repo.get_all().await {
-        Ok(movies) => movies,
-        Err(_) => Vec::new(),
-    };
+    let dvds = repo.get_all().await.unwrap_or_default();
 
     let (uuid, question, model, temperature) = (
         action.uuid,
