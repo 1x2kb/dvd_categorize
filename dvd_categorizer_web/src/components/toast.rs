@@ -56,7 +56,7 @@ pub fn ToastContainer(props: ToastContainerProps) -> Element {
             for toast in props.toasts.read().iter() {
                 {
                     let toast_id = toast.id;
-                    let on_dismiss = props.on_dismiss.clone();
+                    let on_dismiss = props.on_dismiss;
                     let duration = toast.duration_ms;
                     let kind_class = match toast.kind {
                         ToastKind::Info    => "toast toast-info",
@@ -99,16 +99,14 @@ struct ToastItemProps {
 
 #[component]
 fn ToastItem(props: ToastItemProps) -> Element {
-    let on_dismiss = props
-        .on_dismiss
-        .clone();
+    let on_dismiss = props.on_dismiss;
     let id = props.toast_id;
     let duration = props.duration_ms;
 
     use_effect(
         move || {
             if duration > 0 {
-                let on_dismiss = on_dismiss.clone();
+                let on_dismiss = on_dismiss;
                 spawn(
                     async move {
                         gloo_timers::future::TimeoutFuture::new(duration).await;

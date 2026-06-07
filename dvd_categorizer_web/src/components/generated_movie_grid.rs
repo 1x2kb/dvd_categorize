@@ -115,36 +115,22 @@ pub struct GeneratedMovieGridProps {
 
 #[component]
 pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
-    let mut entries: Signal<Vec<MovieEntry>> = use_signal(|| vec![]);
+    let mut entries: Signal<Vec<MovieEntry>> = use_signal(Vec::new);
     let mut next_toast_id: Signal<u32> = use_signal(|| 100u32);
     let mut pending_toast_id: Signal<Option<u32>> = use_signal(|| None);
 
-    let on_toast_pending = props
-        .on_toast
-        .clone();
-    let on_dismiss_pending = props
-        .on_dismiss_toast
-        .clone();
+    let on_toast_pending = props.on_toast;
+    let on_dismiss_pending = props.on_dismiss_toast;
 
     // React to generate_trigger increments — reconcile entries with current titles,
     // then stream-regenerate all unlocked cards in-place.
     // Auto-fire: when all pending cards have been resolved (no Suggestion remaining),
     // batch-generate all Resolved titles at once.
-    let on_toast_auto = props
-        .on_toast
-        .clone();
-    let on_dismiss_auto = props
-        .on_dismiss_toast
-        .clone();
-    let model_auto = props
-        .model
-        .clone();
-    let on_error_auto = props
-        .on_error
-        .clone();
-    let on_loading_auto = props
-        .on_loading
-        .clone();
+    let on_toast_auto = props.on_toast;
+    let on_dismiss_auto = props.on_dismiss_toast;
+    let model_auto = props.model.clone();
+    let on_error_auto = props.on_error;
+    let on_loading_auto = props.on_loading;
     use_effect(
         move || {
             let snapshot = entries.read(); // reactive
@@ -211,9 +197,9 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                     },
                 );
                 let model = model_auto.clone();
-                let on_error = on_error_auto.clone();
-                let on_loading = on_loading_auto.clone();
-                let on_toast = on_toast_auto.clone();
+                let on_error = on_error_auto;
+                let on_loading = on_loading_auto;
+                let on_toast = on_toast_auto;
                 let mut next_id = next_toast_id;
                 spawn(
                     async move {
@@ -264,24 +250,12 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
     );
 
     let trigger_signal = props.generate_trigger;
-    let model = props
-        .model
-        .clone();
-    let on_loading = props
-        .on_loading
-        .clone();
-    let on_error = props
-        .on_error
-        .clone();
-    let on_pending = props
-        .on_pending
-        .clone();
-    let on_title_corrected = props
-        .on_title_corrected
-        .clone();
-    let input_titles_regen = props
-        .input_titles
-        .clone();
+    let model = props.model.clone();
+    let on_loading = props.on_loading;
+    let on_error = props.on_error;
+    let on_pending = props.on_pending;
+    let on_title_corrected = props.on_title_corrected;
+    let input_titles_regen = props.input_titles.clone();
     use_effect(
         move || {
             let trigger = *trigger_signal.read(); // reactive subscription
@@ -384,10 +358,10 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
             on_loading.call(true);
 
             let model = model.clone();
-            let on_error = on_error.clone();
-            let on_loading = on_loading.clone();
-            let on_toast_cb = on_toast_pending.clone();
-            let on_dismiss_cb = on_dismiss_pending.clone();
+            let on_error = on_error;
+            let on_loading = on_loading;
+            let on_toast_cb = on_toast_pending;
+            let on_dismiss_cb = on_dismiss_pending;
             spawn(
                 async move {
                     let titles: Vec<String> = to_generate
@@ -516,7 +490,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                     all_locked,
                     entries,
                     next_toast_id,
-                    props.on_toast.clone(),
+                    props.on_toast,
                 ),
                 if all_locked { "🔓 Unlock All" } else { "🔒 Lock All" }
             }
@@ -535,7 +509,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                                 saveable.clone(),
                                 entries,
                                 next_toast_id,
-                                props.on_toast.clone(),
+                                props.on_toast,
                             ));
                         },
                         "💾 Save All"
@@ -551,7 +525,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                             is_generating,
                             entries,
                             next_toast_id,
-                            props.on_toast.clone(),
+                            props.on_toast,
                         ),
                         "🗑 Remove Already in DB"
                     }
@@ -589,7 +563,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                                     let key_accept = key.clone();
                                     let key_keep = key.clone();
                                     let key_remove = key.clone();
-                                    let on_corrected = on_title_corrected.clone();
+                                    let on_corrected = on_title_corrected;
                                     rsx! {
                                         div { class: "movie-card gen-card-pending",
                                             div { class: "movie-poster gen-poster-suggestion", "{original_title}" }
@@ -655,7 +629,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                             rsx! { EditableMovieCard {
                                 movie: entry.data.clone(),
                                 on_save: {
-                                    let on_changed = props.on_movies_changed.clone();
+                                    let on_changed = props.on_movies_changed;
                                     move |updated: AiMovieData| {
                                         entries.with_mut(|v| {
                                             if let Some(e) = v.iter_mut().find(|e| e.input_title == edit_key) {
@@ -682,7 +656,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                             let lock_key = entry.input_title.clone();
                             let edit_key = entry.input_title.clone();
                             let remove_key = entry.input_title.clone();
-                            let on_toast_card = props.on_toast.clone();
+                            let on_toast_card = props.on_toast;
                             let mut next_id_card = next_toast_id;
                             rsx! { GeneratedMovieCard {
                                 movie: entry.data.clone(),
@@ -707,11 +681,11 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                                     props.on_title_removed.call(remove_key.clone());
                                 },
                                 on_save: {
-                                    let on_toast_save = props.on_toast.clone();
+                                    let on_toast_save = props.on_toast;
                                     let save_key = entry.input_title.clone();
                                     move |movie: AiMovieData| {
                                         let save_key = save_key.clone();
-                                        let on_toast = on_toast_save.clone();
+                                        let on_toast = on_toast_save;
                                         let mut next_id = next_toast_id;
                                         spawn(async move {
                                             let Ok(base) = crate::views::movie_generator::get_api_base().await else {
@@ -978,7 +952,7 @@ async fn handle_save_all(
 }
 
 /// Call this from the parent once a regenerate API response comes back.
-pub fn apply_regenerate_result(entries: &mut Vec<MovieEntry>, index: usize, result: AiMovieData) {
+pub fn apply_regenerate_result(entries: &mut [MovieEntry], index: usize, result: AiMovieData) {
     if let Some(entry) = entries.get_mut(index) {
         entry.data = result;
         entry.generating = false;

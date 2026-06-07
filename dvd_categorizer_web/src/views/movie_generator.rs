@@ -372,15 +372,7 @@ pub async fn stream_generated_movies(
         "application/json",
     )
     .body(body)
-    .map_err(
-        |e| {
-            format!(
-                "Failed to build request: {}",
-                e
-            )
-        },
-    )
-    .and_then(|r| Ok(r))
+    .map_err(|e| format!("Failed to build request: {}", e))
     {
         Ok(req) => match req
             .send()
