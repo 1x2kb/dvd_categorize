@@ -485,7 +485,7 @@ impl InsertMovie for PostgresMovieRepository {
             None => None,
         };
 
-        let embedding = full_movie.embedding.clone();
+        let embedding = full_movie.embedding;
 
         let added_on = full_movie.added_on.and_then(|date_str| {
             // Try parsing as full timestamp first, then fall back to date-only
