@@ -51,9 +51,11 @@ pub async fn insert_movie_actors(
 }
 
 pub async fn actors_for_movie(movie: &Movie, connection: &mut AsyncPgConnection) -> Vec<Actor> {
+    use models::schema::movie_actor;
     MovieActor::belonging_to(&movie)
         .inner_join(actor::table)
         .select(actor::all_columns)
+        .order(movie_actor::actor_order.asc())
         .load::<Actor>(connection)
         .await
         .unwrap_or_else(|_| Vec::new())

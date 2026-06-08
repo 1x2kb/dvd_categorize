@@ -25,6 +25,7 @@ async fn load_actors_for_movies(
             actor::all_columns,
         ))
         .filter(movie_actor::movie_id.eq_any(movie_ids))
+        .order(movie_actor::actor_order.asc())
         .load::<(MovieActor, Actor)>(conn)
         .await
         .map_err(DatabaseError::from)
