@@ -8,6 +8,16 @@ use chrono::NaiveDate;
 use log::error;
 use models::{FullMovie, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovieGenre};
 
+fn find_movie_id(
+    movie_name: &str,
+    movie_inserts: &[(i32, String)],
+) -> Option<i32> {
+    movie_inserts
+        .binary_search_by(|(_, name)| name.as_str().cmp(movie_name))
+        .ok()
+        .and_then(|idx| movie_inserts.get(idx).map(|(id, _)| *id))
+}
+
 ///
 /// Adds a Vec of FullMovies in bulk to the database.
 ///
@@ -38,24 +48,10 @@ pub async fn insert_full_movies(
         }
     }
 
-    let (mut actors, _genres, mut directors) = (
+    let (actors, _genres, directors) = (
         get_unique_actors(&full_movies),
         get_unique_genres(&full_movies),
         get_unique_directors(&full_movies),
-    );
-
-    // Sort results for binary search
-    actors.sort_by(
-        |a, b| {
-            a.name
-                .cmp(&b.name)
-        },
-    );
-    directors.sort_by(
-        |a, b| {
-            a.name
-                .cmp(&b.name)
-        },
     );
 
     let mut connection = pool
@@ -66,16 +62,19 @@ pub async fn insert_full_movies(
                 crate::DatabaseError::ConnectionError(ConnectionError::BadConnection(e.to_string()))
             },
         )?;
-    let actors = crate::insert_actors(
+    let mut actors = crate::insert_actors(
         &actors,
         &mut connection,
     )
     .await?;
-    let directors = crate::insert_directors(
+    actors.sort_by(|a, b| a.1.cmp(&b.1));
+
+    let mut directors = crate::insert_directors(
         &directors,
         &mut connection,
     )
     .await?;
+    directors.sort_by(|a, b| a.1.cmp(&b.1));
 
     let movies: Vec<NewMovie> = full_movies
         .iter_mut()
@@ -155,41 +154,30 @@ pub async fn insert_full_movies(
         .iter()
         .flat_map(
             |movie| {
-                let movie_id = movie_inserts
-                    .binary_search_by(|(_, movie_name)| movie_name.cmp(&movie.name))
-                    .ok()
-                    .and_then(
-                        |found_index| {
-                            movie_inserts
-                                .get(found_index)
-                                .map(|(id, _)| *id)
+                let Some(movie_id) = find_movie_id(&movie.name, &movie_inserts) else {
+                    return Vec::new();
+                };
+
+                movie
+                    .actors
+                    .iter()
+                    .enumerate()
+                    .filter_map(
+                        |(index, actor)| {
+                            actors
+                                .binary_search_by(|(_, name)| name.cmp(&actor.name))
+                                .ok()
+                                .and_then(|actor_index| actors.get(actor_index))
+                                .map(
+                                    |(actor_id, _)| NewMovieActor {
+                                        movie_id,
+                                        actor_id: *actor_id,
+                                        actor_order: (index + 1) as i32,
+                                    },
+                                )
                         },
-                    );
-
-                if let Some(movie_id) = movie_id {
-                    return movie
-                        .actors
-                        .iter()
-                        .enumerate()
-                        .filter_map(
-                            |(index, actor)| {
-                                actors
-                                    .binary_search_by(|(_, name)| name.cmp(&actor.name))
-                                    .ok()
-                                    .and_then(|actor_index| actors.get(actor_index))
-                                    .map(
-                                        |(actor_id, _)| NewMovieActor {
-                                            movie_id,
-                                            actor_id: *actor_id,
-                                            actor_order: (index + 1) as i32,
-                                        },
-                                    )
-                            },
-                        )
-                        .collect();
-                }
-
-                Vec::new()
+                    )
+                    .collect()
             },
         )
         .collect();
@@ -204,31 +192,20 @@ pub async fn insert_full_movies(
         .iter()
         .flat_map(
             |movie| {
-                let movie_id = movie_inserts
-                    .binary_search_by(|(_, movie_name)| movie_name.cmp(&movie.name))
-                    .ok()
-                    .and_then(
-                        |found_index| {
-                            movie_inserts
-                                .get(found_index)
-                                .map(|(id, _)| *id)
+                let Some(movie_id) = find_movie_id(&movie.name, &movie_inserts) else {
+                    return Vec::new();
+                };
+
+                movie
+                    .genres
+                    .iter()
+                    .map(
+                        |genre| NewMovieGenre {
+                            movie_id,
+                            genre: genre.clone(),
                         },
-                    );
-
-                if let Some(movie_id) = movie_id {
-                    return movie
-                        .genres
-                        .iter()
-                        .map(
-                            |genre| NewMovieGenre {
-                                movie_id,
-                                genre: genre.clone(),
-                            },
-                        )
-                        .collect();
-                }
-
-                Vec::new()
+                    )
+                    .collect()
             },
         )
         .collect();

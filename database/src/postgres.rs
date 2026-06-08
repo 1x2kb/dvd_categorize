@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use chrono::NaiveDate;
 use diesel::prelude::*;
 use diesel_async::pooled_connection::deadpool::{Object, Pool};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
@@ -13,6 +12,151 @@ use std::collections::HashMap;
 
 use crate::traits::*;
 use crate::{structured_search, DatabaseError};
+
+async fn load_actors_for_movies(
+    movie_ids: &[i32],
+    conn: &mut AsyncPgConnection,
+) -> Result<Vec<(MovieActor, Actor)>, DatabaseError> {
+    use schema::{actor, movie_actor};
+    movie_actor::table
+        .inner_join(actor::table)
+        .select((
+            movie_actor::all_columns,
+            actor::all_columns,
+        ))
+        .filter(movie_actor::movie_id.eq_any(movie_ids))
+        .load::<(MovieActor, Actor)>(conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
+async fn load_genres_for_movies(
+    movie_ids: &[i32],
+    conn: &mut AsyncPgConnection,
+) -> Result<Vec<MovieGenre>, DatabaseError> {
+    use schema::movie_genre;
+    movie_genre::table
+        .filter(movie_genre::movie_id.eq_any(movie_ids))
+        .load::<MovieGenre>(conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
+async fn load_actors_and_genres(
+    movies: &[&Movie],
+    conn_actors: &mut AsyncPgConnection,
+    conn_genres: &mut AsyncPgConnection,
+) -> Result<
+    (
+        Vec<Vec<Actor>>,
+        Vec<Vec<String>>,
+    ),
+    DatabaseError,
+> {
+    let movie_ids: Vec<i32> = movies
+        .iter()
+        .map(|m| m.id)
+        .collect();
+
+    let (raw_actors, raw_genres) = tokio::try_join!(
+        load_actors_for_movies(&movie_ids, conn_actors),
+        load_genres_for_movies(&movie_ids, conn_genres),
+    )?;
+
+    let actors_per_movie = raw_actors
+        .grouped_by(movies)
+        .into_iter()
+        .map(|group| {
+            group
+                .into_iter()
+                .map(|(_, actor)| actor)
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    let genres_per_movie = raw_genres
+        .grouped_by(movies)
+        .into_iter()
+        .map(|group| {
+            group
+                .into_iter()
+                .map(|mg| mg.genre)
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    Ok((
+        actors_per_movie,
+        genres_per_movie,
+    ))
+}
+
+fn build_full_movie_from_row(
+    movie: Movie,
+    director: Option<Director>,
+    actors: Vec<Actor>,
+    genres: Vec<String>,
+) -> FullMovie {
+    let display_name = if movie.release_year == 0 {
+        movie
+            .name
+            .clone()
+    } else {
+        format!(
+            "{} ({})",
+            movie.name, movie.release_year
+        )
+    };
+    FullMovie {
+        id: movie.id,
+        key_hash: FullMovie::generate_key_hash(&display_name),
+        name: movie.name,
+        director,
+        description: movie.description,
+        actors,
+        genres,
+        embedding: movie
+            .embedding
+            .map(|v| v.into()),
+        added_on: Some(
+            movie
+                .added_on
+                .to_string(),
+        ),
+        location: Some(movie.location),
+        release_year: movie.release_year,
+    }
+}
+
+fn parse_added_on_date(
+    date_str: &str,
+    movie_name: &str,
+) -> Option<chrono::NaiveDateTime> {
+    match chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S%.f") {
+        Ok(dt) => Some(dt),
+        Err(_) => {
+            match chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                Ok(date) => match date.and_hms_opt(0, 0, 0) {
+                    Some(dt) => Some(dt),
+                    None => {
+                        log::error!(
+                            "Invalid time components for date '{}' in movie '{}'",
+                            date_str, movie_name
+                        );
+                        None
+                    }
+                },
+                Err(e) => {
+                    log::error!(
+                        "Failed to parse date '{}' for movie '{}': {}",
+                        date_str, movie_name, e
+                    );
+                    None
+                }
+            }
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct PostgresMovieRepository {
@@ -127,84 +271,82 @@ impl PostgresMovieRepository {
             )>(&mut conn)
             .await?;
 
+        // Bulk-load actors and genres for all matched movies in 2 queries
+        let movie_refs: Vec<&Movie> = matching_movies
+            .iter()
+            .map(|(m, _)| m)
+            .collect();
+
+        let (mut conn_actors, mut conn_genres) =
+            tokio::try_join!(self.get_conn(), self.get_conn())?;
+        let (actors_per_movie, genres_per_movie) =
+            load_actors_and_genres(&movie_refs, &mut conn_actors, &mut conn_genres).await?;
+
+        let query_lower = query.to_lowercase();
+
         // Score results
         let mut scored_results: Vec<(
             FullMovie,
             f32,
-        )> = Vec::new();
+        )> = matching_movies
+            .into_iter()
+            .zip(actors_per_movie)
+            .zip(genres_per_movie)
+            .filter_map(
+                |(((movie_row, director), movie_actors), movie_genres)| {
+                    let mut score: f32 = 0.0;
 
-        for (movie_row, director) in matching_movies {
-            let mut score: f32 = 0.0;
+                    // Title scoring
+                    if movie_row
+                        .name
+                        .to_lowercase()
+                        .contains(&query_lower)
+                    {
+                        score += 100.0;
+                    }
 
-            // Title scoring
-            if movie_row
-                .name
-                .to_lowercase()
-                .contains(&query.to_lowercase())
-            {
-                score += 100.0;
-            }
+                    // Actor scoring
+                    if movie_actors
+                        .iter()
+                        .any(|a| a.name.to_lowercase().contains(&query_lower))
+                    {
+                        score += 20.0;
+                    }
 
-            // Fetch actors for scoring
-            let movie_actors: Vec<Actor> = movie_actor::table
-                .inner_join(actor::table.on(movie_actor::actor_id.eq(actor::id)))
-                .select(actor::all_columns)
-                .filter(movie_actor::movie_id.eq(movie_row.id))
-                .load(&mut conn)
-                .await?;
+                    // Director scoring
+                    if let Some(ref d) = director {
+                        if d.name
+                            .to_lowercase()
+                            .contains(&query_lower)
+                        {
+                            score += 25.0;
+                        }
+                    }
 
-            // Actor scoring
-            for movie_actor in &movie_actors {
-                if movie_actor
-                    .name
-                    .to_lowercase()
-                    .contains(&query.to_lowercase())
-                {
-                    score += 20.0;
-                    break;
-                }
-            }
+                    // Genre scoring
+                    if movie_genres
+                        .iter()
+                        .any(|g| g.to_lowercase().contains(&query_lower))
+                    {
+                        score += 15.0;
+                    }
 
-            // Director scoring
-            if let Some(ref d) = director {
-                if d.name
-                    .to_lowercase()
-                    .contains(&query.to_lowercase())
-                {
-                    score += 25.0;
-                }
-            }
-
-            // Fetch genres for scoring
-            let movie_genres: Vec<String> = movie_genre::table
-                .select(movie_genre::genre)
-                .filter(movie_genre::movie_id.eq(movie_row.id))
-                .load(&mut conn)
-                .await?;
-
-            // Genre scoring
-            for genre in &movie_genres {
-                if genre
-                    .to_lowercase()
-                    .contains(&query.to_lowercase())
-                {
-                    score += 15.0;
-                    break;
-                }
-            }
-
-            if score > 0.0 {
-                let full_movie = FullMovie::from((
-                    movie_row,
-                    director,
-                    movie_actors,
-                    movie_genres,
-                ));
-                scored_results.push((
-                    full_movie, score,
-                ));
-            }
-        }
+                    if score > 0.0 {
+                        Some((
+                            build_full_movie_from_row(
+                                movie_row,
+                                director,
+                                movie_actors,
+                                movie_genres,
+                            ),
+                            score,
+                        ))
+                    } else {
+                        None
+                    }
+                },
+            )
+            .collect();
 
         // Sort by score descending
         scored_results.sort_by(
@@ -333,27 +475,24 @@ impl GetAllMovies for PostgresMovieRepository {
             .await
             .map_err(DatabaseError::from)?;
 
-        let mut full_movies = Vec::new();
-        for (movie, director) in movies {
-            let actors = MovieActor::belonging_to(&movie)
-                .inner_join(schema::actor::table)
-                .select(schema::actor::all_columns)
-                .load::<Actor>(&mut conn)
-                .await
-                .unwrap_or_default();
+        let movie_refs: Vec<&Movie> = movies
+            .iter()
+            .map(|(movie, _)| movie)
+            .collect();
 
-            let genres = MovieGenre::belonging_to(&movie)
-                .select(schema::movie_genre::genre)
-                .load::<String>(&mut conn)
-                .await
-                .unwrap_or_default();
+        let (mut conn_actors, mut conn_genres) =
+            tokio::try_join!(self.get_conn(), self.get_conn())?;
+        let (actors_per_movie, genres_per_movie) =
+            load_actors_and_genres(&movie_refs, &mut conn_actors, &mut conn_genres).await?;
 
-            full_movies.push(
-                FullMovie::from((
-                    movie, director, actors, genres,
-                )),
-            );
-        }
+        let full_movies: Vec<FullMovie> = movies
+            .into_iter()
+            .zip(actors_per_movie)
+            .zip(genres_per_movie)
+            .map(|(((movie, director), actors), genres)| {
+                build_full_movie_from_row(movie, director, actors, genres)
+            })
+            .collect();
 
         debug!(
             "Found {} results",
@@ -431,94 +570,23 @@ impl GetMoviesByIds for PostgresMovieRepository {
             .map(|(movie, _)| movie)
             .collect();
 
-        // Use belonging_to to get all movie_actor associations, then join with actors
-        let movie_actors = MovieActor::belonging_to(&movies)
-            .inner_join(schema::actor::table)
-            .select((
-                schema::movie_actor::all_columns,
-                schema::actor::all_columns,
-            ))
-            .load::<(
-                MovieActor,
-                Actor,
-            )>(&mut conn)
-            .await?;
-
-        // Use belonging_to to get all genre associations
-        let movie_genres = MovieGenre::belonging_to(&movies)
-            .load::<MovieGenre>(&mut conn)
-            .await?;
-
-        // Group actors by movie using Diesel's grouped_by
-        let actors_per_movie = movie_actors
-            .grouped_by(&movies)
-            .into_iter()
-            .map(
-                |group| {
-                    group
-                        .into_iter()
-                        .map(|(_, actor)| actor)
-                        .collect::<Vec<_>>()
-                },
-            )
-            .collect::<Vec<_>>();
-
-        // Group genres by movie using Diesel's grouped_by
-        let genres_per_movie = movie_genres
-            .grouped_by(&movies)
-            .into_iter()
-            .map(
-                |group| {
-                    group
-                        .into_iter()
-                        .map(|mg| mg.genre)
-                        .collect::<Vec<_>>()
-                },
-            )
-            .collect::<Vec<_>>();
+        let (mut conn_actors, mut conn_genres) =
+            tokio::try_join!(self.get_conn(), self.get_conn())?;
+        let (actors_per_movie, genres_per_movie) =
+            load_actors_and_genres(&movies, &mut conn_actors, &mut conn_genres).await?;
 
         // Build a map to preserve the requested order
         let mut movies_map: HashMap<i32, FullMovie> = movies_with_directors
             .into_iter()
             .zip(actors_per_movie)
             .zip(genres_per_movie)
-            .map(
-                |(((movie, director), actors), genres)| {
-                    // Generate hash from display name for consistency
-                    let display_name = if movie.release_year == 0 {
-                        movie
-                            .name
-                            .clone()
-                    } else {
-                        format!(
-                            "{} ({})",
-                            movie.name, movie.release_year
-                        )
-                    };
-                    let full_movie = FullMovie {
-                        id: movie.id,
-                        key_hash: FullMovie::generate_key_hash(&display_name),
-                        name: movie.name,
-                        director,
-                        description: movie.description,
-                        actors,
-                        genres,
-                        embedding: movie
-                            .embedding
-                            .map(|v| v.into()),
-                        added_on: Some(
-                            movie
-                                .added_on
-                                .to_string(),
-                        ),
-                        location: Some(movie.location),
-                        release_year: movie.release_year,
-                    };
-                    (
-                        movie.id, full_movie,
-                    )
-                },
-            )
+            .map(|(((movie, director), actors), genres)| {
+                let id = movie.id;
+                (
+                    id,
+                    build_full_movie_from_row(movie, director, actors, genres),
+                )
+            })
             .collect();
 
         // Return movies in the order they were requested
@@ -560,29 +628,10 @@ impl InsertMovie for PostgresMovieRepository {
 
         let embedding = full_movie.embedding;
 
-        let added_on = full_movie.added_on.and_then(|date_str| {
-            // Try parsing as full timestamp first, then fall back to date-only
-            match chrono::NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%d %H:%M:%S%.f") {
-                Ok(dt) => Some(dt),
-                Err(_) => {
-                    match NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
-                        Ok(date) => {
-                            match date.and_hms_opt(0, 0, 0) {
-                                Some(dt) => Some(dt),
-                                None => {
-                                    log::error!("Invalid time components for date '{}' in movie '{}'", date_str, full_movie.name);
-                                    None
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("Failed to parse date '{}' for movie '{}': {}", date_str, full_movie.name, e);
-                            None
-                        }
-                    }
-                }
-            }
-        });
+        let added_on = full_movie
+            .added_on
+            .as_deref()
+            .and_then(|date_str| parse_added_on_date(date_str, &full_movie.name));
 
         let new_movie = NewMovie {
             name: full_movie.name,
