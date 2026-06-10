@@ -1,7 +1,16 @@
+use diesel::expression::BoxableExpression;
 use diesel::prelude::*;
+use diesel::BoolExpressionMethods;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use log::info;
 use models::{schema, Actor, Director, FullMovie, StructuredQuery};
+
+fn to_ilike_patterns(names: &[String]) -> Vec<String> {
+    names
+        .iter()
+        .map(|n| format!("%{}%", n.to_lowercase()))
+        .collect()
+}
 
 /// Searches for movies using structured query criteria with dynamic Diesel query building
 ///
@@ -16,6 +25,7 @@ pub async fn search_movies_structured(
     connection: &mut AsyncPgConnection,
 ) -> Result<Vec<FullMovie>, diesel::result::Error> {
     use schema::{actor, director, movie, movie_actor, movie_genre};
+    use models::Movie;
 
     info!(
         "Executing structured search with criteria: {:?}",
@@ -74,35 +84,18 @@ pub async fn search_movies_structured(
             structured_query.description_keywords
         );
 
-        use diesel::expression::BoxableExpression;
         use diesel::sql_types::Nullable;
-        use diesel::BoolExpressionMethods;
 
-        // Note: description is nullable, so the expression type is Nullable<Bool>
-        let mut or_condition: Option<
-            Box<
-                dyn BoxableExpression<
-                    _,
-                    diesel::pg::Pg,
-                    SqlType = Nullable<diesel::sql_types::Bool>,
-                >,
-            >,
-        > = None;
-
-        for keyword in &structured_query.description_keywords {
-            let pattern = format!(
-                "%{}%",
-                keyword.to_lowercase()
-            );
+        let patterns = to_ilike_patterns(&structured_query.description_keywords);
+        let or_condition: Option<
+            Box<dyn BoxableExpression<_, diesel::pg::Pg, SqlType = Nullable<diesel::sql_types::Bool>>>,
+        > = patterns.into_iter().fold(None, |acc, pattern| {
             let expr = movie::description.ilike(pattern);
-
-            or_condition = Some(
-                match or_condition {
-                    None => Box::new(expr),
-                    Some(prev) => Box::new(prev.or(expr)),
-                },
-            );
-        }
+            Some(match acc {
+                None => Box::new(expr),
+                Some(prev) => Box::new(prev.or(expr)),
+            })
+        });
 
         if let Some(condition) = or_condition {
             base_query = base_query.filter(condition);
@@ -120,28 +113,17 @@ pub async fn search_movies_structured(
         );
 
         use diesel::dsl::exists;
-        use diesel::expression::BoxableExpression;
-        use diesel::BoolExpressionMethods;
 
-        // Build OR condition for actor names
-        let mut actor_or_condition: Option<
+        let patterns = to_ilike_patterns(&structured_query.actors);
+        let actor_or_condition: Option<
             Box<dyn BoxableExpression<_, diesel::pg::Pg, SqlType = diesel::sql_types::Bool>>,
-        > = None;
-
-        for actor_name in &structured_query.actors {
-            let pattern = format!(
-                "%{}%",
-                actor_name.to_lowercase()
-            );
+        > = patterns.into_iter().fold(None, |acc, pattern| {
             let expr = actor::name.ilike(pattern);
-
-            actor_or_condition = Some(
-                match actor_or_condition {
-                    None => Box::new(expr),
-                    Some(prev) => Box::new(prev.or(expr)),
-                },
-            );
-        }
+            Some(match acc {
+                None => Box::new(expr),
+                Some(prev) => Box::new(prev.or(expr)),
+            })
+        });
 
         if let Some(condition) = actor_or_condition {
             let actor_subquery = movie_actor::table
@@ -165,28 +147,17 @@ pub async fn search_movies_structured(
         );
 
         use diesel::dsl::exists;
-        use diesel::expression::BoxableExpression;
-        use diesel::BoolExpressionMethods;
 
-        // Build OR condition for genres
-        let mut genre_or_condition: Option<
+        let patterns = to_ilike_patterns(&structured_query.genres);
+        let genre_or_condition: Option<
             Box<dyn BoxableExpression<_, diesel::pg::Pg, SqlType = diesel::sql_types::Bool>>,
-        > = None;
-
-        for genre_name in &structured_query.genres {
-            let pattern = format!(
-                "%{}%",
-                genre_name.to_lowercase()
-            );
+        > = patterns.into_iter().fold(None, |acc, pattern| {
             let expr = movie_genre::genre.ilike(pattern);
-
-            genre_or_condition = Some(
-                match genre_or_condition {
-                    None => Box::new(expr),
-                    Some(prev) => Box::new(prev.or(expr)),
-                },
-            );
-        }
+            Some(match acc {
+                None => Box::new(expr),
+                Some(prev) => Box::new(prev.or(expr)),
+            })
+        });
 
         if let Some(condition) = genre_or_condition {
             let genre_subquery = movie_genre::table
@@ -214,28 +185,41 @@ pub async fn search_movies_structured(
         movies.len()
     );
 
-    // Step 6: Hydrate with actors and genres
-    let mut full_movies = Vec::new();
-    for (movie, director) in movies {
-        let actors: Vec<Actor> = movie_actor::table
-            .inner_join(actor::table)
-            .filter(movie_actor::movie_id.eq(movie.id))
-            .select(Actor::as_select())
-            .load::<Actor>(connection)
-            .await?;
+    // Step 6: Hydrate with actors and genres — 2 bulk queries instead of 2N
+    let movie_refs: Vec<&Movie> = movies.iter().map(|(m, _)| m).collect();
+    let movie_ids: Vec<i32> = movie_refs.iter().map(|m| m.id).collect();
 
-        let genres: Vec<String> = movie_genre::table
-            .filter(movie_genre::movie_id.eq(movie.id))
-            .select(movie_genre::genre)
-            .load::<String>(connection)
-            .await?;
+    let raw_actors = crate::load_actors_for_movies(&movie_ids, connection)
+        .await
+        .map_err(|e| match e {
+            crate::DatabaseError::DieselError(de) => de,
+            _ => diesel::result::Error::NotFound,
+        })?;
+    let raw_genres = crate::load_genres_for_movies(&movie_ids, connection)
+        .await
+        .map_err(|e| match e {
+            crate::DatabaseError::DieselError(de) => de,
+            _ => diesel::result::Error::NotFound,
+        })?;
 
-        full_movies.push(
-            FullMovie::from((
-                movie, director, actors, genres,
-            )),
-        );
-    }
+    let actors_per_movie: Vec<Vec<Actor>> = raw_actors
+        .grouped_by(&movie_refs)
+        .into_iter()
+        .map(|group| group.into_iter().map(|(_, actor)| actor).collect())
+        .collect();
+
+    let genres_per_movie: Vec<Vec<String>> = raw_genres
+        .grouped_by(&movie_refs)
+        .into_iter()
+        .map(|group| group.into_iter().map(|mg| mg.genre).collect())
+        .collect();
+
+    let full_movies: Vec<FullMovie> = movies
+        .into_iter()
+        .zip(actors_per_movie)
+        .zip(genres_per_movie)
+        .map(|(((movie, director), actors), genres)| FullMovie::from((movie, director, actors, genres)))
+        .collect();
 
     info!(
         "Returning {} full movies",

@@ -42,6 +42,48 @@ use tracing::instrument;
 pub mod movie_search;
 pub use movie_search::extract_entities;
 
+fn db_msg_to_ollama(msg: &models::ChatMessage) -> ollama_rs::generation::chat::ChatMessage {
+    match msg.role.as_str() {
+        "user" => ollama_rs::generation::chat::ChatMessage::user(msg.content.clone()),
+        _ => ollama_rs::generation::chat::ChatMessage::assistant(msg.content.clone()),
+    }
+}
+
+fn model_msg_to_ollama(msg: &models::RoledMessage) -> ollama_rs::generation::chat::ChatMessage {
+    match msg.role {
+        models::Role::User => ollama_rs::generation::chat::ChatMessage::user(msg.message.clone()),
+        models::Role::Ai => {
+            ollama_rs::generation::chat::ChatMessage::assistant(msg.message.clone())
+        }
+    }
+}
+
+async fn correct_titles_with_fallback(titles: &[String], model: Option<&str>) -> Vec<String> {
+    match ai_chat::correct_movie_titles(titles, model).await {
+        Ok(c) if c.len() == titles.len() => {
+            info!("Title correction succeeded for {} titles", c.len());
+            for (orig, corr) in titles.iter().zip(c.iter()) {
+                if orig != corr {
+                    debug!("  '{}' -> '{}'", orig, corr);
+                }
+            }
+            c
+        }
+        Ok(c) => {
+            error!(
+                "Title correction returned wrong count: sent {}, got {}",
+                titles.len(),
+                c.len()
+            );
+            titles.to_vec()
+        }
+        Err(e) => {
+            error!("Title correction failed: {}. Falling back to originals.", e);
+            titles.to_vec()
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct DbState {
     pub pool: database::PostgresMovieRepository,
@@ -205,40 +247,11 @@ pub async fn chat(
         vec![ollama_rs::generation::chat::ChatMessage::system(
             system_prompt.to_string(),
         )];
-    for m in &history_messages {
-        let msg = match m
-            .role
-            .as_str()
-        {
-            "user" => ollama_rs::generation::chat::ChatMessage::user(
-                m.content
-                    .clone(),
-            ),
-            _ => ollama_rs::generation::chat::ChatMessage::assistant(
-                m.content
-                    .clone(),
-            ),
-        };
-        history.push(msg);
-    }
+    history.extend(history_messages.iter().map(db_msg_to_ollama));
 
     // New messages for this turn — passed to coordinator, NOT pre-added to history.
-    let new_messages: Vec<ollama_rs::generation::chat::ChatMessage> = request
-        .messages
-        .iter()
-        .map(
-            |msg| match msg.role {
-                models::Role::User => ollama_rs::generation::chat::ChatMessage::user(
-                    msg.message
-                        .clone(),
-                ),
-                models::Role::Ai => ollama_rs::generation::chat::ChatMessage::assistant(
-                    msg.message
-                        .clone(),
-                ),
-            },
-        )
-        .collect();
+    let new_messages: Vec<ollama_rs::generation::chat::ChatMessage> =
+        request.messages.iter().map(model_msg_to_ollama).collect();
 
     // Capture user content for DB persistence after the call
     let user_content_for_db: Vec<String> = request
@@ -509,44 +522,8 @@ pub async fn chat_stream(
     // Convert chat history to Ollama format (system + history + new messages)
     let messages: Vec<ollama_rs::generation::chat::ChatMessage> =
         std::iter::once(ollama_rs::generation::chat::ChatMessage::system(system_prompt))
-            .chain(
-                history_messages
-                    .iter()
-                    .map(
-                        |msg| match msg
-                            .role
-                            .as_str()
-                        {
-                            "user" => ollama_rs::generation::chat::ChatMessage::user(
-                                msg.content
-                                    .clone(),
-                            ),
-                            _ => ollama_rs::generation::chat::ChatMessage::assistant(
-                                msg.content
-                                    .clone(),
-                            ),
-                        },
-                    ),
-            )
-            .chain(
-                request
-                    .messages
-                    .iter()
-                    .map(
-                        |msg| match msg.role {
-                            models::Role::User => ollama_rs::generation::chat::ChatMessage::user(
-                                msg.message
-                                    .clone(),
-                            ),
-                            models::Role::Ai => {
-                                ollama_rs::generation::chat::ChatMessage::assistant(
-                                    msg.message
-                                        .clone(),
-                                )
-                            }
-                        },
-                    ),
-            )
+            .chain(history_messages.iter().map(db_msg_to_ollama))
+            .chain(request.messages.iter().map(model_msg_to_ollama))
             .collect();
 
     // Get model name from request or use default
@@ -1049,61 +1026,11 @@ pub async fn validate_titles(
 
     // Ask the model to correct spelling in one batch call — it's already hot
     // since it's the same model the user will use for generation.
-    let correction_result = ai_chat::correct_movie_titles(
+    let corrected = correct_titles_with_fallback(
         &request.titles,
-        request
-            .model
-            .as_deref(),
+        request.model.as_deref(),
     )
     .await;
-    let corrected = match &correction_result {
-        Ok(c)
-            if c.len()
-                == request
-                    .titles
-                    .len() =>
-        {
-            info!(
-                "Title correction succeeded for all {} titles",
-                c.len()
-            );
-            debug!("Correction mapping: original -> corrected");
-            for (orig, corr) in request
-                .titles
-                .iter()
-                .zip(c.iter())
-            {
-                if orig != corr {
-                    debug!(
-                        "  '{}' -> '{}'",
-                        orig, corr
-                    );
-                }
-            }
-            c.clone()
-        }
-        Ok(c) => {
-            error!(
-                "Title correction returned wrong count: sent {}, got {}",
-                request
-                    .titles
-                    .len(),
-                c.len()
-            );
-            request
-                .titles
-                .clone()
-        }
-        Err(e) => {
-            error!(
-                "Title correction failed: {}. Falling back to originals.",
-                e
-            );
-            request
-                .titles
-                .clone()
-        }
-    };
 
     let strip_the = |s: &str| {
         s.strip_prefix("the ")
@@ -1245,47 +1172,7 @@ pub async fn generate_movies_stream(
     );
 
     // Validate + correct titles upfront — one fast Ollama call.
-    let correction_result = ai_chat::correct_movie_titles(
-        &titles,
-        model.as_deref(),
-    )
-    .await;
-    let corrected = match &correction_result {
-        Ok(c) if c.len() == titles.len() => {
-            info!(
-                "Title correction succeeded for {} titles in stream",
-                c.len()
-            );
-            for (i, (orig, corr)) in titles
-                .iter()
-                .zip(c.iter())
-                .enumerate()
-            {
-                if orig != corr {
-                    debug!(
-                        "  Stream title {}: '{}' -> '{}'",
-                        i, orig, corr
-                    );
-                }
-            }
-            c.clone()
-        }
-        Ok(c) => {
-            error!(
-                "Title correction wrong count in stream: sent {}, got {}",
-                titles.len(),
-                c.len()
-            );
-            titles.clone()
-        }
-        Err(e) => {
-            error!(
-                "Title correction failed in stream: {}. Using originals.",
-                e
-            );
-            titles.clone()
-        }
-    };
+    let corrected = correct_titles_with_fallback(&titles, model.as_deref()).await;
 
     let strip_the = |s: &str| {
         s.strip_prefix("the ")

@@ -59,9 +59,10 @@ use std::env;
 use std::error::Error;
 use std::fmt::Display;
 
+use diesel::prelude::*;
 use diesel::ConnectionError;
 use diesel_async::pooled_connection::deadpool::Pool;
-use diesel_async::AsyncPgConnection;
+use diesel_async::{AsyncPgConnection, RunQueryDsl};
 pub use models::{schema::*, *};
 
 pub use actors::*;
@@ -124,6 +125,90 @@ impl Display for DatabaseError {
             ),
         }
     }
+}
+
+pub fn parse_added_on_date(
+    date_str: &str,
+    movie_name: &str,
+) -> Option<chrono::NaiveDateTime> {
+    match chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S%.f") {
+        Ok(dt) => Some(dt),
+        Err(_) => {
+            match chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                Ok(date) => match date.and_hms_opt(0, 0, 0) {
+                    Some(dt) => Some(dt),
+                    None => {
+                        log::error!(
+                            "Invalid time components for date '{}' in movie '{}'",
+                            date_str, movie_name
+                        );
+                        None
+                    }
+                },
+                Err(e) => {
+                    log::error!(
+                        "Failed to parse date '{}' for movie '{}': {}",
+                        date_str, movie_name, e
+                    );
+                    None
+                }
+            }
+        }
+    }
+}
+
+pub(crate) async fn load_actors_for_movies(
+    movie_ids: &[i32],
+    conn: &mut AsyncPgConnection,
+) -> Result<Vec<(MovieActor, Actor)>, DatabaseError> {
+    use schema::{actor, movie_actor};
+    movie_actor::table
+        .inner_join(actor::table)
+        .select((movie_actor::all_columns, actor::all_columns))
+        .filter(movie_actor::movie_id.eq_any(movie_ids))
+        .order(movie_actor::actor_order.asc())
+        .load::<(MovieActor, Actor)>(conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
+pub(crate) async fn load_genres_for_movies(
+    movie_ids: &[i32],
+    conn: &mut AsyncPgConnection,
+) -> Result<Vec<MovieGenre>, DatabaseError> {
+    use schema::movie_genre;
+    movie_genre::table
+        .filter(movie_genre::movie_id.eq_any(movie_ids))
+        .load::<MovieGenre>(conn)
+        .await
+        .map_err(DatabaseError::from)
+}
+
+pub(crate) async fn load_actors_and_genres(
+    movies: &[&Movie],
+    conn_actors: &mut AsyncPgConnection,
+    conn_genres: &mut AsyncPgConnection,
+) -> Result<(Vec<Vec<Actor>>, Vec<Vec<String>>), DatabaseError> {
+    let movie_ids: Vec<i32> = movies.iter().map(|m| m.id).collect();
+
+    let (raw_actors, raw_genres) = tokio::try_join!(
+        load_actors_for_movies(&movie_ids, conn_actors),
+        load_genres_for_movies(&movie_ids, conn_genres),
+    )?;
+
+    let actors_per_movie = raw_actors
+        .grouped_by(movies)
+        .into_iter()
+        .map(|group| group.into_iter().map(|(_, actor)| actor).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+
+    let genres_per_movie = raw_genres
+        .grouped_by(movies)
+        .into_iter()
+        .map(|group| group.into_iter().map(|mg| mg.genre).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+
+    Ok((actors_per_movie, genres_per_movie))
 }
 
 /// Creates a connection pool for the PostgreSQL database.

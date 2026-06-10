@@ -4,93 +4,14 @@ use diesel_async::pooled_connection::deadpool::{Object, Pool};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use log::debug;
 use models::{
-    schema, Actor, Director, FullMovie, Movie, MovieActor, MovieGenre, NewActor, NewDirector,
-    NewMovie, NewMovieActor, NewMovieGenre, StructuredQuery,
+    schema, Actor, Director, FullMovie, Movie, NewActor, NewDirector, NewMovie, NewMovieActor,
+    NewMovieGenre, StructuredQuery,
 };
 use pgvector::VectorExpressionMethods;
 use std::collections::HashMap;
 
 use crate::traits::*;
 use crate::{structured_search, DatabaseError};
-
-async fn load_actors_for_movies(
-    movie_ids: &[i32],
-    conn: &mut AsyncPgConnection,
-) -> Result<Vec<(MovieActor, Actor)>, DatabaseError> {
-    use schema::{actor, movie_actor};
-    movie_actor::table
-        .inner_join(actor::table)
-        .select((
-            movie_actor::all_columns,
-            actor::all_columns,
-        ))
-        .filter(movie_actor::movie_id.eq_any(movie_ids))
-        .order(movie_actor::actor_order.asc())
-        .load::<(MovieActor, Actor)>(conn)
-        .await
-        .map_err(DatabaseError::from)
-}
-
-async fn load_genres_for_movies(
-    movie_ids: &[i32],
-    conn: &mut AsyncPgConnection,
-) -> Result<Vec<MovieGenre>, DatabaseError> {
-    use schema::movie_genre;
-    movie_genre::table
-        .filter(movie_genre::movie_id.eq_any(movie_ids))
-        .load::<MovieGenre>(conn)
-        .await
-        .map_err(DatabaseError::from)
-}
-
-async fn load_actors_and_genres(
-    movies: &[&Movie],
-    conn_actors: &mut AsyncPgConnection,
-    conn_genres: &mut AsyncPgConnection,
-) -> Result<
-    (
-        Vec<Vec<Actor>>,
-        Vec<Vec<String>>,
-    ),
-    DatabaseError,
-> {
-    let movie_ids: Vec<i32> = movies
-        .iter()
-        .map(|m| m.id)
-        .collect();
-
-    let (raw_actors, raw_genres) = tokio::try_join!(
-        load_actors_for_movies(&movie_ids, conn_actors),
-        load_genres_for_movies(&movie_ids, conn_genres),
-    )?;
-
-    let actors_per_movie = raw_actors
-        .grouped_by(movies)
-        .into_iter()
-        .map(|group| {
-            group
-                .into_iter()
-                .map(|(_, actor)| actor)
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-
-    let genres_per_movie = raw_genres
-        .grouped_by(movies)
-        .into_iter()
-        .map(|group| {
-            group
-                .into_iter()
-                .map(|mg| mg.genre)
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-
-    Ok((
-        actors_per_movie,
-        genres_per_movie,
-    ))
-}
 
 fn build_full_movie_from_row(
     movie: Movie,
@@ -126,36 +47,6 @@ fn build_full_movie_from_row(
         ),
         location: Some(movie.location),
         release_year: movie.release_year,
-    }
-}
-
-fn parse_added_on_date(
-    date_str: &str,
-    movie_name: &str,
-) -> Option<chrono::NaiveDateTime> {
-    match chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S%.f") {
-        Ok(dt) => Some(dt),
-        Err(_) => {
-            match chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-                Ok(date) => match date.and_hms_opt(0, 0, 0) {
-                    Some(dt) => Some(dt),
-                    None => {
-                        log::error!(
-                            "Invalid time components for date '{}' in movie '{}'",
-                            date_str, movie_name
-                        );
-                        None
-                    }
-                },
-                Err(e) => {
-                    log::error!(
-                        "Failed to parse date '{}' for movie '{}': {}",
-                        date_str, movie_name, e
-                    );
-                    None
-                }
-            }
-        }
     }
 }
 
@@ -281,7 +172,7 @@ impl PostgresMovieRepository {
         let (mut conn_actors, mut conn_genres) =
             tokio::try_join!(self.get_conn(), self.get_conn())?;
         let (actors_per_movie, genres_per_movie) =
-            load_actors_and_genres(&movie_refs, &mut conn_actors, &mut conn_genres).await?;
+            crate::load_actors_and_genres(&movie_refs, &mut conn_actors, &mut conn_genres).await?;
 
         let query_lower = query.to_lowercase();
 
@@ -484,7 +375,7 @@ impl GetAllMovies for PostgresMovieRepository {
         let (mut conn_actors, mut conn_genres) =
             tokio::try_join!(self.get_conn(), self.get_conn())?;
         let (actors_per_movie, genres_per_movie) =
-            load_actors_and_genres(&movie_refs, &mut conn_actors, &mut conn_genres).await?;
+            crate::load_actors_and_genres(&movie_refs, &mut conn_actors, &mut conn_genres).await?;
 
         let full_movies: Vec<FullMovie> = movies
             .into_iter()
@@ -574,7 +465,7 @@ impl GetMoviesByIds for PostgresMovieRepository {
         let (mut conn_actors, mut conn_genres) =
             tokio::try_join!(self.get_conn(), self.get_conn())?;
         let (actors_per_movie, genres_per_movie) =
-            load_actors_and_genres(&movies, &mut conn_actors, &mut conn_genres).await?;
+            crate::load_actors_and_genres(&movies, &mut conn_actors, &mut conn_genres).await?;
 
         // Build a map to preserve the requested order
         let mut movies_map: HashMap<i32, FullMovie> = movies_with_directors
@@ -632,7 +523,7 @@ impl InsertMovie for PostgresMovieRepository {
         let added_on = full_movie
             .added_on
             .as_deref()
-            .and_then(|date_str| parse_added_on_date(date_str, &full_movie.name));
+            .and_then(|date_str| crate::parse_added_on_date(date_str, &full_movie.name));
 
         let new_movie = NewMovie {
             name: full_movie.name,

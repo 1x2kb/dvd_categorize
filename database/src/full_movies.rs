@@ -107,29 +107,10 @@ pub async fn insert_full_movies(
                     .description
                     .clone(),
                 embedding: movie.embedding.take().map(|v| v.into()),
-                added_on: movie.added_on.as_ref().and_then(|date_str| {
-                    // Try parsing as full timestamp first, then fall back to date-only
-                    match chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S%.f") {
-                        Ok(dt) => Some(dt),
-                        Err(_) => {
-                            match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-                                Ok(date) => {
-                                    match date.and_hms_opt(0, 0, 0) {
-                                        Some(dt) => Some(dt),
-                                        None => {
-                                            log::warn!("Invalid time components for date '{}' in movie '{}'", date_str, movie.name);
-                                            None
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    log::warn!("Failed to parse date '{}' for movie '{}': {}", date_str, movie.name, e);
-                                    None
-                                }
-                            }
-                        }
-                    }
-                }),
+                added_on: movie
+                    .added_on
+                    .as_deref()
+                    .and_then(|date_str| crate::parse_added_on_date(date_str, &movie.name)),
                 location: movie
                     .location
                     .clone(),
