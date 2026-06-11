@@ -1,8 +1,8 @@
 use async_trait::async_trait;
-use models::{
-    Actor, FullMovie, Movie, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovieGenre,
-    StructuredQuery,
-};
+use models::{Actor, FullMovie, Movie, NewActor, NewDirector, NewMovie};
+
+#[cfg(feature = "postgres")]
+use models::{NewMovieActor, NewMovieGenre, StructuredQuery};
 
 use crate::DatabaseError;
 
@@ -94,6 +94,7 @@ pub trait MoviesByLocation: Send + Sync {
     ) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
+#[cfg(feature = "postgres")]
 #[async_trait]
 pub trait SearchMoviesStructured: Send + Sync {
     async fn search_structured(
@@ -123,6 +124,7 @@ pub trait GetActorsForMovie: Send + Sync {
     async fn get_for_movie(&self, movie: &Movie) -> Result<Vec<Actor>, DatabaseError>;
 }
 
+#[cfg(feature = "postgres")]
 #[async_trait]
 pub trait InsertMovieActorAssociations: Send + Sync {
     async fn insert_movie_associations(
@@ -159,6 +161,7 @@ pub trait GetGenresForMovie: Send + Sync {
     async fn get_for_movie(&self, movie: &Movie) -> Result<Vec<String>, DatabaseError>;
 }
 
+#[cfg(feature = "postgres")]
 #[async_trait]
 pub trait InsertMovieGenreAssociations: Send + Sync {
     async fn insert_movie_associations(

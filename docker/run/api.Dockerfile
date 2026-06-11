@@ -16,4 +16,4 @@ RUN cargo install cargo-watch
 
 # Use tini to ensure proper signal forwarding to cargo watch
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["cargo", "watch", "-i", "e2e/*", "-i", "e2e/**", "-x", "run -p dvd_catalog_api --features internet"]
+CMD ["cargo", "watch", "-i", "e2e/*", "-i", "e2e/**", "-x", "run -p dvd_catalog_api --features postgres,internet"]
