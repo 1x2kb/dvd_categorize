@@ -16,25 +16,23 @@ pub use views::{ai_chat::AiChat, ai_live_results::AiLiveResults};
 #[rustfmt::skip]
 enum Route {
     #[layout(Navbar)]
-    #[route("/")]
-    Home {},
-    #[route("/ai/chat")]
-    AiChat {},
-    #[route("/ai/live")]
-    AiLiveResults {},
-    #[route("/moives/new")]
-    InsertMedia {},
-    #[route("/ai/models")]
-    ModelPull {},
-    #[route("/generator")]
-    MoviePrompt {},
-    #[route("/stats")]
-    Stats {},
+        #[route("/ai/chat")]
+        AiChat {},
+        #[redirect("/", || Route::AiLiveResults {})]
+        #[route("/live")]
+        AiLiveResults {},
+        #[route("/movies/new")]
+        InsertMedia {},
+        #[route("/ai/models")]
+        ModelPull {},
+        #[route("/generator")]
+        MoviePrompt {},
+        #[route("/stats")]
+        Stats {},
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
-const HEADER_SVG: Asset = asset!("/assets/header.svg");
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 const MOVIE_GRID_CSS: Asset = asset!("/assets/movie_grid.css");
 const CHAT_CSS: Asset = asset!("/assets/chat.css");
@@ -82,43 +80,6 @@ fn App() -> Element {
     }
 }
 
-#[component]
-pub fn Hero() -> Element {
-    rsx! {
-        div {
-            id: "hero",
-            img { src: HEADER_SVG, id: "header" }
-            div { id: "links",
-                Link {
-                    to: Route::AiChat {  }, "Chat"
-                }
-                Link {
-                    to: Route::AiLiveResults {}, "Live"
-                }
-                Link {
-                    to: Route::InsertMedia {}, "Insert"
-                }
-                Link {
-                    to: Route::MoviePrompt {}, "Generator"
-                }
-                Link {
-                    to: Route::ModelPull {}, "Models"
-                }
-                Link {
-                    to: Route::Stats {}, "Stats"
-                }
-            }
-        }
-    }
-}
-
-/// Home page
-#[component]
-fn Home() -> Element {
-    rsx! {
-        Hero {}
-    }
-}
 /// Shared navbar component.
 #[component]
 fn Navbar() -> Element {
@@ -126,11 +87,8 @@ fn Navbar() -> Element {
         div {
             id: "navbar",
             Link {
-                to: Route::Home {},
-                "Home"
-            }
-            Link {
-                to: Route::AiChat {  }, "Chat"
+                to: Route::AiChat {},
+                "Chat"
             }
             Link {
                 to: Route::AiLiveResults {}, "Live"

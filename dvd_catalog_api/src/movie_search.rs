@@ -2,14 +2,15 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use ai_chat::OllamaClient;
-use axum::extract::Json;
+use axum::extract::{Json, State};
 use axum_macros::debug_handler;
 use categorizer_utilities::strip_punctuation;
 use database::{
-    question::AiAction, traits::SearchMoviesByEmbedding, FullMovie, PostgresMovieRepository,
+    question::AiAction,
+    traits::{GetAllMovies, SearchMoviesByEmbedding},
+    FullMovie, PostgresMovieRepository,
 };
 use log::{error, info};
-use ollama_rs::Ollama;
 use tracing::instrument;
 
 use crate::embedding;
@@ -448,10 +449,11 @@ fn reciprocal_rank_fusion(
 }
 
 /// Performs text-only keyword search without AI enhancement or vector operations
-#[instrument(skip(movies))]
+/// Uses database-level ILIKE matching with scoring
+#[instrument(skip(repo))]
 async fn text_only_search(
     query: &str,
-    movies: &Arc<Vec<FullMovie>>,
+    repo: &PostgresMovieRepository,
     limit: usize,
 ) -> (
     Vec<(
@@ -460,74 +462,55 @@ async fn text_only_search(
     )>,
     String,
 ) {
-    let start_time = std::time::Instant::now();
+    let _start_time = std::time::Instant::now();
     info!("Text-only search mode");
 
-    // Extract entities for keyword matching
-    let (titles, actors, genres) = extract_entities(
-        query, movies,
-    )
-    .await;
-    info!(
-        "Entity extraction - titles: {:?}, actors: {:?}, genres: {:?}",
-        titles, actors, genres
-    );
-
-    let criteria = SearchCriteria {
-        titles,
-        actors,
-        genres,
+    // Use database-level text search
+    let db_start = std::time::Instant::now();
+    let matching_movies = match repo
+        .search_movies_by_text(
+            query,
+            limit as i64,
+        )
+        .await
+    {
+        Ok(results) => {
+            info!(
+                "DB text search found {} results in {:.2?}",
+                results.len(),
+                db_start.elapsed()
+            );
+            results
+                .into_iter()
+                .map(
+                    |(movie, score)| {
+                        (
+                            movie.id, score,
+                        )
+                    },
+                )
+                .collect()
+        }
+        Err(e) => {
+            error!(
+                "DB text search failed: {:?}",
+                e
+            );
+            Vec::new()
+        }
     };
 
-    // Run keyword search only
-    let keyword_start = std::time::Instant::now();
-    let keyword_results = keyword_search(
-        movies,
-        &criteria,
-        limit * 2,
-    );
-
-    info!(
-        "Text search found {} results in {:.2?}",
-        keyword_results.len(),
-        keyword_start.elapsed()
-    );
-
-    if !keyword_results.is_empty() {
-        info!(
-            "Top matches (ID, score): {:?}",
-            keyword_results
-                .iter()
-                .take(5)
-                .collect::<Vec<_>>()
-        );
-    }
-
-    // Return raw keyword scores
-    let final_results: Vec<(
-        i32,
-        f32,
-    )> = keyword_results
-        .into_iter()
-        .take(limit)
-        .collect();
-
-    info!(
-        "Text search completed in {:.2?}, returning {} results",
-        start_time.elapsed(),
-        final_results.len()
-    );
-
     (
-        final_results,
+        matching_movies,
         query.to_string(),
     )
 }
 
 /// Performs vector-only search with query enhancement
-#[instrument]
+#[instrument(skip(repo))]
 async fn vector_only_search(
     query: &str,
+    repo: &PostgresMovieRepository,
     limit: usize,
     disable_enhancement: bool,
     model: Option<&str>,
@@ -561,17 +544,13 @@ async fn vector_only_search(
     let vector_start = std::time::Instant::now();
     let vector_results = match embedding(&enhanced_query).await {
         Ok(embedding_vec) => {
-            let search_result = match PostgresMovieRepository::from_env().await {
-                Ok(repo) => {
-                    repo.search_by_embedding(
-                        embedding_vec,
-                        (limit * 2) as i64,
-                    )
-                    .await
-                }
-                Err(e) => Err(e),
-            };
-            match search_result {
+            match repo
+                .search_by_embedding(
+                    embedding_vec,
+                    (limit * 2) as i64,
+                )
+                .await
+            {
                 Ok(movies_from_db) => {
                     let ids: Vec<i32> = movies_from_db
                         .into_iter()
@@ -633,10 +612,11 @@ async fn vector_only_search(
 }
 
 /// Performs hybrid search combining both keyword and vector search with RRF fusion
-#[instrument(skip(movies))]
+#[instrument(skip(movies, repo))]
 async fn hybrid_both_search(
     query: &str,
     movies: Arc<Vec<FullMovie>>,
+    repo: &PostgresMovieRepository,
     limit: usize,
     disable_enhancement: bool,
     model: Option<&str>,
@@ -724,17 +704,13 @@ async fn hybrid_both_search(
             let vector_start = std::time::Instant::now();
             match embedding(&enhanced_query_clone).await {
                 Ok(embedding_vec) => {
-                    let search_result = match PostgresMovieRepository::from_env().await {
-                        Ok(repo) => {
-                            repo.search_by_embedding(
-                                embedding_vec,
-                                (limit * 2) as i64,
-                            )
-                            .await
-                        }
-                        Err(e) => Err(e),
-                    };
-                    match search_result {
+                    match repo
+                        .search_by_embedding(
+                            embedding_vec,
+                            (limit * 2) as i64,
+                        )
+                        .await
+                    {
                         Ok(movies_from_db) => {
                             let ids: Vec<i32> = movies_from_db
                                 .into_iter()
@@ -866,14 +842,20 @@ async fn structured_query_search(
             let pool = match database::get_connection_pool().await {
                 Ok(pool) => pool,
                 Err(e) => {
-                    error!("Failed to get database pool: {:?}", e);
+                    error!(
+                        "Failed to get database pool: {:?}",
+                        e
+                    );
                     return (
                         Vec::new(),
                         query.to_string(),
                     );
                 }
             };
-            match pool.get().await {
+            match pool
+                .get()
+                .await
+            {
                 Ok(mut conn) => {
                     match database::structured_search::search_movies_structured(
                         &structured_query,
@@ -954,10 +936,11 @@ async fn structured_query_search(
 /// - Vector: cosine similarity (0-1, higher is better)
 /// - Both: RRF score combining both methods
 /// - Structured: AI-parsed query with dynamic Diesel queries
-#[instrument(skip(movies))]
+#[instrument(skip(movies, repo))]
 pub async fn hybrid_search(
     query: &str,
     movies: Arc<Vec<FullMovie>>,
+    repo: &PostgresMovieRepository,
     limit: usize,
     disable_enhancement: bool,
     search_mode: models::SearchMode,
@@ -972,13 +955,14 @@ pub async fn hybrid_search(
     match search_mode {
         models::SearchMode::Text => {
             text_only_search(
-                query, &movies, limit,
+                query, repo, limit,
             )
             .await
         }
         models::SearchMode::Vector => {
             vector_only_search(
                 query,
+                repo,
                 limit,
                 disable_enhancement,
                 model,
@@ -989,6 +973,7 @@ pub async fn hybrid_search(
             hybrid_both_search(
                 query,
                 movies,
+                repo,
                 limit,
                 disable_enhancement,
                 model,
@@ -1084,18 +1069,18 @@ async fn extract_entities_from_movies(
 ///
 /// # Returns
 /// JSON response containing the AI's response to the query
-#[instrument]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
-    let dvds = match PostgresMovieRepository::from_env().await {
-        Ok(repo) => {
-            use database::traits::GetAllMovies;
-            repo.get_all()
-                .await
-                .unwrap_or_else(|_| Vec::new())
-        }
-        Err(_) => Vec::new(),
-    };
+pub async fn chat(
+    State(state): State<crate::DbState>,
+    Json(action): Json<AiAction>,
+) -> Json<AiAction> {
+    let repo = &state.pool;
+
+    let dvds = repo
+        .get_all()
+        .await
+        .unwrap_or_default();
 
     let (uuid, question, model, temperature) = (
         action.uuid,
@@ -1116,6 +1101,7 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
     let (movie_results, _enhanced_query) = hybrid_search(
         &question,
         Arc::clone(&arc_dvds),
+        repo,
         15,
         false,
         models::SearchMode::Both,
@@ -1158,25 +1144,28 @@ pub async fn chat(Json(action): Json<AiAction>) -> Json<AiAction> {
     );
 
     info!("Sending question to AI.");
+    let ollama_client = match ai_chat::make_ollama_client() {
+        Ok(o) => o,
+        Err(e) => {
+            error!(
+                "Failed to create Ollama client: {}",
+                e
+            );
+            return Json(
+                AiAction {
+                    uuid,
+                    action: "There was an error connecting to the AI service.".to_string(),
+                    model,
+                    temperature: None,
+                },
+            );
+        }
+    };
     let result = ai_chat::ai_message(
         Arc::new(full_movies),
         Arc::new(
             OllamaClient {
-                ollama_client: {
-                    let ollama_host =
-                        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "ollama".to_string());
-                    let ollama_port =
-                        std::env::var("OLLAMA_PORT").unwrap_or_else(|_| "11434".to_string());
-                    let ollama_url = format!(
-                        "http://{}:{}",
-                        ollama_host, ollama_port
-                    );
-                    Ollama::from_url(
-                        ollama_url
-                            .parse()
-                            .unwrap(),
-                    )
-                },
+                ollama_client,
                 ai_action: AiAction {
                     uuid: uuid.to_string(),
                     action: question,

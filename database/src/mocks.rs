@@ -616,7 +616,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_movie_repository() {
-        let mut repo = MockMovieRepository::new();
+        let repo = MockMovieRepository::new();
         let movie = FullMovie {
             id: 0,
             key_hash: FullMovie::generate_key_hash("Test Movie"),

@@ -8,11 +8,38 @@ use chrono::NaiveDate;
 use log::error;
 use models::{FullMovie, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovieGenre};
 
+fn find_movie_id(
+    movie_name: &str,
+    movie_inserts: &[(
+        i32,
+        String,
+    )],
+) -> Option<i32> {
+    movie_inserts
+        .binary_search_by(
+            |(_, name)| {
+                name.as_str()
+                    .cmp(movie_name)
+            },
+        )
+        .ok()
+        .and_then(
+            |idx| {
+                movie_inserts
+                    .get(idx)
+                    .map(|(id, _)| *id)
+            },
+        )
+}
+
 ///
 /// Adds a Vec of FullMovies in bulk to the database.
 ///
 /// TODO: Needs refactor
-pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>, pool: &Pool<AsyncPgConnection>) -> Result<(), Box<dyn Error>> {
+pub async fn insert_full_movies(
+    mut full_movies: Vec<FullMovie>,
+    pool: &Pool<AsyncPgConnection>,
+) -> Result<(), Box<dyn Error>> {
     // Validate all dates before proceeding with insert
     for (index, movie) in full_movies
         .iter()
@@ -24,7 +51,7 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>, pool: &Pool<Asy
                 &movie.name,
             );
 
-            if !date_result.is_ok() {
+            if date_result.is_err() {
                 error!(
                     "Movie '{}' at index '{}' had a date parsing issue",
                     movie.name, index
@@ -35,24 +62,10 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>, pool: &Pool<Asy
         }
     }
 
-    let (mut actors, _genres, mut directors) = (
+    let (actors, _genres, directors) = (
         get_unique_actors(&full_movies),
         get_unique_genres(&full_movies),
         get_unique_directors(&full_movies),
-    );
-
-    // Sort results for binary search
-    actors.sort_by(
-        |a, b| {
-            a.name
-                .cmp(&b.name)
-        },
-    );
-    directors.sort_by(
-        |a, b| {
-            a.name
-                .cmp(&b.name)
-        },
     );
 
     let mut connection = pool
@@ -63,16 +76,27 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>, pool: &Pool<Asy
                 crate::DatabaseError::ConnectionError(ConnectionError::BadConnection(e.to_string()))
             },
         )?;
-    let actors = crate::insert_actors(
+    let mut actors = crate::insert_actors(
         &actors,
         &mut connection,
     )
     .await?;
-    let directors = crate::insert_directors(
+    actors.sort_by(
+        |a, b| {
+            a.1.cmp(&b.1)
+        },
+    );
+
+    let mut directors = crate::insert_directors(
         &directors,
         &mut connection,
     )
     .await?;
+    directors.sort_by(
+        |a, b| {
+            a.1.cmp(&b.1)
+        },
+    );
 
     let movies: Vec<NewMovie> = full_movies
         .iter_mut()
@@ -104,30 +128,21 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>, pool: &Pool<Asy
                 description: movie
                     .description
                     .clone(),
-                embedding: movie.embedding.take().map(|v| v.into()),
-                added_on: movie.added_on.as_ref().and_then(|date_str| {
-                    // Try parsing as full timestamp first, then fall back to date-only
-                    match chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S%.f") {
-                        Ok(dt) => Some(dt),
-                        Err(_) => {
-                            match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-                                Ok(date) => {
-                                    match date.and_hms_opt(0, 0, 0) {
-                                        Some(dt) => Some(dt),
-                                        None => {
-                                            log::warn!("Invalid time components for date '{}' in movie '{}'", date_str, movie.name);
-                                            None
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    log::warn!("Failed to parse date '{}' for movie '{}': {}", date_str, movie.name, e);
-                                    None
-                                }
-                            }
-                        }
-                    }
-                }),
+                embedding: movie
+                    .embedding
+                    .take()
+                    .map(|v| v.into()),
+                added_on: movie
+                    .added_on
+                    .as_deref()
+                    .and_then(
+                        |date_str| {
+                            crate::parse_added_on_date(
+                                date_str,
+                                &movie.name,
+                            )
+                        },
+                    ),
                 location: movie
                     .location
                     .clone(),
@@ -152,41 +167,33 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>, pool: &Pool<Asy
         .iter()
         .flat_map(
             |movie| {
-                let movie_id = movie_inserts
-                    .binary_search_by(|(_, movie_name)| movie_name.cmp(&movie.name))
-                    .ok()
-                    .and_then(
-                        |found_index| {
-                            movie_inserts
-                                .get(found_index)
-                                .map(|(id, _)| *id)
+                let Some(movie_id) = find_movie_id(
+                    &movie.name,
+                    &movie_inserts,
+                ) else {
+                    return Vec::new();
+                };
+
+                movie
+                    .actors
+                    .iter()
+                    .enumerate()
+                    .filter_map(
+                        |(index, actor)| {
+                            actors
+                                .binary_search_by(|(_, name)| name.cmp(&actor.name))
+                                .ok()
+                                .and_then(|actor_index| actors.get(actor_index))
+                                .map(
+                                    |(actor_id, _)| NewMovieActor {
+                                        movie_id,
+                                        actor_id: *actor_id,
+                                        actor_order: (index + 1) as i32,
+                                    },
+                                )
                         },
-                    );
-
-                if let Some(movie_id) = movie_id {
-                    return movie
-                        .actors
-                        .iter()
-                        .enumerate()
-                        .filter_map(
-                            |(index, actor)| {
-                                actors
-                                    .binary_search_by(|(_, name)| name.cmp(&actor.name))
-                                    .ok()
-                                    .and_then(|actor_index| actors.get(actor_index))
-                                    .map(
-                                        |(actor_id, _)| NewMovieActor {
-                                            movie_id,
-                                            actor_id: *actor_id,
-                                            actor_order: (index + 1) as i32,
-                                        },
-                                    )
-                            },
-                        )
-                        .collect();
-                }
-
-                Vec::new()
+                    )
+                    .collect()
             },
         )
         .collect();
@@ -201,31 +208,23 @@ pub async fn insert_full_movies(mut full_movies: Vec<FullMovie>, pool: &Pool<Asy
         .iter()
         .flat_map(
             |movie| {
-                let movie_id = movie_inserts
-                    .binary_search_by(|(_, movie_name)| movie_name.cmp(&movie.name))
-                    .ok()
-                    .and_then(
-                        |found_index| {
-                            movie_inserts
-                                .get(found_index)
-                                .map(|(id, _)| *id)
+                let Some(movie_id) = find_movie_id(
+                    &movie.name,
+                    &movie_inserts,
+                ) else {
+                    return Vec::new();
+                };
+
+                movie
+                    .genres
+                    .iter()
+                    .map(
+                        |genre| NewMovieGenre {
+                            movie_id,
+                            genre: genre.clone(),
                         },
-                    );
-
-                if let Some(movie_id) = movie_id {
-                    return movie
-                        .genres
-                        .iter()
-                        .map(
-                            |genre| NewMovieGenre {
-                                movie_id,
-                                genre: genre.clone(),
-                            },
-                        )
-                        .collect();
-                }
-
-                Vec::new()
+                    )
+                    .collect()
             },
         )
         .collect();

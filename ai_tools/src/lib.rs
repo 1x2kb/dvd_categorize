@@ -169,7 +169,14 @@ impl Tool for FilterByActorTool {
             )?;
         let movie_titles: Vec<String> = movies
             .iter()
-            .map(|m| format!("{} ({})", m.name, m.release_year))
+            .map(
+                |m| {
+                    format!(
+                        "{} ({})",
+                        m.name, m.release_year
+                    )
+                },
+            )
             .collect();
         info!(
             "filter_by_actor sending {} movies to AI: {:?}",
@@ -231,7 +238,14 @@ impl Tool for FilterByGenreTool {
             )?;
         let movie_titles: Vec<String> = movies
             .iter()
-            .map(|m| format!("{} ({})", m.name, m.release_year))
+            .map(
+                |m| {
+                    format!(
+                        "{} ({})",
+                        m.name, m.release_year
+                    )
+                },
+            )
             .collect();
         info!(
             "filter_by_genre sending {} movies to AI: {:?}",
@@ -293,7 +307,14 @@ impl Tool for FilterByDirectorTool {
             )?;
         let movie_titles: Vec<String> = movies
             .iter()
-            .map(|m| format!("{} ({})", m.name, m.release_year))
+            .map(
+                |m| {
+                    format!(
+                        "{} ({})",
+                        m.name, m.release_year
+                    )
+                },
+            )
             .collect();
         info!(
             "filter_by_director sending {} movies to AI: {:?}",
@@ -355,7 +376,14 @@ impl Tool for GetMovieDetailsTool {
             )?;
         let movie_titles: Vec<String> = movies
             .iter()
-            .map(|m| format!("{} ({})", m.name, m.release_year))
+            .map(
+                |m| {
+                    format!(
+                        "{} ({})",
+                        m.name, m.release_year
+                    )
+                },
+            )
             .collect();
         info!(
             "get_movie_details sending {} movies to AI: {:?}",

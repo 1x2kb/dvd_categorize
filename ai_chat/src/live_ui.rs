@@ -42,7 +42,7 @@ impl AiChatProvider for OllamaClient {
             num_ctx
         );
         info!(
-            "Using temprature {}",
+            "Using temperature {}",
             temperature
         );
 

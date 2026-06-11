@@ -23,9 +23,14 @@ pub struct GeneratedMovieCardProps {
 
 #[component]
 pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
-    let is_catalog = props.movie.already_in_catalog;
+    let is_catalog = props
+        .movie
+        .already_in_catalog;
     let disabled = props.disabled;
-    let actors_str = props.movie.actors.join(", ");
+    let actors_str = props
+        .movie
+        .actors
+        .join(", ");
 
     rsx! {
         div {
@@ -106,20 +111,7 @@ pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
                         },
                         "✏ Edit"
                     }
-                    if is_catalog {
-                        button {
-                            class: if disabled { "gen-btn gen-btn-remove gen-btn-disabled" } else { "gen-btn gen-btn-remove" },
-                            onclick: move |evt| {
-                                evt.stop_propagation();
-                                if disabled {
-                                    props.on_disabled_click.call(());
-                                } else {
-                                    props.on_remove.call(());
-                                }
-                            },
-                            "🗑 Remove"
-                        }
-                    } else {
+                    if !is_catalog {
                         button {
                             class: if props.locked { "gen-btn gen-btn-lock gen-btn-lock-active" } else if disabled { "gen-btn gen-btn-lock gen-btn-disabled" } else { "gen-btn gen-btn-lock" },
                             title: if props.locked { "Locked — will not be regenerated" } else { "Unlocked — will be regenerated on next Generate" },
@@ -131,8 +123,20 @@ pub fn GeneratedMovieCard(props: GeneratedMovieCardProps) -> Element {
                                     props.on_lock_toggle.call(!props.locked);
                                 }
                             },
-                            if props.locked { "🔒 Locked" } else { "🔓 Lock" }
+                            if props.locked { "� Locked" } else { "🔓 Lock" }
                         }
+                    }
+                    button {
+                        class: if disabled { "gen-btn gen-btn-remove gen-btn-disabled" } else { "gen-btn gen-btn-remove" },
+                        onclick: move |evt| {
+                            evt.stop_propagation();
+                            if disabled {
+                                props.on_disabled_click.call(());
+                            } else {
+                                props.on_remove.call(());
+                            }
+                        },
+                        "� Remove"
                     }
                 }
             }
@@ -153,12 +157,54 @@ pub struct EditableMovieCardProps {
 
 #[component]
 pub fn EditableMovieCard(props: EditableMovieCardProps) -> Element {
-    let mut title = use_signal(|| props.movie.title.clone());
-    let mut year = use_signal(|| props.movie.year.to_string());
-    let mut director = use_signal(|| props.movie.director.clone());
-    let mut actors = use_signal(|| props.movie.actors.join(", "));
-    let mut genres = use_signal(|| props.movie.genres.join(", "));
-    let mut description = use_signal(|| props.movie.description.clone());
+    let mut title = use_signal(
+        || {
+            props
+                .movie
+                .title
+                .clone()
+        },
+    );
+    let mut year = use_signal(
+        || {
+            props
+                .movie
+                .year
+                .to_string()
+        },
+    );
+    let mut director = use_signal(
+        || {
+            props
+                .movie
+                .director
+                .clone()
+        },
+    );
+    let mut actors = use_signal(
+        || {
+            props
+                .movie
+                .actors
+                .join(", ")
+        },
+    );
+    let mut genres = use_signal(
+        || {
+            props
+                .movie
+                .genres
+                .join(", ")
+        },
+    );
+    let mut description = use_signal(
+        || {
+            props
+                .movie
+                .description
+                .clone()
+        },
+    );
 
     rsx! {
         div {

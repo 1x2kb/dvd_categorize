@@ -72,17 +72,31 @@ pub async fn extract_rag_query(user_message: &str, model: Option<&str>) -> Optio
 
             // Drop genres if other criteria exist (genres are too restrictive when combined)
             // Only keep genres for genre-only queries
-            let has_other_criteria = !structured_query.actors.is_empty()
-                || !structured_query.directors.is_empty()
-                || !structured_query.title_keywords.is_empty()
-                || !structured_query.description_keywords.is_empty();
+            let has_other_criteria = !structured_query
+                .actors
+                .is_empty()
+                || !structured_query
+                    .directors
+                    .is_empty()
+                || !structured_query
+                    .title_keywords
+                    .is_empty()
+                || !structured_query
+                    .description_keywords
+                    .is_empty();
 
-            if has_other_criteria && !structured_query.genres.is_empty() {
+            if has_other_criteria
+                && !structured_query
+                    .genres
+                    .is_empty()
+            {
                 info!(
                     "Dropping genres {} due to other criteria being present (genres are too restrictive when combined)",
                     structured_query.genres.len()
                 );
-                structured_query.genres.clear();
+                structured_query
+                    .genres
+                    .clear();
             }
 
             info!(
@@ -311,32 +325,53 @@ pub fn format_movies_for_context(movies: &[FullMovie]) -> String {
     }
 
     // Build CSV format: Title,Year,Director,Actors
-    let mut csv_lines: Vec<String> = vec![
-        "Title,Year,Director,Actors".to_string(),
-    ];
+    let mut csv_lines: Vec<String> = vec!["Title,Year,Director,Actors".to_string()];
 
-    for m in movies.iter().take(15) {
+    for m in movies
+        .iter()
+        .take(15)
+    {
         let director = m
             .director
             .as_ref()
-            .map(|d| d.name.as_str())
+            .map(
+                |d| {
+                    d.name
+                        .as_str()
+                },
+            )
             .unwrap_or("Unknown");
         let actors = m
             .actors
             .iter()
-            .map(|a| a.name.as_str())
+            .map(
+                |a| {
+                    a.name
+                        .as_str()
+                },
+            )
             .collect::<Vec<_>>()
             .join("; ");
 
         // Escape quotes in CSV fields
-        let name_escaped = m.name.replace('"', "\"\"");
-        let director_escaped = director.replace('"', "\"\"");
-        let actors_escaped = actors.replace('"', "\"\"");
+        let name_escaped = m
+            .name
+            .replace(
+                '"', "\"\"",
+            );
+        let director_escaped = director.replace(
+            '"', "\"\"",
+        );
+        let actors_escaped = actors.replace(
+            '"', "\"\"",
+        );
 
-        csv_lines.push(format!(
-            "\"{}\",{},\"{}\",\"{}\"",
-            name_escaped, m.release_year, director_escaped, actors_escaped
-        ));
+        csv_lines.push(
+            format!(
+                "\"{}\",{},\"{}\",\"{}\"",
+                name_escaped, m.release_year, director_escaped, actors_escaped
+            ),
+        );
     }
 
     let movie_csv = csv_lines.join("\n");

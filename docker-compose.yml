@@ -82,16 +82,6 @@ services:
     volumes:
       - ./:/app
 
-  redis:
-    image: redis:alpine
-    networks:
-      - dvd-net
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-
   diesel_migrate:
     networks:
       - dvd-net
@@ -210,7 +200,6 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
   pgdata:
   loki_data:
   grafana_data:

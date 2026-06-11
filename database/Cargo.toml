@@ -8,8 +8,12 @@ readme = "README.md"
 [features]
 testing = ["rand"]
 
+[[example]]
+name = "trait_usage"
+required-features = ["testing"]
+
 [dependencies]
-async-trait = "0.1"
+async-trait.workspace = true
 chrono = "0.4"
 diesel.workspace = true
 uuid = "1.0"

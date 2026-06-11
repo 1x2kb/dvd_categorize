@@ -11,9 +11,12 @@ use models::{
 pub async fn get_all_genres() -> Result<Vec<String>, DatabaseError> {
     use crate::schema::movie_genre::dsl::*;
     let pool = crate::get_connection_pool().await?;
-    let mut conn = pool.get().await.map_err(|e| {
-        DatabaseError::ConnectionError(ConnectionError::BadConnection(e.to_string()))
-    })?;
+    let mut conn = pool
+        .get()
+        .await
+        .map_err(
+            |e| DatabaseError::ConnectionError(ConnectionError::BadConnection(e.to_string())),
+        )?;
 
     movie_genre
         .select(genre)

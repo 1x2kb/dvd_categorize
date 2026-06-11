@@ -1,14 +1,14 @@
-use std::{env, sync::Arc};
+use std::env;
 
 use axum::{
     http::{self, Method},
     routing::{get, post},
     Router,
 };
-use database::{traits::GetAllMovies, FullMovie, PostgresMovieRepository};
+use database::PostgresMovieRepository;
 use dotenvy::dotenv;
 use dvd_catalog::*;
-use log::{error, info, warn};
+use log::{info, warn};
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -17,8 +17,9 @@ async fn main() {
     // Initialize JSON logging
     tracing_subscriber::registry()
         .with(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info,dvd_catalog=debug,database=debug,ai_chat=debug")),
+            EnvFilter::try_from_default_env().unwrap_or_else(
+                |_| EnvFilter::new("info,dvd_catalog=debug,database=debug,ai_chat=debug"),
+            ),
         )
         .with(
             tracing_subscriber::fmt::layer()
@@ -35,34 +36,14 @@ async fn main() {
         dotenv().expect("Failed to run env reader");
     }
 
-    // Load movies into cache state on startup
+    // Create DB pool
     let db_pool = PostgresMovieRepository::from_env()
         .await
         .expect("Failed to create DB pool");
-    let load_result = db_pool
-        .get_all()
-        .await;
-    let movies = match load_result {
-        Ok(movies) => {
-            info!(
-                "Successfully loaded {} movies into cache",
-                movies.len()
-            );
-            movies
-        }
-        Err(e) => {
-            error!(
-                "Failed to load movies: {}",
-                e
-            );
-            Vec::new()
-        }
-    };
+    info!("Database pool created successfully");
 
-    // Create the router with the initial movie data
-    let app = init_router(
-        movies, db_pool,
-    );
+    // Create the router
+    let app = init_router(db_pool);
 
     let connection = get_host();
     info!(
@@ -100,50 +81,58 @@ fn get_host() -> String {
     format!("{host}:{port}")
 }
 
-fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Router {
-    // Create state with the provided movies wrapped in Arc<RwLock<>>
-    let state = CacheState {
-        movies: Arc::new(tokio::sync::RwLock::new(movies)),
-        repo: db_pool.clone(),
-    };
+fn init_router(db_pool: PostgresMovieRepository) -> Router {
+    let state = DbState { pool: db_pool };
 
-    // Create DB state for chat history
-    let db_state = DbState { pool: db_pool };
-
-    // Create a router for endpoints that need CacheState
-    let stateful_router = Router::new()
+    Router::new()
+        .route(
+            "/",
+            get(hello_world),
+        )
         .route(
             "/dvd",
             get(get_dvds),
         )
         .route(
-            "/ai/dvd-match",
-            post(get_matching_movies),
+            "/dvd/{id}",
+            get(get_dvd),
+        )
+        .route(
+            "/saveMovie",
+            post(save_movie),
         )
         .route(
             "/movie/location",
             post(update_movie_location),
         )
         .route(
-            "/csv/parse",
-            post(parse_csv),
+            "/location/{location}",
+            get(get_movies_by_location),
         )
         .route(
-            "/csv/export",
-            get(export_csv),
+            "/uniqueLocations()",
+            get(unique_locations),
         )
         .route(
-            "/ai/validate-titles",
-            post(validate_titles),
+            "/dvd/recent-releases",
+            get(get_recent_releases),
         )
         .route(
-            "/ai/generate-movies-stream",
-            post(generate_movies_stream),
+            "/dvd/random",
+            get(get_random_movies),
         )
-        .with_state(state);
-
-    // Create router for chat (tool-enabled non-streaming) and streaming, both need DbState
-    let chat_stream_router = Router::new()
+        .route(
+            "/dvd/unknown-location",
+            get(get_unknown_location_movies),
+        )
+        .route(
+            "/ai/recent",
+            get(get_recent_movies),
+        )
+        .route(
+            "/ai/dvd-match",
+            post(get_matching_movies),
+        )
         .route(
             "/ai/chat",
             post(chat),
@@ -161,28 +150,40 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
             get(get_session_history),
         )
         .route(
-            "/dvd/structured-search",
+            "/ai/validate-titles",
+            post(validate_titles),
+        )
+        .route(
+            "/ai/generate-movies",
+            post(generate_movies),
+        )
+        .route(
+            "/ai/generate-movies-stream",
+            post(generate_movies_stream),
+        )
+        .route(
+            "/ai/pull-model",
+            post(pull_ollama_model),
+        )
+        .route(
+            "/ai/models",
+            get(list_available_models),
+        )
+        .route(
+            "/ai/structured-search",
             post(structured_search),
         )
         .route(
-            "/saveMovie",
-            post(save_movie),
-        )
-        .with_state(db_state);
-
-    // Create a router for stateless endpoints
-    let stateless_router = Router::new()
-        .route(
-            "/uniqueLocations()",
-            get(unique_locations),
+            "/csv/preview",
+            post(preview_csv),
         )
         .route(
-            "/location/{location}",
-            get(get_movies_by_location),
+            "/csv/parse",
+            post(parse_csv),
         )
         .route(
-            "/dvd/{id}",
-            get(get_dvd),
+            "/csv/export",
+            get(export_csv),
         )
         .route(
             "/stats/overview",
@@ -200,48 +201,7 @@ fn init_router(movies: Vec<FullMovie>, db_pool: PostgresMovieRepository) -> Rout
             "/stats/top-actors",
             get(stats_top_actors),
         )
-        .route(
-            "/csv/preview",
-            post(preview_csv),
-        )
-        .route(
-            "/ai/pull-model",
-            post(pull_ollama_model),
-        )
-        .route(
-            "/ai/models",
-            get(list_available_models),
-        )
-        .route(
-            "/ai/generate-movies",
-            post(generate_movies),
-        )
-        .route(
-            "/ai/recent",
-            get(get_recent_movies),
-        )
-        .route(
-            "/dvd/recent-releases",
-            get(get_recent_releases),
-        )
-        .route(
-            "/dvd/random",
-            get(get_random_movies),
-        )
-        .route(
-            "/dvd/unknown-location",
-            get(get_unknown_location_movies),
-        )
-        .route(
-            "/",
-            get(hello_world),
-        );
-
-    // Merge the routers
-    Router::new()
-        .merge(stateful_router)
-        .merge(chat_stream_router)
-        .merge(stateless_router)
+        .with_state(state)
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

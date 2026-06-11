@@ -47,23 +47,45 @@ pub static APPROVED_SOURCES: &[ApprovedSource] = &[
         domain: "en.wikipedia.org",
         candidates_fn: |slug| {
             vec![
-                format!("https://en.wikipedia.org/wiki/{}_(film)", slug),
-                format!("https://en.wikipedia.org/wiki/{}", slug),
+                format!(
+                    "https://en.wikipedia.org/wiki/{}_(film)",
+                    slug
+                ),
+                format!(
+                    "https://en.wikipedia.org/wiki/{}",
+                    slug
+                ),
             ]
         },
-        search_url_fn: Some(|title| {
-            reqwest::Url::parse_with_params(
-                "https://en.wikipedia.org/w/index.php",
-                &[("search", format!("{} film", title).as_str()), ("ns0", "1")],
-            )
-            .map(|u| u.to_string())
-            .unwrap_or_else(|_| {
-                format!(
-                    "https://en.wikipedia.org/w/index.php?search={}&ns0=1",
-                    title.replace(' ', "+")
+        search_url_fn: Some(
+            |title| {
+                reqwest::Url::parse_with_params(
+                    "https://en.wikipedia.org/w/index.php",
+                    &[
+                        (
+                            "search",
+                            format!(
+                                "{} film",
+                                title
+                            )
+                            .as_str(),
+                        ),
+                        (
+                            "ns0", "1",
+                        ),
+                    ],
                 )
-            })
-        }),
+                .map(|u| u.to_string())
+                .unwrap_or_else(
+                    |_| {
+                        format!(
+                            "https://en.wikipedia.org/w/index.php?search={}&ns0=1",
+                            title.replace(' ', "+")
+                        )
+                    },
+                )
+            },
+        ),
         infobox_selector: "table.infobox",
         paragraph_selector: "div.mw-parser-output > p",
     },
@@ -72,8 +94,14 @@ pub static APPROVED_SOURCES: &[ApprovedSource] = &[
         domain: "en.wikipedia.org",
         candidates_fn: |slug| {
             vec![
-                format!("https://en.wikipedia.org/wiki/{}_(TV_series)", slug),
-                format!("https://en.wikipedia.org/wiki/{}_(miniseries)", slug),
+                format!(
+                    "https://en.wikipedia.org/wiki/{}_(TV_series)",
+                    slug
+                ),
+                format!(
+                    "https://en.wikipedia.org/wiki/{}_(miniseries)",
+                    slug
+                ),
             ]
         },
         search_url_fn: None,
@@ -84,19 +112,33 @@ pub static APPROVED_SOURCES: &[ApprovedSource] = &[
         name: "Wikidata simple (film)",
         domain: "www.wikidata.org",
         candidates_fn: |_slug| vec![],
-        search_url_fn: Some(|title| {
-            reqwest::Url::parse_with_params(
-                "https://www.wikidata.org/w/index.php",
-                &[("search", title), ("ns0", "1"), ("ns120", "1")],
-            )
-            .map(|u| u.to_string())
-            .unwrap_or_else(|_| {
-                format!(
-                    "https://www.wikidata.org/w/index.php?search={}&ns0=1&ns120=1",
-                    title.replace(' ', "+")
+        search_url_fn: Some(
+            |title| {
+                reqwest::Url::parse_with_params(
+                    "https://www.wikidata.org/w/index.php",
+                    &[
+                        (
+                            "search", title,
+                        ),
+                        (
+                            "ns0", "1",
+                        ),
+                        (
+                            "ns120", "1",
+                        ),
+                    ],
                 )
-            })
-        }),
+                .map(|u| u.to_string())
+                .unwrap_or_else(
+                    |_| {
+                        format!(
+                            "https://www.wikidata.org/w/index.php?search={}&ns0=1&ns120=1",
+                            title.replace(' ', "+")
+                        )
+                    },
+                )
+            },
+        ),
         infobox_selector: "table.infobox",
         paragraph_selector: "div.mw-parser-output > p",
     },
@@ -144,13 +186,19 @@ pub struct MovieScrapedContext {
 impl MovieScrapedContext {
     /// Log a human-readable scrape report at INFO level.
     pub fn log_report(&self) {
-        let found = !self.context.is_empty();
+        let found = !self
+            .context
+            .is_empty();
         info!(
             "[RAG scrape] '{}' — {} ({} chars) | source: {}",
             self.title,
             if found { "FOUND" } else { "NOT FOUND" },
-            self.context.len(),
-            if self.source_url.is_empty() {
+            self.context
+                .len(),
+            if self
+                .source_url
+                .is_empty()
+            {
                 "none"
             } else {
                 &self.source_url
@@ -159,7 +207,8 @@ impl MovieScrapedContext {
         info!(
             "[RAG scrape] '{}' — visited {} URL(s):",
             self.title,
-            self.visited_urls.len()
+            self.visited_urls
+                .len()
         );
         for v in &self.visited_urls {
             match &v.outcome {
@@ -216,11 +265,20 @@ pub async fn scrape_movie_contexts(titles: &[String]) -> Vec<MovieScrapedContext
 
     let handles: Vec<_> = titles
         .iter()
-        .map(|title| {
-            let client = client.clone();
-            let title = title.clone();
-            tokio::spawn(async move { scrape_for_movie(&client, &title).await })
-        })
+        .map(
+            |title| {
+                let client = client.clone();
+                let title = title.clone();
+                tokio::spawn(
+                    async move {
+                        scrape_for_movie(
+                            &client, &title,
+                        )
+                        .await
+                    },
+                )
+            },
+        )
         .collect();
 
     let mut results = Vec::with_capacity(handles.len());
@@ -231,12 +289,23 @@ pub async fn scrape_movie_contexts(titles: &[String]) -> Vec<MovieScrapedContext
                 results.push(ctx);
             }
             Err(e) => {
-                warn!("[RAG scrape] Scrape task panicked: {}", e);
+                warn!(
+                    "[RAG scrape] Scrape task panicked: {}",
+                    e
+                );
             }
         }
     }
 
-    let found = results.iter().filter(|r| !r.context.is_empty()).count();
+    let found = results
+        .iter()
+        .filter(
+            |r| {
+                !r.context
+                    .is_empty()
+            },
+        )
+        .count();
     info!(
         "[RAG scrape] Complete — {}/{} titles yielded usable context",
         found,
@@ -263,7 +332,10 @@ fn build_client() -> reqwest::Client {
 
 /// Try every approved source in order until one returns content.
 async fn scrape_for_movie(client: &reqwest::Client, title: &str) -> MovieScrapedContext {
-    info!("[RAG scrape] Looking up '{}'", title);
+    info!(
+        "[RAG scrape] Looking up '{}'",
+        title
+    );
 
     let slug = title_to_slug(title);
     let mut visited: Vec<VisitedUrl> = Vec::new();
@@ -272,18 +344,32 @@ async fn scrape_for_movie(client: &reqwest::Client, title: &str) -> MovieScraped
         let candidates = (source.candidates_fn)(&slug);
 
         for url in &candidates {
-            debug!("[RAG scrape] Trying {} — {}", source.name, url);
-            match fetch_and_extract(client, url, source).await {
+            debug!(
+                "[RAG scrape] Trying {} — {}",
+                source.name, url
+            );
+            match fetch_and_extract(
+                client, url, source,
+            )
+            .await
+            {
                 Ok((context, final_url)) => {
                     let chars = context.len();
-                    visited.push(VisitedUrl {
-                        url: url.clone(),
-                        source_name: source.name,
-                        outcome: FetchOutcome::Success {
-                            chars_extracted: chars,
+                    visited.push(
+                        VisitedUrl {
+                            url: url.clone(),
+                            source_name: source.name,
+                            outcome: FetchOutcome::Success {
+                                chars_extracted: chars,
+                            },
                         },
-                    });
-                    mark_remaining_skipped(&candidates, url, source.name, &mut visited);
+                    );
+                    mark_remaining_skipped(
+                        &candidates,
+                        url,
+                        source.name,
+                        &mut visited,
+                    );
                     return MovieScrapedContext {
                         title: title.to_string(),
                         context,
@@ -292,11 +378,13 @@ async fn scrape_for_movie(client: &reqwest::Client, title: &str) -> MovieScraped
                     };
                 }
                 Err(outcome) => {
-                    visited.push(VisitedUrl {
-                        url: url.clone(),
-                        source_name: source.name,
-                        outcome,
-                    });
+                    visited.push(
+                        VisitedUrl {
+                            url: url.clone(),
+                            source_name: source.name,
+                            outcome,
+                        },
+                    );
                 }
             }
         }
@@ -307,15 +395,24 @@ async fn scrape_for_movie(client: &reqwest::Client, title: &str) -> MovieScraped
                 "[RAG scrape] Search fallback {} — {}",
                 source.name, search_url
             );
-            match fetch_search_page(client, &search_url, title, source).await {
+            match fetch_search_page(
+                client,
+                &search_url,
+                title,
+                source,
+            )
+            .await
+            {
                 Some((context, final_url, chars)) => {
-                    visited.push(VisitedUrl {
-                        url: search_url,
-                        source_name: source.name,
-                        outcome: FetchOutcome::Success {
-                            chars_extracted: chars,
+                    visited.push(
+                        VisitedUrl {
+                            url: search_url,
+                            source_name: source.name,
+                            outcome: FetchOutcome::Success {
+                                chars_extracted: chars,
+                            },
                         },
-                    });
+                    );
                     return MovieScrapedContext {
                         title: title.to_string(),
                         context,
@@ -324,17 +421,22 @@ async fn scrape_for_movie(client: &reqwest::Client, title: &str) -> MovieScraped
                     };
                 }
                 None => {
-                    visited.push(VisitedUrl {
-                        url: search_url,
-                        source_name: source.name,
-                        outcome: FetchOutcome::NoContent,
-                    });
+                    visited.push(
+                        VisitedUrl {
+                            url: search_url,
+                            source_name: source.name,
+                            outcome: FetchOutcome::NoContent,
+                        },
+                    );
                 }
             }
         }
     }
 
-    warn!("[RAG scrape] No content found for '{}'", title);
+    warn!(
+        "[RAG scrape] No content found for '{}'",
+        title
+    );
     MovieScrapedContext {
         title: title.to_string(),
         context: String::new(),
@@ -348,26 +450,51 @@ async fn fetch_and_extract(
     client: &reqwest::Client,
     url: &str,
     source: &ApprovedSource,
-) -> Result<(String, String), FetchOutcome> {
-    let resp = client.get(url).send().await.map_err(|e| FetchOutcome::Error {
-        reason: e.to_string(),
-    })?;
+) -> Result<
+    (
+        String,
+        String,
+    ),
+    FetchOutcome,
+> {
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(
+            |e| FetchOutcome::Error {
+                reason: e.to_string(),
+            },
+        )?;
 
-    if !resp.status().is_success() {
-        return Err(FetchOutcome::HttpError {
-            status: resp.status().as_u16(),
-        });
+    if !resp
+        .status()
+        .is_success()
+    {
+        return Err(
+            FetchOutcome::HttpError {
+                status: resp
+                    .status()
+                    .as_u16(),
+            },
+        );
     }
 
-    let final_url = resp.url().to_string();
+    let final_url = resp
+        .url()
+        .to_string();
     let html = resp
         .text()
         .await
-        .map_err(|e| FetchOutcome::Error {
-            reason: e.to_string(),
-        })?;
+        .map_err(
+            |e| FetchOutcome::Error {
+                reason: e.to_string(),
+            },
+        )?;
 
-    let context = extract_context_from_html(&html, source);
+    let context = extract_context_from_html(
+        &html, source,
+    );
     if context.is_empty() {
         return Err(FetchOutcome::NoContent);
     }
@@ -385,7 +512,9 @@ async fn fetch_and_extract(
         context.len(),
         final_url
     );
-    Ok((context, final_url))
+    Ok((
+        context, final_url,
+    ))
 }
 
 /// Heuristic check: does the scraped context look like a film/TV article?
@@ -419,7 +548,9 @@ fn context_looks_like_film(context: &str) -> bool {
         "is a science fiction film",
         "is a documentary film",
     ];
-    film_signals.iter().any(|signal| lower.contains(signal))
+    film_signals
+        .iter()
+        .any(|signal| lower.contains(signal))
 }
 
 /// Fetch a search/fallback URL, follow redirects, and try the first result if needed.
@@ -428,24 +559,44 @@ async fn fetch_search_page(
     search_url: &str,
     title: &str,
     source: &ApprovedSource,
-) -> Option<(String, String, usize)> {
-    let resp = client.get(search_url).send().await.ok()?;
-    if !resp.status().is_success() {
+) -> Option<(
+    String,
+    String,
+    usize,
+)> {
+    let resp = client
+        .get(search_url)
+        .send()
+        .await
+        .ok()?;
+    if !resp
+        .status()
+        .is_success()
+    {
         return None;
     }
 
-    let final_url = resp.url().to_string();
-    let html = resp.text().await.ok()?;
+    let final_url = resp
+        .url()
+        .to_string();
+    let html = resp
+        .text()
+        .await
+        .ok()?;
 
     if final_url.contains("/wiki/") && !final_url.contains("Special:Search") {
-        let context = extract_context_from_html(&html, source);
+        let context = extract_context_from_html(
+            &html, source,
+        );
         if !context.is_empty() {
             let chars = context.len();
             debug!(
                 "[RAG scrape] Search redirect landed on article: {} ({} chars)",
                 final_url, chars
             );
-            return Some((context, final_url, chars));
+            return Some((
+                context, final_url, chars,
+            ));
         }
     }
 
@@ -453,15 +604,28 @@ async fn fetch_search_page(
         let result_url = if href.starts_with("http") {
             href
         } else {
-            format!("https://{}{}", source.domain, href)
+            format!(
+                "https://{}{}",
+                source.domain, href
+            )
         };
         debug!(
             "[RAG scrape] Following first search result for '{}': {}",
             title, result_url
         );
-        if let Ok((context, resolved_url)) = fetch_and_extract(client, &result_url, source).await {
+        if let Ok((context, resolved_url)) = fetch_and_extract(
+            client,
+            &result_url,
+            source,
+        )
+        .await
+        {
             let chars = context.len();
-            return Some((context, resolved_url, chars));
+            return Some((
+                context,
+                resolved_url,
+                chars,
+            ));
         }
     }
 
@@ -477,11 +641,13 @@ fn mark_remaining_skipped(
 ) {
     for url in candidates {
         if url != succeeded {
-            visited.push(VisitedUrl {
-                url: url.clone(),
-                source_name,
-                outcome: FetchOutcome::Skipped,
-            });
+            visited.push(
+                VisitedUrl {
+                    url: url.clone(),
+                    source_name,
+                    outcome: FetchOutcome::Skipped,
+                },
+            );
         }
     }
 }
@@ -500,29 +666,46 @@ fn extract_context_from_html(html: &str, source: &ApprovedSource) -> String {
         let th_sel = Selector::parse("th").unwrap();
         let td_sel = Selector::parse("td").unwrap();
 
-        if let Some(infobox) = document.select(&infobox_sel).next() {
+        if let Some(infobox) = document
+            .select(&infobox_sel)
+            .next()
+        {
             let mut infobox_lines: Vec<String> = Vec::new();
             for row in infobox.select(&tr_sel) {
                 let header: String = row
                     .select(&th_sel)
                     .next()
-                    .map(|el| el.text().collect::<String>().trim().to_string())
+                    .map(
+                        |el| {
+                            el.text()
+                                .collect::<String>()
+                                .trim()
+                                .to_string()
+                        },
+                    )
                     .unwrap_or_default();
                 let value: String = row
                     .select(&td_sel)
                     .next()
-                    .map(|el| {
-                        el.text()
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                            .split_whitespace()
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    })
+                    .map(
+                        |el| {
+                            el.text()
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .split_whitespace()
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        },
+                    )
                     .unwrap_or_default();
 
                 if !header.is_empty() && !value.is_empty() {
-                    infobox_lines.push(format!("{}: {}", header, value));
+                    infobox_lines.push(
+                        format!(
+                            "{}: {}",
+                            header, value
+                        ),
+                    );
                 }
             }
             if !infobox_lines.is_empty() {
@@ -530,7 +713,12 @@ fn extract_context_from_html(html: &str, source: &ApprovedSource) -> String {
                     "[RAG scrape] Infobox: {} fields extracted",
                     infobox_lines.len()
                 );
-                parts.push(format!("=== Infobox ===\n{}", infobox_lines.join("\n")));
+                parts.push(
+                    format!(
+                        "=== Infobox ===\n{}",
+                        infobox_lines.join("\n")
+                    ),
+                );
             }
         }
     }
@@ -538,8 +726,12 @@ fn extract_context_from_html(html: &str, source: &ApprovedSource) -> String {
     if let Ok(p_sel) = Selector::parse(source.paragraph_selector) {
         let mut para_count = 0;
         for para in document.select(&p_sel) {
-            let text: String = para.text().collect::<String>();
-            let cleaned = text.trim().to_string();
+            let text: String = para
+                .text()
+                .collect::<String>();
+            let cleaned = text
+                .trim()
+                .to_string();
             if !cleaned.is_empty() && cleaned.len() > 40 {
                 parts.push(cleaned);
                 para_count += 1;
@@ -548,7 +740,10 @@ fn extract_context_from_html(html: &str, source: &ApprovedSource) -> String {
                 }
             }
         }
-        debug!("[RAG scrape] Body paragraphs extracted: {}", para_count);
+        debug!(
+            "[RAG scrape] Body paragraphs extracted: {}",
+            para_count
+        );
     }
 
     let combined = parts.join("\n\n");
@@ -568,7 +763,12 @@ fn extract_first_search_result_url(html: &str) -> Option<String> {
     document
         .select(&result_sel)
         .next()
-        .and_then(|el| el.value().attr("href"))
+        .and_then(
+            |el| {
+                el.value()
+                    .attr("href")
+            },
+        )
         .map(|href| href.to_string())
 }
 
@@ -578,7 +778,9 @@ fn title_to_slug(title: &str) -> String {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join("_")
-        .replace('/', "-")
+        .replace(
+            '/', "-",
+        )
 }
 
 // ---------------------------------------------------------------------------
@@ -591,14 +793,23 @@ mod tests {
 
     #[test]
     fn test_title_to_slug() {
-        assert_eq!(title_to_slug("The Matrix"), "The_Matrix");
-        assert_eq!(title_to_slug("Schindler's List"), "Schindler's_List");
+        assert_eq!(
+            title_to_slug("The Matrix"),
+            "The_Matrix"
+        );
+        assert_eq!(
+            title_to_slug("Schindler's List"),
+            "Schindler's_List"
+        );
     }
 
     #[test]
     fn test_extract_context_empty_html() {
         let source = &APPROVED_SOURCES[0];
-        let result = extract_context_from_html("<html><body></body></html>", source);
+        let result = extract_context_from_html(
+            "<html><body></body></html>",
+            source,
+        );
         assert!(result.is_empty());
     }
 
@@ -606,8 +817,14 @@ mod tests {
     fn test_approved_sources_not_empty() {
         assert!(!APPROVED_SOURCES.is_empty());
         for s in APPROVED_SOURCES {
-            assert!(!s.name.is_empty());
-            assert!(!s.domain.is_empty());
+            assert!(
+                !s.name
+                    .is_empty()
+            );
+            assert!(
+                !s.domain
+                    .is_empty()
+            );
         }
     }
 
@@ -630,7 +847,14 @@ mod tests {
                 },
             ],
         };
-        assert_eq!(ctx.visited_urls.len(), 2);
-        assert!(ctx.context.is_empty());
+        assert_eq!(
+            ctx.visited_urls
+                .len(),
+            2
+        );
+        assert!(
+            ctx.context
+                .is_empty()
+        );
     }
 }

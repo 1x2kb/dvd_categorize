@@ -1,5 +1,4 @@
 pub mod actor_chart;
-pub mod toast;
 pub mod browse_bar;
 pub mod generated_movie_card;
 pub mod generated_movie_grid;
@@ -11,6 +10,7 @@ pub mod movie_grid;
 pub mod search_bar;
 pub mod search_mode_selector;
 pub mod stats_overview;
+pub mod toast;
 pub mod year_chart;
 
 pub use actor_chart::ActorChart;
