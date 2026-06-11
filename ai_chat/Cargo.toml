@@ -12,6 +12,7 @@ internet = ["reqwest", "scraper"]
 database = { path = "../database" }
 models = { path = "../models", features = ["postgres", "ai"] }
 ollama-rs.workspace = true
+tokio-stream = "0.1"
 prompts = { path = "../prompts" }
 serde.workspace = true
 serde_json.workspace = true

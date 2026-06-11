@@ -52,6 +52,7 @@ use ollama_rs::{
     models::ModelOptions,
     Ollama,
 };
+use tokio_stream::StreamExt;
 use tracing::{instrument, Level};
 
 pub use embedding::*;
@@ -333,34 +334,44 @@ pub async fn pull_model(model_name: &str) -> Result<String, String> {
         },
     )?;
 
-    match ollama
-        .pull_model(
+    let mut stream = match ollama
+        .pull_model_stream(
             model_name.to_string(),
             false,
         )
         .await
     {
-        Ok(_) => {
-            info!(
-                "Successfully pulled model: {}",
-                model_name
-            );
-            Ok(
-                format!(
-                    "Successfully pulled model: {}",
-                    model_name
-                ),
-            )
-        }
+        Ok(s) => s,
         Err(e) => {
             let error_msg = format!(
-                "Failed to pull model {}: {:?}",
+                "Failed to start pull for model {}: {:?}",
                 model_name, e
             );
             log::error!("{}", error_msg);
-            Err(error_msg)
+            return Err(error_msg);
+        }
+    };
+
+    let mut last_status = String::new();
+    while let Some(status) = stream.next().await {
+        match status {
+            Ok(s) => {
+                info!("Pull status for {}: {}", model_name, s.message);
+                last_status = s.message;
+            }
+            Err(e) => {
+                let error_msg = format!(
+                    "Error while pulling model {}: {:?}",
+                    model_name, e
+                );
+                log::error!("{}", error_msg);
+                return Err(error_msg);
+            }
         }
     }
+
+    info!("Successfully pulled model: {}", model_name);
+    Ok(format!("Successfully pulled model: {} ({})", model_name, last_status))
 }
 
 /// Generate movie data from titles using structured Ollama output
