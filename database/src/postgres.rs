@@ -169,10 +169,16 @@ impl PostgresMovieRepository {
             .map(|(m, _)| m)
             .collect();
 
-        let (mut conn_actors, mut conn_genres) =
-            tokio::try_join!(self.get_conn(), self.get_conn())?;
-        let (actors_per_movie, genres_per_movie) =
-            crate::load_actors_and_genres(&movie_refs, &mut conn_actors, &mut conn_genres).await?;
+        let (mut conn_actors, mut conn_genres) = tokio::try_join!(
+            self.get_conn(),
+            self.get_conn()
+        )?;
+        let (actors_per_movie, genres_per_movie) = crate::load_actors_and_genres(
+            &movie_refs,
+            &mut conn_actors,
+            &mut conn_genres,
+        )
+        .await?;
 
         let query_lower = query.to_lowercase();
 
@@ -200,7 +206,13 @@ impl PostgresMovieRepository {
                     // Actor scoring
                     if movie_actors
                         .iter()
-                        .any(|a| a.name.to_lowercase().contains(&query_lower))
+                        .any(
+                            |a| {
+                                a.name
+                                    .to_lowercase()
+                                    .contains(&query_lower)
+                            },
+                        )
                     {
                         score += 20.0;
                     }
@@ -218,7 +230,12 @@ impl PostgresMovieRepository {
                     // Genre scoring
                     if movie_genres
                         .iter()
-                        .any(|g| g.to_lowercase().contains(&query_lower))
+                        .any(
+                            |g| {
+                                g.to_lowercase()
+                                    .contains(&query_lower)
+                            },
+                        )
                     {
                         score += 15.0;
                     }
@@ -372,18 +389,28 @@ impl GetAllMovies for PostgresMovieRepository {
             .map(|(movie, _)| movie)
             .collect();
 
-        let (mut conn_actors, mut conn_genres) =
-            tokio::try_join!(self.get_conn(), self.get_conn())?;
-        let (actors_per_movie, genres_per_movie) =
-            crate::load_actors_and_genres(&movie_refs, &mut conn_actors, &mut conn_genres).await?;
+        let (mut conn_actors, mut conn_genres) = tokio::try_join!(
+            self.get_conn(),
+            self.get_conn()
+        )?;
+        let (actors_per_movie, genres_per_movie) = crate::load_actors_and_genres(
+            &movie_refs,
+            &mut conn_actors,
+            &mut conn_genres,
+        )
+        .await?;
 
         let full_movies: Vec<FullMovie> = movies
             .into_iter()
             .zip(actors_per_movie)
             .zip(genres_per_movie)
-            .map(|(((movie, director), actors), genres)| {
-                build_full_movie_from_row(movie, director, actors, genres)
-            })
+            .map(
+                |(((movie, director), actors), genres)| {
+                    build_full_movie_from_row(
+                        movie, director, actors, genres,
+                    )
+                },
+            )
             .collect();
 
         debug!(
@@ -462,23 +489,33 @@ impl GetMoviesByIds for PostgresMovieRepository {
             .map(|(movie, _)| movie)
             .collect();
 
-        let (mut conn_actors, mut conn_genres) =
-            tokio::try_join!(self.get_conn(), self.get_conn())?;
-        let (actors_per_movie, genres_per_movie) =
-            crate::load_actors_and_genres(&movies, &mut conn_actors, &mut conn_genres).await?;
+        let (mut conn_actors, mut conn_genres) = tokio::try_join!(
+            self.get_conn(),
+            self.get_conn()
+        )?;
+        let (actors_per_movie, genres_per_movie) = crate::load_actors_and_genres(
+            &movies,
+            &mut conn_actors,
+            &mut conn_genres,
+        )
+        .await?;
 
         // Build a map to preserve the requested order
         let mut movies_map: HashMap<i32, FullMovie> = movies_with_directors
             .into_iter()
             .zip(actors_per_movie)
             .zip(genres_per_movie)
-            .map(|(((movie, director), actors), genres)| {
-                let id = movie.id;
-                (
-                    id,
-                    build_full_movie_from_row(movie, director, actors, genres),
-                )
-            })
+            .map(
+                |(((movie, director), actors), genres)| {
+                    let id = movie.id;
+                    (
+                        id,
+                        build_full_movie_from_row(
+                            movie, director, actors, genres,
+                        ),
+                    )
+                },
+            )
             .collect();
 
         // Return movies in the order they were requested
@@ -523,7 +560,14 @@ impl InsertMovie for PostgresMovieRepository {
         let added_on = full_movie
             .added_on
             .as_deref()
-            .and_then(|date_str| crate::parse_added_on_date(date_str, &full_movie.name));
+            .and_then(
+                |date_str| {
+                    crate::parse_added_on_date(
+                        date_str,
+                        &full_movie.name,
+                    )
+                },
+            );
 
         let new_movie = NewMovie {
             name: full_movie.name,

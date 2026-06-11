@@ -10,12 +10,26 @@ use models::{FullMovie, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovie
 
 fn find_movie_id(
     movie_name: &str,
-    movie_inserts: &[(i32, String)],
+    movie_inserts: &[(
+        i32,
+        String,
+    )],
 ) -> Option<i32> {
     movie_inserts
-        .binary_search_by(|(_, name)| name.as_str().cmp(movie_name))
+        .binary_search_by(
+            |(_, name)| {
+                name.as_str()
+                    .cmp(movie_name)
+            },
+        )
         .ok()
-        .and_then(|idx| movie_inserts.get(idx).map(|(id, _)| *id))
+        .and_then(
+            |idx| {
+                movie_inserts
+                    .get(idx)
+                    .map(|(id, _)| *id)
+            },
+        )
 }
 
 ///
@@ -67,14 +81,22 @@ pub async fn insert_full_movies(
         &mut connection,
     )
     .await?;
-    actors.sort_by(|a, b| a.1.cmp(&b.1));
+    actors.sort_by(
+        |a, b| {
+            a.1.cmp(&b.1)
+        },
+    );
 
     let mut directors = crate::insert_directors(
         &directors,
         &mut connection,
     )
     .await?;
-    directors.sort_by(|a, b| a.1.cmp(&b.1));
+    directors.sort_by(
+        |a, b| {
+            a.1.cmp(&b.1)
+        },
+    );
 
     let movies: Vec<NewMovie> = full_movies
         .iter_mut()
@@ -106,11 +128,21 @@ pub async fn insert_full_movies(
                 description: movie
                     .description
                     .clone(),
-                embedding: movie.embedding.take().map(|v| v.into()),
+                embedding: movie
+                    .embedding
+                    .take()
+                    .map(|v| v.into()),
                 added_on: movie
                     .added_on
                     .as_deref()
-                    .and_then(|date_str| crate::parse_added_on_date(date_str, &movie.name)),
+                    .and_then(
+                        |date_str| {
+                            crate::parse_added_on_date(
+                                date_str,
+                                &movie.name,
+                            )
+                        },
+                    ),
                 location: movie
                     .location
                     .clone(),
@@ -135,7 +167,10 @@ pub async fn insert_full_movies(
         .iter()
         .flat_map(
             |movie| {
-                let Some(movie_id) = find_movie_id(&movie.name, &movie_inserts) else {
+                let Some(movie_id) = find_movie_id(
+                    &movie.name,
+                    &movie_inserts,
+                ) else {
                     return Vec::new();
                 };
 
@@ -173,7 +208,10 @@ pub async fn insert_full_movies(
         .iter()
         .flat_map(
             |movie| {
-                let Some(movie_id) = find_movie_id(&movie.name, &movie_inserts) else {
+                let Some(movie_id) = find_movie_id(
+                    &movie.name,
+                    &movie_inserts,
+                ) else {
                     return Vec::new();
                 };
 

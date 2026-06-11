@@ -8,7 +8,14 @@ use models::{schema, Actor, Director, FullMovie, StructuredQuery};
 fn to_ilike_patterns(names: &[String]) -> Vec<String> {
     names
         .iter()
-        .map(|n| format!("%{}%", n.to_lowercase()))
+        .map(
+            |n| {
+                format!(
+                    "%{}%",
+                    n.to_lowercase()
+                )
+            },
+        )
         .collect()
 }
 
@@ -24,8 +31,8 @@ pub async fn search_movies_structured(
     structured_query: &StructuredQuery,
     connection: &mut AsyncPgConnection,
 ) -> Result<Vec<FullMovie>, diesel::result::Error> {
-    use schema::{actor, director, movie, movie_actor, movie_genre};
     use models::Movie;
+    use schema::{actor, director, movie, movie_actor, movie_genre};
 
     info!(
         "Executing structured search with criteria: {:?}",
@@ -88,14 +95,27 @@ pub async fn search_movies_structured(
 
         let patterns = to_ilike_patterns(&structured_query.description_keywords);
         let or_condition: Option<
-            Box<dyn BoxableExpression<_, diesel::pg::Pg, SqlType = Nullable<diesel::sql_types::Bool>>>,
-        > = patterns.into_iter().fold(None, |acc, pattern| {
-            let expr = movie::description.ilike(pattern);
-            Some(match acc {
-                None => Box::new(expr),
-                Some(prev) => Box::new(prev.or(expr)),
-            })
-        });
+            Box<
+                dyn BoxableExpression<
+                    _,
+                    diesel::pg::Pg,
+                    SqlType = Nullable<diesel::sql_types::Bool>,
+                >,
+            >,
+        > = patterns
+            .into_iter()
+            .fold(
+                None,
+                |acc, pattern| {
+                    let expr = movie::description.ilike(pattern);
+                    Some(
+                        match acc {
+                            None => Box::new(expr),
+                            Some(prev) => Box::new(prev.or(expr)),
+                        },
+                    )
+                },
+            );
 
         if let Some(condition) = or_condition {
             base_query = base_query.filter(condition);
@@ -117,13 +137,20 @@ pub async fn search_movies_structured(
         let patterns = to_ilike_patterns(&structured_query.actors);
         let actor_or_condition: Option<
             Box<dyn BoxableExpression<_, diesel::pg::Pg, SqlType = diesel::sql_types::Bool>>,
-        > = patterns.into_iter().fold(None, |acc, pattern| {
-            let expr = actor::name.ilike(pattern);
-            Some(match acc {
-                None => Box::new(expr),
-                Some(prev) => Box::new(prev.or(expr)),
-            })
-        });
+        > = patterns
+            .into_iter()
+            .fold(
+                None,
+                |acc, pattern| {
+                    let expr = actor::name.ilike(pattern);
+                    Some(
+                        match acc {
+                            None => Box::new(expr),
+                            Some(prev) => Box::new(prev.or(expr)),
+                        },
+                    )
+                },
+            );
 
         if let Some(condition) = actor_or_condition {
             let actor_subquery = movie_actor::table
@@ -151,13 +178,20 @@ pub async fn search_movies_structured(
         let patterns = to_ilike_patterns(&structured_query.genres);
         let genre_or_condition: Option<
             Box<dyn BoxableExpression<_, diesel::pg::Pg, SqlType = diesel::sql_types::Bool>>,
-        > = patterns.into_iter().fold(None, |acc, pattern| {
-            let expr = movie_genre::genre.ilike(pattern);
-            Some(match acc {
-                None => Box::new(expr),
-                Some(prev) => Box::new(prev.or(expr)),
-            })
-        });
+        > = patterns
+            .into_iter()
+            .fold(
+                None,
+                |acc, pattern| {
+                    let expr = movie_genre::genre.ilike(pattern);
+                    Some(
+                        match acc {
+                            None => Box::new(expr),
+                            Some(prev) => Box::new(prev.or(expr)),
+                        },
+                    )
+                },
+            );
 
         if let Some(condition) = genre_or_condition {
             let genre_subquery = movie_genre::table
@@ -186,39 +220,73 @@ pub async fn search_movies_structured(
     );
 
     // Step 6: Hydrate with actors and genres — 2 bulk queries instead of 2N
-    let movie_refs: Vec<&Movie> = movies.iter().map(|(m, _)| m).collect();
-    let movie_ids: Vec<i32> = movie_refs.iter().map(|m| m.id).collect();
+    let movie_refs: Vec<&Movie> = movies
+        .iter()
+        .map(|(m, _)| m)
+        .collect();
+    let movie_ids: Vec<i32> = movie_refs
+        .iter()
+        .map(|m| m.id)
+        .collect();
 
-    let raw_actors = crate::load_actors_for_movies(&movie_ids, connection)
-        .await
-        .map_err(|e| match e {
+    let raw_actors = crate::load_actors_for_movies(
+        &movie_ids, connection,
+    )
+    .await
+    .map_err(
+        |e| match e {
             crate::DatabaseError::DieselError(de) => de,
             _ => diesel::result::Error::NotFound,
-        })?;
-    let raw_genres = crate::load_genres_for_movies(&movie_ids, connection)
-        .await
-        .map_err(|e| match e {
+        },
+    )?;
+    let raw_genres = crate::load_genres_for_movies(
+        &movie_ids, connection,
+    )
+    .await
+    .map_err(
+        |e| match e {
             crate::DatabaseError::DieselError(de) => de,
             _ => diesel::result::Error::NotFound,
-        })?;
+        },
+    )?;
 
     let actors_per_movie: Vec<Vec<Actor>> = raw_actors
         .grouped_by(&movie_refs)
         .into_iter()
-        .map(|group| group.into_iter().map(|(_, actor)| actor).collect())
+        .map(
+            |group| {
+                group
+                    .into_iter()
+                    .map(|(_, actor)| actor)
+                    .collect()
+            },
+        )
         .collect();
 
     let genres_per_movie: Vec<Vec<String>> = raw_genres
         .grouped_by(&movie_refs)
         .into_iter()
-        .map(|group| group.into_iter().map(|mg| mg.genre).collect())
+        .map(
+            |group| {
+                group
+                    .into_iter()
+                    .map(|mg| mg.genre)
+                    .collect()
+            },
+        )
         .collect();
 
     let full_movies: Vec<FullMovie> = movies
         .into_iter()
         .zip(actors_per_movie)
         .zip(genres_per_movie)
-        .map(|(((movie, director), actors), genres)| FullMovie::from((movie, director, actors, genres)))
+        .map(
+            |(((movie, director), actors), genres)| {
+                FullMovie::from((
+                    movie, director, actors, genres,
+                ))
+            },
+        )
         .collect();
 
     info!(
