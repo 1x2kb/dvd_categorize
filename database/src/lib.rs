@@ -43,17 +43,37 @@
 //! }
 //! ```
 
-pub mod actors;
-pub mod directors;
 pub mod embedding;
-pub mod full_movies;
-pub mod genres;
 #[cfg(any(test, feature = "testing"))]
 pub mod mocks;
-pub mod movies;
 pub mod postgres;
-pub mod structured_search;
 pub mod traits;
+
+// Postgres-dependent modules - re-exported from postgres internal modules when feature is enabled
+#[cfg(feature = "postgres")]
+pub mod actors {
+    pub use crate::postgres::actors::*;
+}
+#[cfg(feature = "postgres")]
+pub mod directors {
+    pub use crate::postgres::directors::*;
+}
+#[cfg(feature = "postgres")]
+pub mod genres {
+    pub use crate::postgres::genres::*;
+}
+#[cfg(feature = "postgres")]
+pub mod movies {
+    pub use crate::postgres::movies::*;
+}
+#[cfg(feature = "postgres")]
+pub mod full_movies {
+    pub use crate::postgres::full_movies::*;
+}
+#[cfg(feature = "postgres")]
+pub mod structured_search {
+    pub use crate::postgres::structured_search::*;
+}
 
 use std::env;
 use std::error::Error;
@@ -63,17 +83,21 @@ use diesel::prelude::*;
 use diesel::ConnectionError;
 use diesel_async::pooled_connection::deadpool::Pool;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
-pub use models::{schema::*, *};
+// Schema module is only available when postgres feature is enabled
+#[cfg(feature = "postgres")]
+pub use models::schema::*;
+pub use models::*;
 
-pub use actors::*;
-pub use directors::*;
 pub use embedding::*;
-pub use full_movies::*;
-pub use genres::*;
 #[cfg(any(test, feature = "testing"))]
 pub use mocks::*;
-pub use movies::*;
+// Postgres-specific re-exports (only available when postgres feature is enabled)
+#[cfg(feature = "postgres")]
 pub use postgres::*;
+#[cfg(feature = "postgres")]
+pub use postgres::full_movies::insert_full_movies;
+#[cfg(feature = "postgres")]
+pub use postgres::movies::update_movie_location;
 pub use traits::*;
 
 /// Type alias for database operation results
@@ -164,6 +188,7 @@ pub fn parse_added_on_date(date_str: &str, movie_name: &str) -> Option<chrono::N
     }
 }
 
+#[cfg(feature = "postgres")]
 pub(crate) async fn load_actors_for_movies(
     movie_ids: &[i32],
     conn: &mut AsyncPgConnection,
@@ -191,6 +216,7 @@ pub(crate) async fn load_actors_for_movies(
         .map_err(DatabaseError::from)
 }
 
+#[cfg(feature = "postgres")]
 pub(crate) async fn load_genres_for_movies(
     movie_ids: &[i32],
     conn: &mut AsyncPgConnection,
@@ -203,6 +229,7 @@ pub(crate) async fn load_genres_for_movies(
         .map_err(DatabaseError::from)
 }
 
+#[cfg(feature = "postgres")]
 pub(crate) async fn load_actors_and_genres(
     movies: &[&Movie],
     conn_actors: &mut AsyncPgConnection,
@@ -267,6 +294,7 @@ pub(crate) async fn load_actors_and_genres(
 /// # Errors
 /// Returns `DatabaseError` if the DATABASE_URL environment variable is not set
 /// or if the pool cannot be created.
+#[cfg(feature = "postgres")]
 pub async fn get_connection_pool() -> Result<Pool<AsyncPgConnection>, DatabaseError> {
     let database_url = env::var("DATABASE_URL").map_err(
         |_| {

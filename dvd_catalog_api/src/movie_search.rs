@@ -7,9 +7,11 @@ use axum_macros::debug_handler;
 use categorizer_utilities::strip_punctuation;
 use database::{
     question::AiAction,
-    traits::{GetAllMovies, SearchMoviesByEmbedding},
+    traits::GetAllMovies,
     FullMovie, PostgresMovieRepository,
 };
+#[cfg(feature = "ai")]
+use database::traits::SearchMoviesByEmbedding;
 use log::{error, info};
 use tracing::instrument;
 
@@ -507,6 +509,7 @@ async fn text_only_search(
 }
 
 /// Performs vector-only search with query enhancement
+#[cfg(feature = "ai")]
 #[instrument(skip(repo))]
 async fn vector_only_search(
     query: &str,
@@ -612,6 +615,7 @@ async fn vector_only_search(
 }
 
 /// Performs hybrid search combining both keyword and vector search with RRF fusion
+#[cfg(feature = "ai")]
 #[instrument(skip(movies, repo))]
 async fn hybrid_both_search(
     query: &str,
@@ -960,25 +964,41 @@ pub async fn hybrid_search(
             .await
         }
         models::SearchMode::Vector => {
-            vector_only_search(
-                query,
-                repo,
-                limit,
-                disable_enhancement,
-                model,
-            )
-            .await
+            #[cfg(feature = "ai")]
+            {
+                vector_only_search(
+                    query,
+                    repo,
+                    limit,
+                    disable_enhancement,
+                    model,
+                )
+                .await
+            }
+            #[cfg(not(feature = "ai"))]
+            {
+                error!("Vector search requires ai feature but it was not enabled");
+                (Vec::new(), query.to_string())
+            }
         }
         models::SearchMode::Both => {
-            hybrid_both_search(
-                query,
-                movies,
-                repo,
-                limit,
-                disable_enhancement,
-                model,
-            )
-            .await
+            #[cfg(feature = "ai")]
+            {
+                hybrid_both_search(
+                    query,
+                    movies,
+                    repo,
+                    limit,
+                    disable_enhancement,
+                    model,
+                )
+                .await
+            }
+            #[cfg(not(feature = "ai"))]
+            {
+                error!("Hybrid search requires ai feature but it was not enabled");
+                text_only_search(query, repo, limit).await
+            }
         }
         models::SearchMode::Structured => {
             structured_query_search(
