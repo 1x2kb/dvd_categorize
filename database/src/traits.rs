@@ -6,16 +6,22 @@ use models::{NewMovieActor, NewMovieGenre, StructuredQuery};
 
 use crate::DatabaseError;
 
+/// Base trait for all repositories defining the ID type used by the backend.
+/// Postgres uses i32, MongoDB uses String (ObjectId), etc.
+pub trait Repository: Send + Sync {
+    type Id: Send + Sync;
+}
+
 // Single-purpose traits for movies
 
 #[async_trait]
-pub trait GetMovieById: Send + Sync {
-    async fn get_by_id(&self, id: i32) -> Result<FullMovie, DatabaseError>;
+pub trait GetMovieById: Repository {
+    async fn get_by_id(&self, id: Self::Id) -> Result<FullMovie, DatabaseError>;
 }
 
 #[async_trait]
-pub trait GetMoviesByIds: Send + Sync {
-    async fn get_by_ids(&self, ids: Vec<i32>) -> Result<Vec<FullMovie>, DatabaseError>;
+pub trait GetMoviesByIds: Repository {
+    async fn get_by_ids(&self, ids: Vec<Self::Id>) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
 #[async_trait]
@@ -29,13 +35,13 @@ pub trait InsertMovie: Send + Sync {
 }
 
 #[async_trait]
-pub trait InsertMovies: Send + Sync {
+pub trait InsertMovies: Repository {
     async fn insert_batch(
         &self,
         movies: &[NewMovie],
     ) -> Result<
         Vec<(
-            i32,
+            Self::Id,
             String,
         )>,
         DatabaseError,
@@ -43,8 +49,8 @@ pub trait InsertMovies: Send + Sync {
 }
 
 #[async_trait]
-pub trait UpdateMovieLocation: Send + Sync {
-    async fn update_location(&self, movie_id: i32, location: String) -> Result<(), DatabaseError>;
+pub trait UpdateMovieLocation: Repository {
+    async fn update_location(&self, movie_id: Self::Id, location: String) -> Result<(), DatabaseError>;
 }
 
 #[async_trait]
@@ -106,13 +112,13 @@ pub trait SearchMoviesStructured: Send + Sync {
 // Single-purpose traits for actors
 
 #[async_trait]
-pub trait InsertActors: Send + Sync {
+pub trait InsertActors: Repository {
     async fn insert_batch(
         &self,
         actors: &[NewActor],
     ) -> Result<
         Vec<(
-            i32,
+            Self::Id,
             String,
         )>,
         DatabaseError,
@@ -136,13 +142,13 @@ pub trait InsertMovieActorAssociations: Send + Sync {
 // Single-purpose traits for directors
 
 #[async_trait]
-pub trait InsertDirectors: Send + Sync {
+pub trait InsertDirectors: Repository {
     async fn insert_batch(
         &self,
         directors: &[NewDirector],
     ) -> Result<
         Vec<(
-            i32,
+            Self::Id,
             String,
         )>,
         DatabaseError,

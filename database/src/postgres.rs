@@ -101,6 +101,10 @@ mod inner {
         }
     }
 
+    impl Repository for PostgresMovieRepository {
+        type Id = i32;
+    }
+
     impl PostgresMovieRepository {
         /// Builds a repository using the `DATABASE_URL` environment variable.
         pub async fn from_env() -> Result<Self, DatabaseError> {
@@ -955,6 +959,10 @@ mod inner {
         }
     }
 
+    impl Repository for PostgresActorRepository {
+        type Id = i32;
+    }
+
     // Actor trait implementations
 
     #[async_trait]
@@ -1059,6 +1067,10 @@ mod inner {
         }
     }
 
+    impl Repository for PostgresDirectorRepository {
+        type Id = i32;
+    }
+
     // Director trait implementations
 
     #[async_trait]
@@ -1130,6 +1142,10 @@ mod inner {
                     },
                 )
         }
+    }
+
+    impl Repository for PostgresGenreRepository {
+        type Id = i32;
     }
 
     // Genre trait implementations
