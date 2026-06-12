@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use database::PostgresMovieRepository;
+use database::MovieRepo;
 use dotenvy::dotenv;
 use dvd_catalog::*;
 use log::{info, warn};
@@ -37,7 +37,7 @@ async fn main() {
     }
 
     // Create DB pool
-    let db_pool = PostgresMovieRepository::from_env()
+    let db_pool = MovieRepo::from_env()
         .await
         .expect("Failed to create DB pool");
     info!("Database pool created successfully");
@@ -81,8 +81,8 @@ fn get_host() -> String {
     format!("{host}:{port}")
 }
 
-fn init_router(db_pool: PostgresMovieRepository) -> Router {
-    let state = DbState { pool: db_pool };
+fn init_router(db_pool: MovieRepo) -> Router {
+    let state = DbState { movie_repo: db_pool };
 
     Router::new()
         .route(

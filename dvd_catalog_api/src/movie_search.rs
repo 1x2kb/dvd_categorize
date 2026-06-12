@@ -1095,7 +1095,7 @@ pub async fn chat(
     State(state): State<crate::DbState>,
     Json(action): Json<AiAction>,
 ) -> Json<AiAction> {
-    let repo = &state.pool;
+    let repo = &state.movie_repo;
 
     let dvds = repo
         .get_all()

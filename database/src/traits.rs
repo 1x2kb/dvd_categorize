@@ -6,16 +6,22 @@ use models::{NewMovieActor, NewMovieGenre, StructuredQuery};
 
 use crate::DatabaseError;
 
+/// Base trait for all repositories defining the ID type used by the backend.
+/// Postgres uses i32, MongoDB uses String (ObjectId), etc.
+pub trait Repository: Send + Sync {
+    type Id: Send + Sync;
+}
+
 // Single-purpose traits for movies
 
 #[async_trait]
-pub trait GetMovieById: Send + Sync {
-    async fn get_by_id(&self, id: i32) -> Result<FullMovie, DatabaseError>;
+pub trait GetMovieById: Repository {
+    async fn get_by_id(&self, id: Self::Id) -> Result<FullMovie, DatabaseError>;
 }
 
 #[async_trait]
-pub trait GetMoviesByIds: Send + Sync {
-    async fn get_by_ids(&self, ids: Vec<i32>) -> Result<Vec<FullMovie>, DatabaseError>;
+pub trait GetMoviesByIds: Repository {
+    async fn get_by_ids(&self, ids: Vec<Self::Id>) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
 #[async_trait]
@@ -29,13 +35,13 @@ pub trait InsertMovie: Send + Sync {
 }
 
 #[async_trait]
-pub trait InsertMovies: Send + Sync {
+pub trait InsertMovies: Repository {
     async fn insert_batch(
         &self,
         movies: &[NewMovie],
     ) -> Result<
         Vec<(
-            i32,
+            Self::Id,
             String,
         )>,
         DatabaseError,
@@ -43,8 +49,8 @@ pub trait InsertMovies: Send + Sync {
 }
 
 #[async_trait]
-pub trait UpdateMovieLocation: Send + Sync {
-    async fn update_location(&self, movie_id: i32, location: String) -> Result<(), DatabaseError>;
+pub trait UpdateMovieLocation: Repository {
+    async fn update_location(&self, movie_id: Self::Id, location: String) -> Result<(), DatabaseError>;
 }
 
 #[async_trait]
@@ -103,16 +109,26 @@ pub trait SearchMoviesStructured: Send + Sync {
     ) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
+// Chat-related traits
+
+#[async_trait]
+pub trait ChatSessions: Repository {
+    async fn create_chat_session(&self) -> Result<uuid::Uuid, DatabaseError>;
+    async fn get_chat_history(&self, session_id: uuid::Uuid) -> Result<Vec<models::ChatMessage>, DatabaseError>;
+    async fn save_chat_message(&self, msg: models::NewChatMessage) -> Result<(), DatabaseError>;
+    async fn list_chat_sessions(&self) -> Result<Vec<models::ChatSession>, DatabaseError>;
+}
+
 // Single-purpose traits for actors
 
 #[async_trait]
-pub trait InsertActors: Send + Sync {
+pub trait InsertActors: Repository {
     async fn insert_batch(
         &self,
         actors: &[NewActor],
     ) -> Result<
         Vec<(
-            i32,
+            Self::Id,
             String,
         )>,
         DatabaseError,
@@ -136,13 +152,13 @@ pub trait InsertMovieActorAssociations: Send + Sync {
 // Single-purpose traits for directors
 
 #[async_trait]
-pub trait InsertDirectors: Send + Sync {
+pub trait InsertDirectors: Repository {
     async fn insert_batch(
         &self,
         directors: &[NewDirector],
     ) -> Result<
         Vec<(
-            i32,
+            Self::Id,
             String,
         )>,
         DatabaseError,
@@ -184,3 +200,33 @@ pub trait GenerateEmbeddings: Send + Sync {
         texts: Vec<String>,
     ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>>;
 }
+
+/// Super trait for movie repositories that bundles all movie-related operations.
+///
+/// Any backend (Postgres, MongoDB, etc.) must implement this to be used as a movie repository.
+#[cfg(feature = "postgres")]
+pub trait MovieRepository:
+    Repository
+    + GetAllMovies
+    + GetMovieById
+    + GetMoviesByIds
+    + InsertMovie
+    + InsertMovies
+    + UpdateMovieLocation
+    + GetRecentMovies
+    + RandomMovies
+    + GetMoviesByReleaseYear
+    + GetUnknownLocationMovies
+    + GetUniqueLocations
+    + MoviesByLocation
+    + SearchMoviesStructured
+    + ChatSessions
+    + Clone
+    + Send
+    + Sync
+{
+}
+
+/// Additional trait bound for AI-enabled movie repositories.
+#[cfg(all(feature = "postgres", feature = "ai"))]
+pub trait AiMovieRepository: MovieRepository + SearchMoviesByEmbedding {}

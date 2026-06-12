@@ -10,10 +10,11 @@ use axum::{
 use axum_macros::debug_handler;
 use database::{
     traits::{
-        GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies, GetUniqueLocations,
-        GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies,
+        ChatSessions, GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies,
+        GetUniqueLocations, GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies,
+        Repository, SearchMoviesStructured,
     },
-    FullMovie, SearchRequest,
+    FullMovie, MovieRepo, SearchRequest,
 };
 use log::{debug, error, info, warn};
 use models::{
@@ -86,7 +87,7 @@ async fn correct_titles_with_fallback(titles: &[String], model: Option<&str>) ->
 
 #[derive(Clone)]
 pub struct DbState {
-    pub pool: database::PostgresMovieRepository,
+    pub movie_repo: database::MovieRepo,
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,9 +129,14 @@ pub async fn hello_world() -> &'static str {
 
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_dvds(State(state): State<DbState>) -> Json<Option<Vec<FullMovie>>> {
+pub async fn get_dvds(
+    State(state): State<DbState>,
+) -> Json<Option<Vec<FullMovie>>>
+where
+    MovieRepo: GetAllMovies,
+{
     match state
-        .pool
+        .movie_repo
         .get_all()
         .await
     {
@@ -153,9 +159,15 @@ pub async fn get_dvds(State(state): State<DbState>) -> Json<Option<Vec<FullMovie
 
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_dvd(State(state): State<DbState>, Path(id): Path<i32>) -> Json<Option<FullMovie>> {
+pub async fn get_dvd(
+    State(state): State<DbState>,
+    Path(id): Path<<MovieRepo as Repository>::Id>,
+) -> Json<Option<FullMovie>>
+where
+    MovieRepo: GetMovieById,
+{
     match state
-        .pool
+        .movie_repo
         .get_by_id(id)
         .await
     {
@@ -187,7 +199,10 @@ pub async fn chat(
         StatusCode,
         String,
     ),
-> {
+>
+where
+    MovieRepo: ChatSessions,
+{
     info!(
         "Processing tool-enabled chat request with {} message(s)",
         request
@@ -203,7 +218,7 @@ pub async fn chat(
     {
         Some(id) => id,
         None => db_state
-            .pool
+            .movie_repo
             .create_chat_session()
             .await
             .map_err(
@@ -225,7 +240,7 @@ pub async fn chat(
 
     // Load existing history from DB and seed the Coordinator's history
     let history_messages = db_state
-        .pool
+        .movie_repo
         .get_chat_history(session_id)
         .await
         .unwrap_or_default();
@@ -315,7 +330,7 @@ pub async fn chat(
             // Persist user turn(s) then assistant response — only after successful LLM call
             for user_content in &user_content_for_db {
                 if let Err(e) = db_state
-                    .pool
+                    .movie_repo
                     .save_chat_message(
                         models::NewChatMessage {
                             session_id,
@@ -333,7 +348,7 @@ pub async fn chat(
             }
 
             if let Err(e) = db_state
-                .pool
+                .movie_repo
                 .save_chat_message(
                     models::NewChatMessage {
                         session_id,
@@ -379,7 +394,10 @@ pub async fn chat(
 pub async fn chat_stream(
     State(db_state): State<DbState>,
     Json(request): Json<models::ChatRequest>,
-) -> impl IntoResponse {
+) -> impl IntoResponse
+where
+    MovieRepo: ChatSessions,
+{
     info!(
         "Processing streaming chat request with {} message(s)",
         request
@@ -394,7 +412,7 @@ pub async fn chat_stream(
     {
         Some(id) => id,
         None => match db_state
-            .pool
+            .movie_repo
             .create_chat_session()
             .await
         {
@@ -418,7 +436,7 @@ pub async fn chat_stream(
 
     // Load history from DB
     let history_messages = db_state
-        .pool
+        .movie_repo
         .get_chat_history(session_id)
         .await
         .unwrap_or_default();
@@ -455,7 +473,7 @@ pub async fn chat_stream(
 
             // Search movies from DB using structured query
             let results = db_state
-                .pool
+                .movie_repo
                 .search_structured(&extracted.structured_query)
                 .await
                 .unwrap_or_default();
@@ -563,7 +581,7 @@ pub async fn chat_stream(
     // Save user messages to DB
     for msg in &request.messages {
         if let Err(e) = db_state
-            .pool
+            .movie_repo
             .save_chat_message(
                 models::NewChatMessage {
                     session_id,
@@ -607,7 +625,7 @@ pub async fn chat_stream(
 
     // Clone for saving
     let db_pool = db_state
-        .pool
+        .movie_repo
         .clone();
 
     // Convert to SSE stream with response accumulation
@@ -679,7 +697,7 @@ pub async fn chat_stream(
 #[debug_handler]
 pub async fn export_csv(State(state): State<DbState>) -> impl axum::response::IntoResponse {
     let movies = match state
-        .pool
+        .movie_repo
         .get_all()
         .await
     {
@@ -877,7 +895,7 @@ pub async fn parse_csv(
     if let Err(e) = database::insert_full_movies(
         movies,
         state
-            .pool
+            .movie_repo
             .pool(),
     )
     .await
@@ -997,7 +1015,7 @@ pub async fn validate_titles(
     );
 
     let movies = match state
-        .pool
+        .movie_repo
         .get_all()
         .await
     {
@@ -1138,7 +1156,7 @@ pub async fn generate_movies_stream(
 
     // Get full catalog for duplicate detection and data lookup.
     let catalog_movies: Vec<models::FullMovie> = match state
-        .pool
+        .movie_repo
         .get_all()
         .await
     {
@@ -1438,7 +1456,7 @@ pub async fn embedding(text: &str) -> Result<Vec<f32>, OllamaError> {
 async fn combined_search(
     query: &str,
     all_movies: &Arc<Vec<FullMovie>>,
-    repo: &database::PostgresMovieRepository,
+    repo: &database::MovieRepo,
     disable_enhancement: bool,
     search_mode: models::SearchMode,
     model: Option<&str>,
@@ -1561,7 +1579,7 @@ pub async fn get_matching_movies(
     Json(search_request): Json<SearchRequest>,
 ) -> Json<Option<models::SearchResponse>> {
     // Get repo reference first so we can use it for both loading and search
-    let repo = &state.pool;
+    let repo = &state.movie_repo;
 
     let movies = match repo
         .get_all()
@@ -1753,11 +1771,16 @@ pub async fn list_available_models() -> Result<
 /// Get recent movies ordered by added_on descending
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_recent_movies(State(state): State<DbState>) -> Json<Vec<ScoredMovie>> {
+pub async fn get_recent_movies(
+    State(state): State<DbState>,
+) -> Json<Vec<ScoredMovie>>
+where
+    MovieRepo: GetRecentMovies,
+{
     info!("Getting recent movies");
 
     match state
-        .pool
+        .movie_repo
         .get_recent(50)
         .await
     {
@@ -1793,14 +1816,17 @@ pub async fn get_recent_movies(State(state): State<DbState>) -> Json<Vec<ScoredM
 pub async fn get_recent_releases(
     State(state): State<DbState>,
     Query(params): Query<RecentReleasesQuery>,
-) -> Json<Vec<ScoredMovie>> {
+) -> Json<Vec<ScoredMovie>>
+where
+    MovieRepo: GetMoviesByReleaseYear,
+{
     info!(
         "Getting movies released between {} and {} (limit: {})",
         params.min_year, params.max_year, params.limit
     );
 
     match state
-        .pool
+        .movie_repo
         .get_by_release_year(
             params.min_year,
             params.max_year,
@@ -1842,14 +1868,17 @@ pub async fn get_recent_releases(
 pub async fn get_random_movies(
     State(state): State<DbState>,
     Query(params): Query<RandomMoviesQuery>,
-) -> Json<Vec<ScoredMovie>> {
+) -> Json<Vec<ScoredMovie>>
+where
+    MovieRepo: RandomMovies,
+{
     info!(
         "Getting {} random movies",
         params.count
     );
 
     match state
-        .pool
+        .movie_repo
         .get_random(params.count)
         .await
     {
@@ -1882,11 +1911,16 @@ pub async fn get_random_movies(
 /// Get movies with unknown location from the database
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_unknown_location_movies(State(state): State<DbState>) -> Json<Vec<ScoredMovie>> {
+pub async fn get_unknown_location_movies(
+    State(state): State<DbState>,
+) -> Json<Vec<ScoredMovie>>
+where
+    MovieRepo: GetUnknownLocationMovies,
+{
     info!("Getting movies with unknown location");
 
     match state
-        .pool
+        .movie_repo
         .get_unknown_location(50)
         .await
     {
@@ -1918,11 +1952,16 @@ pub async fn get_unknown_location_movies(State(state): State<DbState>) -> Json<V
 
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn unique_locations(State(state): State<DbState>) -> Json<Vec<String>> {
+pub async fn unique_locations(
+    State(state): State<DbState>,
+) -> Json<Vec<String>>
+where
+    MovieRepo: GetUniqueLocations,
+{
     info!("Getting unique list of all locations");
 
     match state
-        .pool
+        .movie_repo
         .unique_locations()
         .await
     {
@@ -1942,14 +1981,17 @@ pub async fn unique_locations(State(state): State<DbState>) -> Json<Vec<String>>
 pub async fn get_movies_by_location(
     State(state): State<DbState>,
     Path(location): Path<String>,
-) -> Json<Vec<FullMovie>> {
+) -> Json<Vec<FullMovie>>
+where
+    MovieRepo: MoviesByLocation,
+{
     info!(
         "Getting movies for location: {}",
         location
     );
 
     match state
-        .pool
+        .movie_repo
         .movies_by_location(&location)
         .await
     {
@@ -1978,7 +2020,7 @@ pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsO
     info!("Getting stats overview");
 
     let movies = match state
-        .pool
+        .movie_repo
         .get_all()
         .await
     {
@@ -2045,7 +2087,7 @@ pub async fn stats_movies_by_year(State(state): State<DbState>) -> Json<models::
     info!("Getting movies by year stats");
 
     let movies = match state
-        .pool
+        .movie_repo
         .get_all()
         .await
     {
@@ -2106,7 +2148,7 @@ pub async fn stats_genres(State(state): State<DbState>) -> Json<models::PieChart
     info!("Getting genre distribution stats");
 
     let movies = match state
-        .pool
+        .movie_repo
         .get_all()
         .await
     {
@@ -2179,11 +2221,14 @@ pub async fn list_chat_sessions(
         StatusCode,
         String,
     ),
-> {
+>
+where
+    MovieRepo: ChatSessions,
+{
     info!("Listing chat sessions");
 
     match db_state
-        .pool
+        .movie_repo
         .list_chat_sessions()
         .await
     {
@@ -2196,7 +2241,7 @@ pub async fn list_chat_sessions(
             let mut sessions_with_preview = Vec::new();
             for session in sessions {
                 let first_query = db_state
-                    .pool
+                    .movie_repo
                     .get_chat_history(session.session_id)
                     .await
                     .ok()
@@ -2261,7 +2306,10 @@ pub async fn get_session_history(
         StatusCode,
         String,
     ),
-> {
+>
+where
+    MovieRepo: ChatSessions,
+{
     info!(
         "Getting chat history for session: {}",
         session_id
@@ -2280,7 +2328,7 @@ pub async fn get_session_history(
     )?;
 
     match db_state
-        .pool
+        .movie_repo
         .get_chat_history(session_uuid)
         .await
     {
@@ -2315,7 +2363,10 @@ pub async fn get_session_history(
 pub async fn structured_search(
     State(db_state): State<DbState>,
     Json(query): Json<models::StructuredQuery>,
-) -> Json<Vec<FullMovie>> {
+) -> Json<Vec<FullMovie>>
+where
+    MovieRepo: SearchMoviesStructured,
+{
     info!(
         "Structured search: actors={:?} genres={:?} directors={:?} title={:?} desc={:?}",
         query.actors,
@@ -2326,7 +2377,7 @@ pub async fn structured_search(
     );
 
     match db_state
-        .pool
+        .movie_repo
         .search_structured(&query)
         .await
     {
@@ -2359,7 +2410,10 @@ pub async fn save_movie(
         StatusCode,
         String,
     ),
-> {
+>
+where
+    MovieRepo: InsertMovie,
+{
     info!(
         "Saving generated movie to catalog: {}",
         movie.title
@@ -2387,7 +2441,7 @@ pub async fn save_movie(
     }
 
     db_state
-        .pool
+        .movie_repo
         .insert(full_movie)
         .await
         .map(
@@ -2423,7 +2477,7 @@ pub async fn stats_top_actors(State(state): State<DbState>) -> Json<models::BarC
     info!("Getting top actors stats");
 
     let movies = match state
-        .pool
+        .movie_repo
         .get_all()
         .await
     {
