@@ -190,3 +190,32 @@ pub trait GenerateEmbeddings: Send + Sync {
         texts: Vec<String>,
     ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>>;
 }
+
+/// Super trait for movie repositories that bundles all movie-related operations.
+///
+/// Any backend (Postgres, MongoDB, etc.) must implement this to be used as a movie repository.
+#[cfg(feature = "postgres")]
+pub trait MovieRepository:
+    Repository
+    + GetAllMovies
+    + GetMovieById
+    + GetMoviesByIds
+    + InsertMovie
+    + InsertMovies
+    + UpdateMovieLocation
+    + GetRecentMovies
+    + RandomMovies
+    + GetMoviesByReleaseYear
+    + GetUnknownLocationMovies
+    + GetUniqueLocations
+    + MoviesByLocation
+    + SearchMoviesStructured
+    + Clone
+    + Send
+    + Sync
+{
+}
+
+/// Additional trait bound for AI-enabled movie repositories.
+#[cfg(all(feature = "postgres", feature = "ai"))]
+pub trait AiMovieRepository: MovieRepository + SearchMoviesByEmbedding {}

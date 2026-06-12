@@ -100,6 +100,14 @@ pub use postgres::full_movies::insert_full_movies;
 pub use postgres::movies::update_movie_location;
 pub use traits::*;
 
+/// Type alias for the active movie repository backend.
+/// 
+/// This resolves to a concrete type at compile time based on which database feature is enabled.
+/// - `postgres` feature: Uses `PostgresMovieRepository`
+/// - Future: `mongodb` feature will use `MongoMovieRepository`
+#[cfg(feature = "postgres")]
+pub type MovieRepo = postgres::PostgresMovieRepository;
+
 /// Type alias for database operation results
 pub type DbResult<T> = Result<T, DatabaseError>;
 

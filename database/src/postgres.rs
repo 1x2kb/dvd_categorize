@@ -105,6 +105,8 @@ mod inner {
         type Id = i32;
     }
 
+    impl crate::traits::MovieRepository for PostgresMovieRepository {}
+
     impl PostgresMovieRepository {
         /// Builds a repository using the `DATABASE_URL` environment variable.
         pub async fn from_env() -> Result<Self, DatabaseError> {
