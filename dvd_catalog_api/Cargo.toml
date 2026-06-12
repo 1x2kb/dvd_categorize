@@ -37,6 +37,7 @@ prompts = { path = "../prompts" }
 serde.workspace = true
 
 [features]
-default = ["postgres"]
+default = ["postgres", "ai"]
 internet = ["ai_chat/internet"]
 postgres = ["database/postgres"]
+ai = ["database/ai"]

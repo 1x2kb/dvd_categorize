@@ -8,7 +8,8 @@ readme = "README.md"
 [features]
 default = ["postgres"]
 testing = ["rand"]
-postgres = ["diesel/postgres", "diesel-async/postgres", "models/postgres"]
+postgres = ["diesel/postgres", "diesel-async/postgres", "models/postgres", "pgvector"]
+ai = []
 
 [[example]]
 name = "trait_usage"
@@ -29,4 +30,4 @@ log.workspace = true
 env_logger.workspace = true
 tracing.workspace = true
 models = { path = "../models", features = ["ai"] }
-pgvector = { version = "0.4.0", features = ["diesel"] }
+pgvector = { version = "0.4.0", features = ["diesel"], optional = true }

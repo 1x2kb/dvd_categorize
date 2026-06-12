@@ -21,6 +21,7 @@ mod inner {
         schema, MovieActor, MovieGenre, NewActor, NewDirector, NewMovie, NewMovieActor,
         NewMovieGenre, StructuredQuery,
     };
+    #[cfg(feature = "ai")]
     use pgvector::VectorExpressionMethods;
     use std::collections::HashMap;
 
@@ -718,6 +719,7 @@ mod inner {
         }
     }
 
+    #[cfg(feature = "ai")]
     #[async_trait]
     impl SearchMoviesByEmbedding for PostgresMovieRepository {
         async fn search_by_embedding(
