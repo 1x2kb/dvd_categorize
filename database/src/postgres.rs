@@ -932,6 +932,84 @@ mod inner {
         }
     }
 
+    #[async_trait]
+    impl crate::traits::ChatSessions for PostgresMovieRepository {
+        async fn create_chat_session(&self) -> Result<uuid::Uuid, DatabaseError> {
+            use models::{schema::chat_sessions, NewChatSession};
+
+            let session_id = uuid::Uuid::new_v4();
+            let new_session = NewChatSession { session_id };
+
+            let mut conn = self
+                .get_conn()
+                .await?;
+
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_session)
+                .execute(&mut conn)
+                .await?;
+
+            Ok(session_id)
+        }
+
+        async fn get_chat_history(
+            &self,
+            session_id: uuid::Uuid,
+        ) -> Result<Vec<models::ChatMessage>, DatabaseError> {
+            use models::schema::chat_messages;
+
+            let mut conn = self
+                .get_conn()
+                .await?;
+
+            chat_messages::table
+                .filter(chat_messages::session_id.eq(session_id))
+                .order(chat_messages::created_at.asc())
+                .load(&mut conn)
+                .await
+                .map_err(Into::into)
+        }
+
+        async fn save_chat_message(
+            &self,
+            msg: models::NewChatMessage,
+        ) -> Result<(), DatabaseError> {
+            use models::schema::{chat_messages, chat_sessions};
+
+            let mut conn = self
+                .get_conn()
+                .await?;
+
+            diesel::insert_into(chat_messages::table)
+                .values(&msg)
+                .execute(&mut conn)
+                .await?;
+
+            // Update session timestamp
+            diesel::update(chat_sessions::table)
+                .filter(chat_sessions::session_id.eq(msg.session_id))
+                .set(chat_sessions::updated_at.eq(diesel::dsl::now))
+                .execute(&mut conn)
+                .await?;
+
+            Ok(())
+        }
+
+        async fn list_chat_sessions(&self) -> Result<Vec<models::ChatSession>, DatabaseError> {
+            use models::schema::chat_sessions;
+
+            let mut conn = self
+                .get_conn()
+                .await?;
+
+            chat_sessions::table
+                .order(chat_sessions::updated_at.desc())
+                .load(&mut conn)
+                .await
+                .map_err(Into::into)
+        }
+    }
+
     #[derive(Clone)]
     pub struct PostgresActorRepository {
         pool: Pool<AsyncPgConnection>,

@@ -10,9 +10,9 @@ use axum::{
 use axum_macros::debug_handler;
 use database::{
     traits::{
-        GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies, GetUniqueLocations,
-        GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies, Repository,
-        SearchMoviesStructured,
+        ChatSessions, GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies,
+        GetUniqueLocations, GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies,
+        Repository, SearchMoviesStructured,
     },
     FullMovie, MovieRepo, SearchRequest,
 };
@@ -199,7 +199,10 @@ pub async fn chat(
         StatusCode,
         String,
     ),
-> {
+>
+where
+    MovieRepo: ChatSessions,
+{
     info!(
         "Processing tool-enabled chat request with {} message(s)",
         request
@@ -391,7 +394,10 @@ pub async fn chat(
 pub async fn chat_stream(
     State(db_state): State<DbState>,
     Json(request): Json<models::ChatRequest>,
-) -> impl IntoResponse {
+) -> impl IntoResponse
+where
+    MovieRepo: ChatSessions,
+{
     info!(
         "Processing streaming chat request with {} message(s)",
         request
@@ -2215,7 +2221,10 @@ pub async fn list_chat_sessions(
         StatusCode,
         String,
     ),
-> {
+>
+where
+    MovieRepo: ChatSessions,
+{
     info!("Listing chat sessions");
 
     match db_state
@@ -2297,7 +2306,10 @@ pub async fn get_session_history(
         StatusCode,
         String,
     ),
-> {
+>
+where
+    MovieRepo: ChatSessions,
+{
     info!(
         "Getting chat history for session: {}",
         session_id

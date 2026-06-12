@@ -109,6 +109,16 @@ pub trait SearchMoviesStructured: Send + Sync {
     ) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
+// Chat-related traits
+
+#[async_trait]
+pub trait ChatSessions: Repository {
+    async fn create_chat_session(&self) -> Result<uuid::Uuid, DatabaseError>;
+    async fn get_chat_history(&self, session_id: uuid::Uuid) -> Result<Vec<models::ChatMessage>, DatabaseError>;
+    async fn save_chat_message(&self, msg: models::NewChatMessage) -> Result<(), DatabaseError>;
+    async fn list_chat_sessions(&self) -> Result<Vec<models::ChatSession>, DatabaseError>;
+}
+
 // Single-purpose traits for actors
 
 #[async_trait]
@@ -210,6 +220,7 @@ pub trait MovieRepository:
     + GetUniqueLocations
     + MoviesByLocation
     + SearchMoviesStructured
+    + ChatSessions
     + Clone
     + Send
     + Sync
