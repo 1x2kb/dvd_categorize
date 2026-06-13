@@ -135,7 +135,8 @@ pub fn parse_csv(csv_data: impl Read) -> Result<Vec<FullMovie>, Box<dyn Error>> 
         };
 
         let movie = FullMovie {
-            id: 0,
+            // Backend-agnostic "unset" id (0 for postgres / empty String otherwise)
+            id: Default::default(),
             key_hash: FullMovie::generate_key_hash(&display_name),
             name,
             description: csv_record

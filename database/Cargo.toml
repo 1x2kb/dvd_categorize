@@ -6,7 +6,9 @@ description = "Async PostgreSQL database layer with Diesel ORM, pgvector support
 readme = "README.md"
 
 [features]
-default = ["mongodb"]
+# No backend is selected by default: each binary picks exactly one of
+# `postgres` or `mongodb` (they are mutually exclusive).
+default = []
 testing = ["rand"]
 postgres = [
     "diesel/postgres",
@@ -15,7 +17,7 @@ postgres = [
     "models/vector-similarity",
     "pgvector",
 ]
-mongodb = ["dep:mongodb", "dep:qdrant-client", "models/vector-similarity"]
+mongodb = ["dep:mongodb", "dep:qdrant-client", "models/mongodb"]
 ai = []
 
 [[example]]

@@ -21,10 +21,45 @@ use crate::traits::*;
 use crate::{DatabaseError, DbResult};
 use models::{Actor, Director, FullMovie, NewMovie, ChatMessage, ChatSession, NewChatMessage};
 
+/// Serde helper that stores the document `_id` as a BSON `ObjectId` while
+/// keeping it as an `Option<String>` (hex) in Rust. `None` is skipped on
+/// serialize so MongoDB assigns the id; on read the stored `ObjectId` is
+/// converted to its hex string representation.
+mod opt_hex_as_object_id {
+    use mongodb::bson::oid::ObjectId;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(hex) => {
+                let oid = ObjectId::parse_str(hex).map_err(serde::ser::Error::custom)?;
+                oid.serialize(serializer)
+            }
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt = Option::<ObjectId>::deserialize(deserializer)?;
+        Ok(opt.map(|oid| oid.to_hex()))
+    }
+}
+
 /// MongoDB document representation of a movie
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MovieDocument {
-    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "_id",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "opt_hex_as_object_id"
+    )]
     pub id: Option<String>,
     pub name: String,
     pub description: Option<String>,
@@ -41,7 +76,9 @@ pub struct MovieDocument {
 impl From<FullMovie> for MovieDocument {
     fn from(movie: FullMovie) -> Self {
         Self {
-            id: if movie.id == 0 { None } else { Some(movie.id.to_string()) },
+            // MongoDB assigns the _id on insert; never set it ourselves.
+            // (FullMovie.id is a hashed i32, not a real ObjectId.)
+            id: None,
             name: movie.name,
             description: movie.description,
             rating: None, // Not in FullMovie currently
@@ -58,16 +95,9 @@ impl From<FullMovie> for MovieDocument {
 
 impl From<MovieDocument> for FullMovie {
     fn from(doc: MovieDocument) -> Self {
-        // Generate stable i32 ID from ObjectId string using hash
-        // ObjectId strings can't be parsed as i32, so we hash them
-        let id = doc.id.as_ref().map(|s| {
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::{Hash, Hasher};
-            let mut hasher = DefaultHasher::new();
-            s.hash(&mut hasher);
-            // Convert u64 hash to i32, using absolute value to avoid negative IDs
-            (hasher.finish() & 0x7FFFFFFF) as i32
-        }).unwrap_or(0);
+        // Under the mongodb backend `FullMovie::id` is the ObjectId hex string;
+        // an unsaved document (no `_id`) maps to an empty id.
+        let id = doc.id.unwrap_or_default();
 
         // Compute key_hash before moving doc.name
         let key_hash = FullMovie::generate_key_hash(&doc.name);
@@ -186,27 +216,31 @@ impl MongoMovieRepository {
 
     /// Insert a movie and its embedding into Qdrant
     async fn insert_movie_with_embedding(&self, mut movie: MovieDocument) -> DbResult<String> {
-        let id = movie.id.clone().unwrap_or_else(|| ObjectId::new().to_string());
-        movie.id = Some(id.clone());
-
         // Split the data between the two stores. The embedding is a large
         // Vec<f32> that belongs to Qdrant (vector search), not MongoDB.
         // Move it out of the document so we never clone it: MongoDB keeps the
         // document data, Qdrant takes ownership of the vector.
         let embedding = movie.embedding.take();
 
-        // Insert document data into MongoDB (without the embedding)
-        self.movies.insert_one(&movie).await
+        // Never set the _id ourselves; it stays None so it is skipped during
+        // serialization and MongoDB assigns the ObjectId.
+        let insert_result = self.movies.insert_one(&movie).await
             .map_err(|e| DatabaseError::QueryError(format!("MongoDB insert error: {}", e)))?;
+
+        // Take the ObjectId MongoDB assigned from the insert response.
+        let oid = insert_result.inserted_id.as_object_id()
+            .ok_or_else(|| DatabaseError::QueryError(
+                "MongoDB did not return an ObjectId for the inserted movie".to_string()))?;
+        let id = oid.to_hex();
 
         // Insert embedding into Qdrant if available (moved, not cloned)
         if let Some(embedding) = embedding {
             let qdrant_id = self.insert_qdrant_point(&id, embedding).await
                 .map_err(|e| DatabaseError::QueryError(format!("Qdrant insert error: {}", e)))?;
-            
+
             // Update MongoDB document with Qdrant point ID for reference
             self.movies.update_one(
-                doc! { "_id": &id },
+                doc! { "_id": oid },
                 doc! { "$set": { "qdrant_id": qdrant_id.to_string() } },
             ).await
             .map_err(|e| DatabaseError::QueryError(format!("MongoDB update error: {}", e)))?;
@@ -377,7 +411,9 @@ impl GetAllMovies for MongoMovieRepository {
 #[async_trait]
 impl GetMovieById for MongoMovieRepository {
     async fn get_by_id(&self, id: Self::Id) -> DbResult<FullMovie> {
-        let filter = doc! { "_id": &id };
+        let oid = ObjectId::parse_str(&id)
+            .map_err(|e| DatabaseError::QueryError(format!("Invalid movie id '{}': {}", id, e)))?;
+        let filter = doc! { "_id": oid };
         let result = self.movies.find_one(filter).await
             .map_err(|e| DatabaseError::QueryError(format!("MongoDB find_one error: {}", e)))?;
         
@@ -388,7 +424,11 @@ impl GetMovieById for MongoMovieRepository {
 #[async_trait]
 impl GetMoviesByIds for MongoMovieRepository {
     async fn get_by_ids(&self, ids: Vec<Self::Id>) -> DbResult<Vec<FullMovie>> {
-        let filter = doc! { "_id": { "$in": ids } };
+        let oids: Vec<ObjectId> = ids.iter()
+            .map(|id| ObjectId::parse_str(id)
+                .map_err(|e| DatabaseError::QueryError(format!("Invalid movie id '{}': {}", id, e))))
+            .collect::<DbResult<Vec<_>>>()?;
+        let filter = doc! { "_id": { "$in": oids } };
         let mut cursor = self.movies.find(filter).await
             .map_err(|e| DatabaseError::QueryError(format!("MongoDB find error: {}", e)))?;
 
@@ -498,24 +538,37 @@ impl InsertMoviesWithEmbeddings for MongoMovieRepository {
 
         info!("Inserting {} new movies to MongoDB", new_docs.len());
 
-        // Step 3: Bulk insert to MongoDB
+        // Step 3: Bulk insert to MongoDB (documents have id = None, so MongoDB
+        // assigns each ObjectId)
         let insert_result = self.movies.insert_many(&new_docs).await
             .map_err(|e| DatabaseError::QueryError(format!("MongoDB bulk insert error: {}", e)))?;
 
-        let inserted_ids: Vec<String> = insert_result.inserted_ids.iter()
-            .map(|(_, id)| id.as_str().map(|s| s.to_string()).unwrap_or_default())
-            .collect();
-
-        info!("Successfully inserted {} movies to MongoDB", inserted_ids.len());
-
-        // Defensive check: ensure lengths match before zipping
-        if inserted_ids.len() != new_docs.len() {
+        // Defensive check: ensure every document got an id back
+        if insert_result.inserted_ids.len() != new_docs.len() {
             return Err(DatabaseError::QueryError(format!(
                 "Length mismatch: inserted {} movies but have {} documents",
-                inserted_ids.len(),
+                insert_result.inserted_ids.len(),
                 new_docs.len()
             )));
         }
+
+        // Assign the MongoDB-generated ObjectId back to each document
+        for (idx, bson_id) in &insert_result.inserted_ids {
+            let hex = bson_id.as_object_id()
+                .map(|oid| oid.to_hex())
+                .ok_or_else(|| DatabaseError::QueryError(
+                    "MongoDB did not return an ObjectId for an inserted movie".to_string()))?;
+            if let Some(doc) = new_docs.get_mut(*idx) {
+                doc.id = Some(hex);
+            }
+        }
+
+        // Collect ids in document order for Qdrant references and return values
+        let inserted_ids: Vec<String> = new_docs.iter()
+            .map(|d| d.id.clone().unwrap_or_default())
+            .collect();
+
+        info!("Successfully inserted {} movies to MongoDB", inserted_ids.len());
 
         // Step 4: Bulk insert embeddings to Qdrant
         if !embeddings_to_insert.is_empty() {
@@ -537,7 +590,9 @@ impl InsertMoviesWithEmbeddings for MongoMovieRepository {
 #[async_trait]
 impl UpdateMovieLocation for MongoMovieRepository {
     async fn update_location(&self, movie_id: Self::Id, location: String) -> DbResult<()> {
-        let filter = doc! { "_id": &movie_id };
+        let oid = ObjectId::parse_str(&movie_id)
+            .map_err(|e| DatabaseError::QueryError(format!("Invalid movie id '{}': {}", movie_id, e)))?;
+        let filter = doc! { "_id": oid };
         let update = doc! { "$set": { "location": location } };
         
         self.movies.update_one(filter, update).await

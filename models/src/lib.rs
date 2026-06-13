@@ -39,6 +39,11 @@
 //! };
 //! ```
 
+// The `postgres` and `mongodb` backends select different `FullMovie::id`
+// representations (i32 vs String), so exactly one may be enabled at a time.
+#[cfg(all(feature = "postgres", feature = "mongodb"))]
+compile_error!("features `postgres` and `mongodb` are mutually exclusive");
+
 #[cfg(feature = "ai")]
 pub mod ai_state;
 
@@ -278,9 +283,18 @@ pub struct NewMovieGenre {
     pub genre: String,
 }
 
+/// Movie identifier type, selected by the active storage backend.
+///
+/// - `postgres`: `i32` serial primary key
+/// - otherwise (e.g. `mongodb`): `String` (ObjectId hex)
+#[cfg(feature = "postgres")]
+pub type MovieId = i32;
+#[cfg(not(feature = "postgres"))]
+pub type MovieId = String;
+
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct FullMovie {
-    pub id: i32,
+    pub id: MovieId,
     pub name: String,
     pub description: Option<String>,
 
@@ -372,7 +386,7 @@ pub struct AiMovieData {
 
 impl AiMovieData {
     /// Convert AiMovieData to FullMovie for display
-    pub fn to_full_movie(&self, id: i32) -> FullMovie {
+    pub fn to_full_movie(&self) -> FullMovie {
         let display_name = if self.year == 0 {
             self.title
                 .clone()
@@ -384,7 +398,7 @@ impl AiMovieData {
         };
 
         FullMovie {
-            id,
+            id: MovieId::default(),
             key_hash: FullMovie::generate_key_hash(&display_name),
             name: self
                 .title
@@ -681,6 +695,8 @@ impl
         Vec<String>,
     )> for FullMovie
 {
+    // Converts the postgres `Movie` entity (i32 id); only available with the
+    // postgres backend.
     fn from(
         (movie, director, actors, genres): (
             Movie,
@@ -761,7 +777,7 @@ pub struct SearchResponse {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UpdateLocationRequest {
-    pub movie_id: i32,
+    pub movie_id: MovieId,
     pub location: String,
 }
 

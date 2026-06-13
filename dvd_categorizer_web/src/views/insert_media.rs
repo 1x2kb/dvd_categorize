@@ -217,7 +217,7 @@ pub fn InsertMedia() -> Element {
                                 MovieGrid {
                                     movies: scored_movies,
                                     search_mode: models::SearchMode::Both,
-                                    on_location_updated: move |(movie_id, new_location): (i32, String)| {
+                                    on_location_updated: move |(movie_id, new_location): (models::MovieId, String)| {
                                         // Update the movie in the dvd_data list
                                         let current_dvds = dvd_data();
                                         let updated_dvds: Vec<FullMovie> = current_dvds

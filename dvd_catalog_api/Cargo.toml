@@ -22,7 +22,7 @@ log.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tokio.workspace = true
-database = { path = "../database" }
+database = { path = "../database", default-features = false }
 models = { path = "../models", features = [
     "vector-similarity",
     "text-matching",

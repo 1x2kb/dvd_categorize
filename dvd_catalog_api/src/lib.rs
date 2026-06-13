@@ -12,9 +12,9 @@ use database::{
     traits::{
         ChatSessions, GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies,
         GetUniqueLocations, GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies,
-        Repository,
+        Repository, UpdateMovieLocation,
     },
-    FullMovie, MovieRepo, SearchRequest,
+    FullMovie, MovieId, MovieRepo, SearchRequest,
 };
 #[cfg(feature = "postgres")]
 use database::insert_full_movies;
@@ -1578,12 +1578,12 @@ async fn combined_search(
     }
 
     // Create lookup map from our Arc
-    let movies_map: std::collections::HashMap<i32, &FullMovie> = all_movies
+    let movies_map: std::collections::HashMap<MovieId, &FullMovie> = all_movies
         .iter()
         .map(
             |movie| {
                 (
-                    movie.id, movie,
+                    movie.id.clone(), movie,
                 )
             },
         )
@@ -1731,10 +1731,10 @@ pub async fn get_matching_movies(
 }
 
 /// Update the location of a movie
-#[instrument(skip(_state))]
+#[instrument(skip(state))]
 #[debug_handler]
 pub async fn update_movie_location(
-    State(_state): State<DbState>,
+    State(state): State<DbState>,
     Json(request): Json<models::UpdateLocationRequest>,
 ) -> Result<
     Json<()>,
@@ -1748,12 +1748,14 @@ pub async fn update_movie_location(
         request.movie_id, request.location
     );
 
-    // Update the database
-    database::update_movie_location(
-        request.movie_id,
-        request.location,
-    )
-    .await
+    // Update the database via the active repository backend
+    state
+        .movie_repo
+        .update_location(
+            request.movie_id,
+            request.location,
+        )
+        .await
     .map_err(
         |e| {
             error!(
@@ -2209,6 +2211,7 @@ pub async fn stats_genres(State(state): State<DbState>) -> Json<models::PieChart
 /// Chat session with first query preview
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatSessionWithPreview {
+    #[cfg(feature = "postgres")]
     pub id: i32,
     pub session_id: String,
     pub created_at: String,
@@ -2267,6 +2270,7 @@ where
 
                 sessions_with_preview.push(
                     ChatSessionWithPreview {
+                        #[cfg(feature = "postgres")]
                         id: session.id,
                         session_id: session
                             .session_id
@@ -2423,7 +2427,7 @@ where
         "Saving generated movie to catalog: {}",
         movie.title
     );
-    let mut full_movie = movie.to_full_movie(0);
+    let mut full_movie = movie.to_full_movie();
 
     let embedding_text = format!(
         "{} {} {}",
