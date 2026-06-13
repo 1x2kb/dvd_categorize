@@ -49,6 +49,23 @@ pub trait InsertMovies: Repository {
 }
 
 #[async_trait]
+pub trait InsertMoviesWithEmbeddings: Repository {
+    /// Insert movies with pre-generated embeddings in bulk.
+    /// Returns (id, name) tuples for successfully inserted movies.
+    /// Skips duplicates based on movie name.
+    async fn insert_batch_with_embeddings(
+        &self,
+        movies: Vec<(NewMovie, Option<Vec<f32>>)>,
+    ) -> Result<
+        Vec<(
+            Self::Id,
+            String,
+        )>,
+        DatabaseError,
+    >;
+}
+
+#[async_trait]
 pub trait UpdateMovieLocation: Repository {
     async fn update_location(&self, movie_id: Self::Id, location: String) -> Result<(), DatabaseError>;
 }
@@ -230,3 +247,37 @@ pub trait MovieRepository:
 /// Additional trait bound for AI-enabled movie repositories.
 #[cfg(all(feature = "postgres", feature = "ai"))]
 pub trait AiMovieRepository: MovieRepository + SearchMoviesByEmbedding {}
+
+// ==================== Stats Traits ====================
+
+/// Get stats overview: total movies, directors, actors
+#[async_trait]
+pub trait GetStatsOverview: Repository {
+    async fn get_stats_overview(&self) -> Result<(i64, i64, i64), DatabaseError>;
+}
+
+/// Get movie counts grouped by year
+#[async_trait]
+pub trait GetMoviesByYearStats: Repository {
+    async fn get_movies_by_year(&self, limit: i64) -> Result<Vec<(i32, i64)>, DatabaseError>;
+}
+
+/// Get genre counts (top N)
+#[async_trait]
+pub trait GetGenreStats: Repository {
+    async fn get_genre_counts(&self, limit: i64) -> Result<Vec<(String, i64)>, DatabaseError>;
+}
+
+/// Get top actors by movie count
+#[async_trait]
+pub trait GetTopActorsStats: Repository {
+    async fn get_top_actors(&self, limit: i64) -> Result<Vec<(String, i64)>, DatabaseError>;
+}
+
+/// Super trait that combines all stats functionality
+pub trait StatsProvider:
+    GetStatsOverview
+    + GetMoviesByYearStats
+    + GetGenreStats
+    + GetTopActorsStats
+{}

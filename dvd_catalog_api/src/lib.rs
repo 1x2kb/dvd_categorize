@@ -17,6 +17,8 @@ use database::{
     FullMovie, MovieRepo, SearchRequest,
 };
 #[cfg(feature = "postgres")]
+use database::insert_full_movies;
+#[cfg(feature = "postgres")]
 use database::traits::SearchMoviesStructured;
 use log::{debug, error, info, warn};
 use models::{
@@ -899,26 +901,101 @@ pub async fn parse_csv(
         movie.embedding = Some(emb);
     }
 
-    if let Err(e) = database::insert_full_movies(
+    // Insert movies using postgres-specific method
+    if let Err(e) = insert_full_movies(
         movies,
-        state
-            .movie_repo
-            .pool(),
+        state.movie_repo.pool(),
     )
     .await
     {
-        let error = format!(
-            "Failed to insert movies: {}",
-            e
-        );
-        error!(
-            "{}",
-            error
-        );
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            error,
-        ));
+        let error = format!("Failed to insert movies: {}", e);
+        error!("{}", error);
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
+    }
+
+    info!("Movies saved successfully");
+    Ok((
+        StatusCode::OK,
+        Json(()),
+    ))
+}
+
+#[cfg(feature = "mongodb")]
+#[instrument(skip(state))]
+#[debug_handler]
+pub async fn parse_csv(
+    State(state): State<DbState>,
+    Json(value): Json<CsvInput>,
+) -> Result<
+    impl IntoResponse,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    let mut movies = match csv_utils::parse_csv(
+        value
+            .input
+            .as_bytes(),
+    ) {
+        Ok(movies) => movies,
+        Err(e) => {
+            let error = format!(
+                "Failed to parse CSV: {}",
+                e
+            );
+            error!(
+                "{}",
+                error
+            );
+            return Err((
+                StatusCode::BAD_REQUEST,
+                error,
+            ));
+        }
+    };
+
+    let embedding_texts: Vec<String> = movies
+        .iter()
+        .map(|m| m.embedding_str())
+        .collect();
+
+    let embeddings = ai_chat::get_embeddings(
+        embedding_texts,
+        ai_chat::EMBEDDING_MODEL,
+    )
+    .await
+    .map_err(
+        |e| {
+            let error = format!(
+                "Failed to generate embeddings: {}",
+                e
+            );
+            error!(
+                "{}",
+                error
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error,
+            )
+        },
+    )?;
+
+    for (movie, emb) in movies
+        .iter_mut()
+        .zip(embeddings)
+    {
+        movie.embedding = Some(emb);
+    }
+
+    // Insert one at a time since insert() handles FullMovie properly
+    for movie in movies {
+        if let Err(e) = state.movie_repo.insert(movie).await {
+            let error = format!("Failed to insert movie: {}", e);
+            error!("{}", error);
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
+        }
     }
 
     info!("Movies saved successfully");
@@ -2026,15 +2103,17 @@ where
 pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsOverview> {
     info!("Getting stats overview");
 
-    let movies = match state
+    use database::{GetStatsOverview};
+
+    let (total_movies, total_directors, total_actors) = match state
         .movie_repo
-        .get_all()
+        .get_stats_overview()
         .await
     {
-        Ok(movies) => movies,
+        Ok(stats) => stats,
         Err(e) => {
             error!(
-                "Failed to get movies for stats: {}",
+                "Failed to get stats overview: {}",
                 e
             );
             return Json(
@@ -2047,42 +2126,11 @@ pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsO
         }
     };
 
-    use std::collections::HashSet;
-
-    let total_movies = movies.len();
-    let total_directors = movies
-        .iter()
-        .filter_map(
-            |m| {
-                m.director
-                    .as_ref()
-            },
-        )
-        .map(
-            |d| {
-                d.name
-                    .clone()
-            },
-        )
-        .collect::<HashSet<_>>()
-        .len();
-    let total_actors = movies
-        .iter()
-        .flat_map(|m| &m.actors)
-        .map(
-            |a| {
-                a.name
-                    .clone()
-            },
-        )
-        .collect::<HashSet<_>>()
-        .len();
-
     Json(
         models::StatsOverview {
-            total_movies,
-            total_directors,
-            total_actors,
+            total_movies: total_movies as usize,
+            total_directors: total_directors as usize,
+            total_actors: total_actors as usize,
         },
     )
 }
@@ -2093,15 +2141,17 @@ pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsO
 pub async fn stats_movies_by_year(State(state): State<DbState>) -> Json<models::BarChartData> {
     info!("Getting movies by year stats");
 
-    let movies = match state
+    use database::GetMoviesByYearStats;
+
+    let year_data = match state
         .movie_repo
-        .get_all()
+        .get_movies_by_year(15)
         .await
     {
-        Ok(movies) => movies,
+        Ok(data) => data,
         Err(e) => {
             error!(
-                "Failed to get movies for stats: {}",
+                "Failed to get movies by year: {}",
                 e
             );
             return Json(
@@ -2112,29 +2162,6 @@ pub async fn stats_movies_by_year(State(state): State<DbState>) -> Json<models::
             );
         }
     };
-
-    use std::collections::HashMap;
-
-    let mut year_counts: HashMap<i32, usize> = HashMap::new();
-    for movie in movies {
-        if movie.release_year > 0 {
-            *year_counts
-                .entry(movie.release_year)
-                .or_insert(0) += 1;
-        }
-    }
-
-    let mut year_data: Vec<(
-        i32,
-        usize,
-    )> = year_counts
-        .into_iter()
-        .collect();
-    // Sort by count descending and take top 15
-    year_data.sort_by(|(_, a), (_, b)| b.cmp(a));
-    year_data.truncate(15);
-    // Re-sort by year for display
-    year_data.sort_by_key(|(year, _)| *year);
 
     let labels: Vec<String> = year_data
         .iter()
@@ -2154,55 +2181,27 @@ pub async fn stats_movies_by_year(State(state): State<DbState>) -> Json<models::
 pub async fn stats_genres(State(state): State<DbState>) -> Json<models::PieChartData> {
     info!("Getting genre distribution stats");
 
-    let movies = match state
+    use database::GetGenreStats;
+
+    let genre_data = match state
         .movie_repo
-        .get_all()
+        .get_genre_counts(10)
         .await
     {
-        Ok(movies) => movies,
+        Ok(data) => data,
         Err(e) => {
             error!(
-                "Failed to get movies for stats: {}",
+                "Failed to get genre stats: {}",
                 e
             );
             return Json(models::PieChartData { data: vec![] });
         }
     };
 
-    use std::collections::HashMap;
-
-    let mut genre_counts: HashMap<String, usize> = HashMap::new();
-    for movie in movies {
-        for genre in &movie.genres {
-            *genre_counts
-                .entry(genre.clone())
-                .or_insert(0) += 1;
-        }
-    }
-
-    let mut data: Vec<(
-        String,
-        f64,
-    )> = genre_counts
+    let data: Vec<(String, f64)> = genre_data
         .into_iter()
-        .map(
-            |(genre, count)| {
-                (
-                    genre,
-                    count as f64,
-                )
-            },
-        )
+        .map(|(genre, count)| (genre, count as f64))
         .collect();
-
-    // Sort by count descending and take top 10
-    data.sort_by(
-        |(_, a), (_, b)| {
-            b.partial_cmp(a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        },
-    );
-    data.truncate(10);
 
     Json(models::PieChartData { data })
 }
@@ -2482,15 +2481,17 @@ where
 pub async fn stats_top_actors(State(state): State<DbState>) -> Json<models::BarChartData> {
     info!("Getting top actors stats");
 
-    let movies = match state
+    use database::GetTopActorsStats;
+
+    let actor_data = match state
         .movie_repo
-        .get_all()
+        .get_top_actors(10)
         .await
     {
-        Ok(movies) => movies,
+        Ok(data) => data,
         Err(e) => {
             error!(
-                "Failed to get movies for stats: {}",
+                "Failed to get top actors stats: {}",
                 e
             );
             return Json(
@@ -2501,30 +2502,6 @@ pub async fn stats_top_actors(State(state): State<DbState>) -> Json<models::BarC
             );
         }
     };
-
-    use std::collections::HashMap;
-
-    let mut actor_counts: HashMap<String, usize> = HashMap::new();
-    for movie in movies {
-        for actor in &movie.actors {
-            *actor_counts
-                .entry(
-                    actor
-                        .name
-                        .clone(),
-                )
-                .or_insert(0) += 1;
-        }
-    }
-
-    let mut actor_data: Vec<(
-        String,
-        usize,
-    )> = actor_counts
-        .into_iter()
-        .collect();
-    actor_data.sort_by(|(_, a), (_, b)| b.cmp(a));
-    actor_data.truncate(10);
 
     let labels: Vec<String> = actor_data
         .iter()

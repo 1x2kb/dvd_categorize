@@ -174,6 +174,10 @@ fn init_router(db_pool: MovieRepo) -> Router {
             post(preview_csv),
         )
         .route(
+            "/csv/parse",
+            post(parse_csv),
+        )
+        .route(
             "/csv/export",
             get(export_csv),
         )
@@ -200,10 +204,6 @@ fn init_router(db_pool: MovieRepo) -> Router {
         .route(
             "/ai/structured-search",
             post(structured_search),
-        )
-        .route(
-            "/csv/parse",
-            post(parse_csv),
         );
     
     router

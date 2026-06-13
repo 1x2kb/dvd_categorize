@@ -137,7 +137,7 @@ pub struct ChatMessage {
     pub created_at: chrono::NaiveDateTime,
 }
 
-#[cfg(all(feature = "postgres", feature = "vector-similarity"))]
+#[cfg(feature = "vector-similarity")]
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::chat_messages, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewChatMessage {
@@ -432,6 +432,46 @@ impl FullMovie {
         let mut hasher = DefaultHasher::new();
         name.hash(&mut hasher);
         hasher.finish()
+    }
+
+    /// Calculate text search relevance score for a single query string.
+    /// Returns f32 score based on which fields match (Postgres-compatible scoring):
+    /// - Title match: 100.0
+    /// - Director match: 25.0
+    /// - Actor match: 20.0
+    /// - Genre match: 15.0
+    /// Multiple matches accumulate (e.g., title + actor = 120.0)
+    pub fn text_search_score(&self, query: &str) -> f32 {
+        if query.is_empty() {
+            return 0.0;
+        }
+
+        let query_lower = query.to_lowercase();
+        let mut score: f32 = 0.0;
+
+        // Title scoring (100 points for title match)
+        if self.name.to_lowercase().contains(&query_lower) {
+            score += 100.0;
+        }
+
+        // Actor scoring (20 points for actor match)
+        if self.actors.iter().any(|a| a.name.to_lowercase().contains(&query_lower)) {
+            score += 20.0;
+        }
+
+        // Director scoring (25 points for director match)
+        if let Some(ref d) = self.director {
+            if d.name.to_lowercase().contains(&query_lower) {
+                score += 25.0;
+            }
+        }
+
+        // Genre scoring (15 points for genre match)
+        if self.genres.iter().any(|g| g.to_lowercase().contains(&query_lower)) {
+            score += 15.0;
+        }
+
+        score
     }
 
     /// Get the display name formatted as "Name (Year)"

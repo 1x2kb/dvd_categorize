@@ -34,7 +34,6 @@ pub struct MovieDocument {
     pub director: Option<Director>,
     pub genres: Vec<String>,
     pub added_on: Option<String>,
-    pub key_hash: i64,
 }
 
 impl From<FullMovie> for MovieDocument {
@@ -51,15 +50,28 @@ impl From<FullMovie> for MovieDocument {
             director: movie.director,
             genres: movie.genres,
             added_on: movie.added_on,
-            key_hash: movie.key_hash as i64,
         }
     }
 }
 
 impl From<MovieDocument> for FullMovie {
     fn from(doc: MovieDocument) -> Self {
+        // Generate stable i32 ID from ObjectId string using hash
+        // ObjectId strings can't be parsed as i32, so we hash them
+        let id = doc.id.as_ref().map(|s| {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = DefaultHasher::new();
+            s.hash(&mut hasher);
+            // Convert u64 hash to i32, using absolute value to avoid negative IDs
+            (hasher.finish() & 0x7FFFFFFF) as i32
+        }).unwrap_or(0);
+
+        // Compute key_hash before moving doc.name
+        let key_hash = FullMovie::generate_key_hash(&doc.name);
+
         FullMovie {
-            id: doc.id.as_ref().and_then(|s| s.parse().ok()).unwrap_or(0),
+            id,
             name: doc.name,
             description: doc.description,
             actors: doc.actors,
@@ -69,7 +81,7 @@ impl From<MovieDocument> for FullMovie {
             added_on: doc.added_on,
             location: doc.location,
             release_year: doc.release_year,
-            key_hash: doc.key_hash as u64,
+            key_hash,
         }
     }
 }
@@ -181,21 +193,29 @@ impl MongoMovieRepository {
 
         // Insert embedding into Qdrant if available
         if let Some(embedding) = &doc.embedding {
-            self.insert_qdrant_point(&id, embedding.clone()).await?;
+            let qdrant_id = self.insert_qdrant_point(&id, embedding.clone()).await?;
+            // Update MongoDB document with Qdrant point ID for reference
+            self.movies.update_one(
+                doc! { "_id": &id },
+                doc! { "$set": { "qdrant_id": qdrant_id.to_string() } },
+            ).await.ok(); // Best effort - don't fail if update fails
         }
 
         Ok(id)
     }
 
-    /// Insert a point into Qdrant
-    async fn insert_qdrant_point(&self, id: &str, vector: Vec<f32>) -> DbResult<()> {
+    /// Insert a point into Qdrant, returns the Qdrant point UUID
+    async fn insert_qdrant_point(&self, mongo_id: &str, vector: Vec<f32>) -> DbResult<Uuid> {
         use qdrant_client::qdrant::Value;
-        
+
+        // Generate a UUID for the Qdrant point ID
+        let qdrant_id = Uuid::new_v4();
+
         let mut payload = std::collections::HashMap::new();
-        payload.insert("movie_id".to_string(), Value::from(id.to_string()));
-        
+        payload.insert("movie_id".to_string(), Value::from(mongo_id.to_string()));
+
         let point = PointStruct::new(
-            id.to_string(),
+            qdrant_id.to_string(),
             vector,
             payload,
         );
@@ -205,13 +225,74 @@ impl MongoMovieRepository {
         self.qdrant.upsert_points(operation).await
             .map_err(|e| DatabaseError::QueryError(format!("Qdrant insert error: {}", e)))?;
 
+        Ok(qdrant_id)
+    }
+
+    /// Bulk insert points into Qdrant
+    /// Takes the inserted_ids from MongoDB and embeddings to insert
+    async fn insert_qdrant_points_bulk(
+        &self,
+        inserted_ids: &[String],
+        new_docs: &[MovieDocument],
+        embeddings_to_insert: Vec<(usize, Vec<f32>, String)>, // (doc_index, embedding, movie_name)
+    ) -> DbResult<()> {
+        use qdrant_client::qdrant::Value;
+        use log::{debug, info, warn};
+
+        // Defensive check: ensure inserted_ids and new_docs have same length
+        if inserted_ids.len() != new_docs.len() {
+            return Err(DatabaseError::QueryError(format!(
+                "Qdrant bulk insert: length mismatch - inserted_ids({}) != new_docs({})",
+                inserted_ids.len(),
+                new_docs.len()
+            )));
+        }
+
+        let mut points = Vec::new();
+
+        for (doc_index, embedding, movie_name) in embeddings_to_insert {
+            // Get the corresponding MongoDB ID
+            if doc_index >= inserted_ids.len() {
+                warn!("Invalid doc_index {} for movie {}, skipping Qdrant insert", doc_index, movie_name);
+                continue;
+            }
+            let mongo_id = &inserted_ids[doc_index];
+
+            // Generate a UUID for the Qdrant point ID
+            let qdrant_id = Uuid::new_v4();
+
+            let mut payload = std::collections::HashMap::new();
+            payload.insert("movie_id".to_string(), Value::from(mongo_id.clone()));
+
+            let point = PointStruct::new(
+                qdrant_id.to_string(),
+                embedding,
+                payload,
+            );
+            points.push(point);
+            debug!("Prepared Qdrant point for movie: {}", movie_name);
+        }
+
+        if !points.is_empty() {
+            info!("Bulk inserting {} points to Qdrant", points.len());
+            let operation = UpsertPointsBuilder::new(&self.qdrant_collection, points);
+
+            self.qdrant.upsert_points(operation).await
+                .map_err(|e| DatabaseError::QueryError(format!("Qdrant bulk insert error: {}", e)))?;
+
+            info!("Successfully inserted embeddings to Qdrant");
+        }
+
         Ok(())
     }
 
     /// Search Qdrant for similar vectors and return movie IDs
     async fn search_qdrant(&self, embedding: Vec<f32>, limit: i64) -> DbResult<Vec<String>> {
         use qdrant_client::qdrant::SearchPointsBuilder;
-        
+        use log::{debug, warn};
+
+        debug!("Searching Qdrant collection '{}' with {}-dimensional vector", self.qdrant_collection, embedding.len());
+
         let search_request = SearchPointsBuilder::new(&self.qdrant_collection, embedding, limit as u64)
             .with_payload(true)
             .build();
@@ -219,13 +300,41 @@ impl MongoMovieRepository {
         let response = self.qdrant.search_points(search_request).await
             .map_err(|e| DatabaseError::QueryError(format!("Qdrant search error: {}", e)))?;
 
-        let ids: Vec<String> = response.result.iter()
-            .filter_map(|point| {
-                point.payload.get("movie_id")
-                    .and_then(|v| v.as_str().map(|s| s.to_string()))
-            })
-            .collect();
+        debug!("Qdrant returned {} raw results", response.result.len());
 
+        let mut ids = Vec::new();
+        for point in &response.result {
+            debug!("Processing point id={:?}, payload keys={:?}", point.id, point.payload.keys().collect::<Vec<_>>());
+
+            match point.payload.get("movie_id") {
+                Some(value) => {
+                    // The Value type is prost-generated, check the kind field
+                    use qdrant_client::qdrant::value::Kind;
+                    let movie_id = match &value.kind {
+                        Some(Kind::StringValue(s)) => Some(s.clone()),
+                        Some(Kind::IntegerValue(i)) => Some(i.to_string()),
+                        Some(Kind::NullValue(_)) => {
+                            warn!("movie_id value is null");
+                            None
+                        }
+                        _ => {
+                            warn!("movie_id has unexpected kind: {:?}", value.kind);
+                            None
+                        }
+                    };
+
+                    if let Some(id) = movie_id {
+                        debug!("Extracted movie_id: {}", id);
+                        ids.push(id);
+                    }
+                }
+                None => {
+                    warn!("Point {:?} has no movie_id in payload", point.id);
+                }
+            }
+        }
+
+        debug!("Qdrant search returning {} movie IDs", ids.len());
         Ok(ids)
     }
 }
@@ -297,26 +406,119 @@ impl InsertMovie for MongoMovieRepository {
 #[async_trait]
 impl InsertMovies for MongoMovieRepository {
     async fn insert_batch(&self, movies: &[NewMovie]) -> DbResult<Vec<(Self::Id, String)>> {
-        let mut results = Vec::new();
-        for movie in movies {
-            // Convert NewMovie to MovieDocument
+        // Convert to tuples with no embeddings for bulk insert
+        let movies_with_embeddings: Vec<(NewMovie, Option<Vec<f32>>)> = movies
+            .iter()
+            .cloned()
+            .map(|m| (m, None))
+            .collect();
+        self.insert_batch_with_embeddings(movies_with_embeddings).await
+    }
+}
+
+#[async_trait]
+impl InsertMoviesWithEmbeddings for MongoMovieRepository {
+    async fn insert_batch_with_embeddings(
+        &self,
+        movies: Vec<(NewMovie, Option<Vec<f32>>)>,
+    ) -> DbResult<Vec<(Self::Id, String)>> {
+        use log::{debug, info, warn};
+
+        if movies.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        info!("Starting bulk insert of {} movies with embeddings", movies.len());
+
+        // Step 1: Check for existing movies by name (duplicate detection)
+        let movie_names: Vec<String> = movies.iter().map(|(m, _)| m.name.clone()).collect();
+        let existing_filter = doc! { "name": { "$in": &movie_names } };
+
+        let mut existing_cursor = self.movies.find(existing_filter).await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB find error checking duplicates: {}", e)))?;
+
+        let mut existing_names = std::collections::HashSet::new();
+        while existing_cursor.advance().await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB cursor error: {}", e)))?
+        {
+            let doc: MovieDocument = existing_cursor.deserialize_current()
+                .map_err(|e| DatabaseError::QueryError(format!("MongoDB deserialize error: {}", e)))?;
+            existing_names.insert(doc.name);
+        }
+
+        if !existing_names.is_empty() {
+            info!("Found {} existing movies, skipping duplicates", existing_names.len());
+        }
+
+        // Step 2: Filter out duplicates and prepare documents
+        let mut new_docs = Vec::new();
+        let mut embeddings_to_insert = Vec::new(); // (index, embedding) pairs
+
+        for (idx, (movie, embedding)) in movies.into_iter().enumerate() {
+            if existing_names.contains(&movie.name) {
+                debug!("Skipping duplicate movie: {}", movie.name);
+                continue;
+            }
+
             let doc = MovieDocument {
                 id: None,
                 name: movie.name.clone(),
-                description: movie.description.clone(),
+                description: movie.description,
                 rating: None,
                 release_year: movie.release_year,
-                location: movie.location.clone(),
-                embedding: None, // Will be generated later if needed
-                actors: Vec::new(), // Actors inserted separately
-                director: None, // Director inserted separately
-                genres: Vec::new(), // Genres inserted separately
+                location: movie.location,
+                embedding: None, // Not stored in MongoDB
+                actors: Vec::new(),
+                director: None,
+                genres: Vec::new(),
                 added_on: Some(chrono::Utc::now().to_rfc3339()),
-                key_hash: 0,
             };
-            let id = self.insert_movie_with_embedding(doc).await?;
-            results.push((id, movie.name.clone()));
+
+            new_docs.push(doc);
+            if let Some(emb) = embedding {
+                embeddings_to_insert.push((new_docs.len() - 1, emb, movie.name));
+            }
         }
+
+        if new_docs.is_empty() {
+            info!("All movies already exist, nothing to insert");
+            return Ok(Vec::new());
+        }
+
+        info!("Inserting {} new movies to MongoDB", new_docs.len());
+
+        // Step 3: Bulk insert to MongoDB
+        let insert_result = self.movies.insert_many(&new_docs).await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB bulk insert error: {}", e)))?;
+
+        let inserted_ids: Vec<String> = insert_result.inserted_ids.iter()
+            .map(|(_, id)| id.as_str().map(|s| s.to_string()).unwrap_or_default())
+            .collect();
+
+        info!("Successfully inserted {} movies to MongoDB", inserted_ids.len());
+
+        // Defensive check: ensure lengths match before zipping
+        if inserted_ids.len() != new_docs.len() {
+            return Err(DatabaseError::QueryError(format!(
+                "Length mismatch: inserted {} movies but have {} documents",
+                inserted_ids.len(),
+                new_docs.len()
+            )));
+        }
+
+        // Step 4: Bulk insert embeddings to Qdrant
+        if !embeddings_to_insert.is_empty() {
+            debug!("Inserting {} embeddings to Qdrant", embeddings_to_insert.len());
+            self.insert_qdrant_points_bulk(&inserted_ids, &new_docs, embeddings_to_insert).await?;
+        }
+
+        // Return results (id, name pairs)
+        let results: Vec<(String, String)> = inserted_ids.iter()
+            .zip(new_docs.iter().map(|d| d.name.clone()))
+            .map(|(id, name)| (id.clone(), name))
+            .collect();
+
+        info!("Bulk insert completed: {} movies inserted", results.len());
         Ok(results)
     }
 }
@@ -391,14 +593,17 @@ impl GetMoviesByReleaseYear for MongoMovieRepository {
         max_year: i32,
         limit: i64,
     ) -> DbResult<Vec<FullMovie>> {
-        let filter = doc! { 
-            "release_year": { 
-                "$gte": min_year, 
-                "$lte": max_year 
-            } 
+        let filter = doc! {
+            "release_year": {
+                "$gte": min_year,
+                "$lte": max_year
+            }
         };
-        
+
+        let sort = doc! { "release_year": -1 }; // -1 = descending
+
         let mut cursor = self.movies.find(filter)
+            .sort(sort)
             .limit(limit)
             .await
             .map_err(|e| DatabaseError::QueryError(format!("MongoDB find error: {}", e)))?;
@@ -592,20 +797,25 @@ impl ChatSessions for MongoMovieRepository {
 /// Additional methods for text search (matching Postgres API)
 impl MongoMovieRepository {
     /// Search movies by text query using MongoDB regex matching
+    /// Uses Postgres-compatible scoring: title=100, actor=20, director=25, genre=15
     pub async fn search_movies_by_text(
         &self,
         query: &str,
         limit: i64,
     ) -> DbResult<Vec<(FullMovie, f32)>> {
         use mongodb::bson::Regex;
-        
+
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+
         // Create regex pattern for case-insensitive search
         let pattern = Regex {
             pattern: query.to_string(),
             options: "i".to_string(), // case-insensitive
         };
-        
-        // Search across multiple fields
+
+        // Search across multiple fields (same as before)
         let filter = doc! {
             "$or": [
                 { "name": { "$regex": pattern.clone() } },
@@ -615,23 +825,173 @@ impl MongoMovieRepository {
                 { "genres": { "$regex": pattern.clone() } }
             ]
         };
-        
+
         let mut cursor = self.movies.find(filter)
-            .limit(limit)
+            .limit(limit * 2) // Fetch more to allow for scoring/filtering
             .await
             .map_err(|e| DatabaseError::QueryError(format!("MongoDB text search error: {}", e)))?;
-        
+
+        let mut scored_results = Vec::new();
+        while cursor.advance().await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB cursor error: {}", e)))?
+        {
+            let doc: MovieDocument = cursor.deserialize_current()
+                .map_err(|e| DatabaseError::QueryError(format!("MongoDB deserialize error: {}", e)))?;
+
+            // Convert to FullMovie and use centralized scoring
+            let movie: FullMovie = doc.into();
+            let score = movie.text_search_score(query);
+
+            // Only include if there's an actual match with score > 0
+            if score > 0.0 {
+                scored_results.push((movie, score));
+            }
+        }
+
+        // Sort by score descending (same as Postgres)
+        scored_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored_results.truncate(limit as usize);
+
+        Ok(scored_results)
+    }
+}
+
+// ==================== Stats Trait Implementations ====================
+
+#[async_trait]
+impl GetStatsOverview for MongoMovieRepository {
+    async fn get_stats_overview(&self) -> DbResult<(i64, i64, i64)> {
+        use mongodb::bson::doc;
+
+        // Count total movies
+        let total_movies = self.movies.count_documents(doc! {}).await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB count movies error: {}", e)))?;
+
+        // Count unique directors using distinct
+        let filter = doc! { "director": { "$exists": true, "$ne": null } };
+        let directors = self.movies.distinct("director.name", filter).await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB distinct directors error: {}", e)))?;
+        let total_directors = directors.len() as i64;
+
+        // Count unique actors using aggregation (actors is an array)
+        let pipeline = vec![
+            doc! { "$unwind": "$actors" },
+            doc! { "$group": { "_id": "$actors.name" } },
+            doc! { "$count": "total" }
+        ];
+        let mut cursor = self.movies.aggregate(pipeline).await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB actor count error: {}", e)))?;
+
+        let total_actors = if cursor.advance().await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB cursor error: {}", e)))?
+        {
+            let doc: mongodb::bson::Document = cursor.deserialize_current()
+                .map_err(|e| DatabaseError::QueryError(format!("MongoDB deserialize error: {}", e)))?;
+            doc.get_i32("total").unwrap_or(0) as i64
+        } else {
+            0
+        };
+
+        Ok((total_movies as i64, total_directors, total_actors))
+    }
+}
+
+#[async_trait]
+impl GetMoviesByYearStats for MongoMovieRepository {
+    async fn get_movies_by_year(&self, limit: i64) -> DbResult<Vec<(i32, i64)>> {
+        use mongodb::bson::doc;
+
+        let pipeline = vec![
+            doc! { "$group": {
+                "_id": "$release_year",
+                "count": { "$sum": 1 }
+            }},
+            doc! { "$sort": { "count": -1 } },
+            doc! { "$limit": limit }
+        ];
+
+        let mut cursor = self.movies.aggregate(pipeline).await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB aggregation error: {}", e)))?;
+
         let mut results = Vec::new();
         while cursor.advance().await
-            .map_err(|e| DatabaseError::QueryError(format!("MongoDB cursor error: {}", e)))? 
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB cursor error: {}", e)))?
         {
-            let doc = cursor.deserialize_current()
+            let doc: mongodb::bson::Document = cursor.deserialize_current()
                 .map_err(|e| DatabaseError::QueryError(format!("MongoDB deserialize error: {}", e)))?;
-            
-            // Simple scoring - all matches get score 1.0 for now
-            results.push((doc.into(), 1.0f32));
+            let year = doc.get_i32("_id").unwrap_or(0);
+            let count = doc.get_i64("count").unwrap_or(0);
+            results.push((year, count));
         }
-        
+
+        Ok(results)
+    }
+}
+
+#[async_trait]
+impl GetGenreStats for MongoMovieRepository {
+    async fn get_genre_counts(&self, limit: i64) -> DbResult<Vec<(String, i64)>> {
+        use mongodb::bson::doc;
+
+        let pipeline = vec![
+            doc! { "$unwind": "$genres" },
+            doc! { "$group": {
+                "_id": "$genres",
+                "count": { "$sum": 1 }
+            }},
+            doc! { "$sort": { "count": -1 } },
+            doc! { "$limit": limit }
+        ];
+
+        let mut cursor = self.movies.aggregate(pipeline).await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB aggregation error: {}", e)))?;
+
+        let mut results = Vec::new();
+        while cursor.advance().await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB cursor error: {}", e)))?
+        {
+            let doc: mongodb::bson::Document = cursor.deserialize_current()
+                .map_err(|e| DatabaseError::QueryError(format!("MongoDB deserialize error: {}", e)))?;
+            if let Some(genre) = doc.get_str("_id").ok() {
+                let count = doc.get_i64("count").unwrap_or(0);
+                results.push((genre.to_string(), count));
+            }
+        }
+
+        Ok(results)
+    }
+}
+
+#[async_trait]
+impl GetTopActorsStats for MongoMovieRepository {
+    async fn get_top_actors(&self, limit: i64) -> DbResult<Vec<(String, i64)>> {
+        use mongodb::bson::doc;
+
+        let pipeline = vec![
+            doc! { "$unwind": "$actors" },
+            doc! { "$group": {
+                "_id": "$actors.name",
+                "count": { "$sum": 1 }
+            }},
+            doc! { "$sort": { "count": -1 } },
+            doc! { "$limit": limit }
+        ];
+
+        let mut cursor = self.movies.aggregate(pipeline).await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB aggregation error: {}", e)))?;
+
+        let mut results = Vec::new();
+        while cursor.advance().await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB cursor error: {}", e)))?
+        {
+            let doc: mongodb::bson::Document = cursor.deserialize_current()
+                .map_err(|e| DatabaseError::QueryError(format!("MongoDB deserialize error: {}", e)))?;
+            if let Some(actor) = doc.get_str("_id").ok() {
+                let count = doc.get_i64("count").unwrap_or(0);
+                results.push((actor.to_string(), count));
+            }
+        }
+
         Ok(results)
     }
 }

@@ -18,8 +18,5 @@ RUN cargo install cargo-watch
 ARG FEATURES=postgres,internet
 ENV API_FEATURES=${FEATURES}
 
-# Create entrypoint script to handle env vars properly without glob expansion
-RUN echo '#!/bin/sh\nset -f\ncargo watch -i "e2e/*" -i "e2e/**" -x "run -p dvd_catalog_api --features ${API_FEATURES}"' > /tmp/entry.sh && chmod +x /tmp/entry.sh
-
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/tmp/entry.sh"]
+CMD ["sh", "-c", "set -f && cargo watch -i 'e2e/*' -i 'e2e/**' -x \"run -p dvd_catalog_api --no-default-features --features ${API_FEATURES}\""]

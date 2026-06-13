@@ -12,6 +12,7 @@ postgres = [
     "diesel/postgres",
     "diesel-async/postgres",
     "models/postgres",
+    "models/vector-similarity",
     "pgvector",
 ]
 mongodb = ["dep:mongodb", "dep:qdrant-client", "models/vector-similarity"]
