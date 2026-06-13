@@ -6,7 +6,7 @@ description = "Async PostgreSQL database layer with Diesel ORM, pgvector support
 readme = "README.md"
 
 [features]
-default = ["postgres"]
+default = ["mongodb"]
 testing = ["rand"]
 postgres = [
     "diesel/postgres",

@@ -4,6 +4,8 @@
 //! It stores movies as documents with embedded actors, directors, and genres.
 //! Vector search is handled by Qdrant (separate vector database).
 
+#[cfg(feature = "mongodb")]
+pub mod inner {
 use std::env;
 use std::sync::Arc;
 
@@ -183,22 +185,31 @@ impl MongoMovieRepository {
     }
 
     /// Insert a movie and its embedding into Qdrant
-    async fn insert_movie_with_embedding(&self, movie: MovieDocument) -> DbResult<String> {
+    async fn insert_movie_with_embedding(&self, mut movie: MovieDocument) -> DbResult<String> {
         let id = movie.id.clone().unwrap_or_else(|| ObjectId::new().to_string());
-        
-        // Insert into MongoDB
-        let doc = MovieDocument { id: Some(id.clone()), ..movie };
-        self.movies.insert_one(&doc).await
+        movie.id = Some(id.clone());
+
+        // Split the data between the two stores. The embedding is a large
+        // Vec<f32> that belongs to Qdrant (vector search), not MongoDB.
+        // Move it out of the document so we never clone it: MongoDB keeps the
+        // document data, Qdrant takes ownership of the vector.
+        let embedding = movie.embedding.take();
+
+        // Insert document data into MongoDB (without the embedding)
+        self.movies.insert_one(&movie).await
             .map_err(|e| DatabaseError::QueryError(format!("MongoDB insert error: {}", e)))?;
 
-        // Insert embedding into Qdrant if available
-        if let Some(embedding) = &doc.embedding {
-            let qdrant_id = self.insert_qdrant_point(&id, embedding.clone()).await?;
+        // Insert embedding into Qdrant if available (moved, not cloned)
+        if let Some(embedding) = embedding {
+            let qdrant_id = self.insert_qdrant_point(&id, embedding).await
+                .map_err(|e| DatabaseError::QueryError(format!("Qdrant insert error: {}", e)))?;
+            
             // Update MongoDB document with Qdrant point ID for reference
             self.movies.update_one(
                 doc! { "_id": &id },
                 doc! { "$set": { "qdrant_id": qdrant_id.to_string() } },
-            ).await.ok(); // Best effort - don't fail if update fails
+            ).await
+            .map_err(|e| DatabaseError::QueryError(format!("MongoDB update error: {}", e)))?;
         }
 
         Ok(id)
@@ -995,3 +1006,7 @@ impl GetTopActorsStats for MongoMovieRepository {
         Ok(results)
     }
 }
+}
+
+#[cfg(feature = "mongodb")]
+pub use inner::*;
