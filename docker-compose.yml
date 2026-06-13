@@ -17,6 +17,34 @@ services:
       timeout: 5s
       retries: 5
 
+  mongodb:
+    image: mongo:7
+    networks:
+      - dvd-net
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: mongopassword
+      MONGO_INITDB_DATABASE: dvd_catalog
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    networks:
+      - dvd-net
+    ports:
+      - "6333:6333"  # HTTP API
+      - "6334:6334"  # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+
   ollama:
     image: ollama/ollama:rocm
     networks:
@@ -53,17 +81,21 @@ services:
         UID: ${UID}
         GID: ${GID}
         USERNAME: ${USERNAME}
+        FEATURES: mongodb,internet
     ports:
       - "0.0.0.0:3000:3000"
     volumes:
       - ./:/app
     depends_on:
-      diesel_migrate:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
+      - diesel_migrate
+      - postgres
+      - mongodb
+      - qdrant
     environment:
       DATABASE_URL: postgres://app_user:strongpassword@postgres:5432/app_db
+      MONGODB_URI: mongodb://admin:mongopassword@mongodb:27017/dvd_catalog?authSource=admin
+      QDRANT_URL: http://qdrant:6334
+      QDRANT_COLLECTION: movies
       RUST_LOG: "info,dvd_catalog=debug,database=debug,ai_chat=debug,models=debug,csv_utils=debug,categorizer_utilities=debug"
       server_host: ${SERVER_HOST:-0.0.0.0}
       server_port: ${SERVER_PORT:-3000}
@@ -201,6 +233,8 @@ services:
 volumes:
   postgres_data:
   pgdata:
+  mongo_data:
+  qdrant_data:
   loki_data:
   grafana_data:
   prometheus_data:

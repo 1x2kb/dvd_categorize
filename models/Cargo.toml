@@ -9,7 +9,7 @@ readme = "README.md"
 postgres = ["diesel", "pgvector", "chrono", "uuid"]
 testing = ["rand"]
 ai = ["ollama-rs"]
-vector-similarity = []
+vector-similarity = ["chrono", "uuid"]
 text-matching = []
 
 [dependencies]

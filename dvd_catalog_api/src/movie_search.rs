@@ -8,7 +8,7 @@ use categorizer_utilities::strip_punctuation;
 use database::{
     question::AiAction,
     traits::GetAllMovies,
-    FullMovie, PostgresMovieRepository,
+    FullMovie, MovieRepo,
 };
 #[cfg(feature = "ai")]
 use database::traits::SearchMoviesByEmbedding;
@@ -455,7 +455,7 @@ fn reciprocal_rank_fusion(
 #[instrument(skip(repo))]
 async fn text_only_search(
     query: &str,
-    repo: &PostgresMovieRepository,
+    repo: &MovieRepo,
     limit: usize,
 ) -> (
     Vec<(
@@ -513,7 +513,7 @@ async fn text_only_search(
 #[instrument(skip(repo))]
 async fn vector_only_search(
     query: &str,
-    repo: &PostgresMovieRepository,
+    repo: &MovieRepo,
     limit: usize,
     disable_enhancement: bool,
     model: Option<&str>,
@@ -620,7 +620,7 @@ async fn vector_only_search(
 async fn hybrid_both_search(
     query: &str,
     movies: Arc<Vec<FullMovie>>,
-    repo: &PostgresMovieRepository,
+    repo: &MovieRepo,
     limit: usize,
     disable_enhancement: bool,
     model: Option<&str>,
@@ -812,6 +812,7 @@ async fn hybrid_both_search(
 }
 
 /// Performs structured query search using AI to parse the query and dynamic Diesel queries
+#[cfg(feature = "postgres")]
 #[instrument]
 async fn structured_query_search(
     query: &str,
@@ -944,7 +945,7 @@ async fn structured_query_search(
 pub async fn hybrid_search(
     query: &str,
     movies: Arc<Vec<FullMovie>>,
-    repo: &PostgresMovieRepository,
+    repo: &MovieRepo,
     limit: usize,
     disable_enhancement: bool,
     search_mode: models::SearchMode,
@@ -1001,10 +1002,18 @@ pub async fn hybrid_search(
             }
         }
         models::SearchMode::Structured => {
-            structured_query_search(
-                query, limit, model,
-            )
-            .await
+            #[cfg(feature = "postgres")]
+            {
+                structured_query_search(
+                    query, limit, model,
+                )
+                .await
+            }
+            #[cfg(not(feature = "postgres"))]
+            {
+                log::warn!("Structured search mode requires postgres feature, falling back to text search");
+                text_only_search(query, repo, limit).await
+            }
         }
     }
 }

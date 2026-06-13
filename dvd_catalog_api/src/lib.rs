@@ -12,10 +12,12 @@ use database::{
     traits::{
         ChatSessions, GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies,
         GetUniqueLocations, GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies,
-        Repository, SearchMoviesStructured,
+        Repository,
     },
     FullMovie, MovieRepo, SearchRequest,
 };
+#[cfg(feature = "postgres")]
+use database::traits::SearchMoviesStructured;
 use log::{debug, error, info, warn};
 use models::{
     CsvInput, GenerateStreamEvent, NeedsInputReason, ScoredMovie, TitleValidation,
@@ -166,6 +168,7 @@ pub async fn get_dvd(
 where
     MovieRepo: GetMovieById,
 {
+    let id_clone = id.clone();
     match state
         .movie_repo
         .get_by_id(id)
@@ -175,7 +178,7 @@ where
         Err(e) => {
             error!(
                 "Failed to get movie {}: {}",
-                id, e
+                id_clone, e
             );
             Json(None)
         }
@@ -471,12 +474,15 @@ where
                 extracted.structured_query.description_keywords
             );
 
-            // Search movies from DB using structured query
+            // Search movies from DB using structured query (postgres only)
+            #[cfg(feature = "postgres")]
             let results = db_state
                 .movie_repo
                 .search_structured(&extracted.structured_query)
                 .await
                 .unwrap_or_default();
+            #[cfg(not(feature = "postgres"))]
+            let results: Vec<FullMovie> = Vec::new(); // MongoDB: TODO implement structured search
 
             info!(
                 "RAG search returned {} movies, injecting {} into context",
@@ -824,6 +830,7 @@ pub async fn preview_csv(
     ))
 }
 
+#[cfg(feature = "postgres")]
 #[instrument(skip(state))]
 #[debug_handler]
 pub async fn parse_csv(
@@ -2358,8 +2365,7 @@ where
 
 /// Structured search endpoint — filter by actors, genres, directors, title/description keywords.
 /// Used by `ai_tools` over HTTP so tools avoid diesel-async (which isn't Sync for ollama-rs).
-#[instrument(skip(db_state, query), fields(actors = query.actors.len(), genres = query.genres.len(), directors = query.directors.len()))]
-#[debug_handler]
+#[cfg(feature = "postgres")]
 pub async fn structured_search(
     State(db_state): State<DbState>,
     Json(query): Json<models::StructuredQuery>,

@@ -29,6 +29,7 @@ async-trait = "0.1"
 diesel = { version = "^2.2.4", features = ["postgres"] }
 diesel-async = { version = "0.8.0", features = ["postgres", "tokio", "deadpool"] }
 deadpool = "0.12"
+qdrant-client = "1.13"
 dioxus = "0.7.9"
 
 [profile]

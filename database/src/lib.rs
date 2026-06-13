@@ -46,6 +46,8 @@
 pub mod embedding;
 #[cfg(any(test, feature = "testing"))]
 pub mod mocks;
+#[cfg(feature = "mongodb")]
+pub mod mongodb;
 pub mod postgres;
 pub mod traits;
 
@@ -105,8 +107,11 @@ pub use traits::*;
 /// This resolves to a concrete type at compile time based on which database feature is enabled.
 /// - `postgres` feature: Uses `PostgresMovieRepository`
 /// - Future: `mongodb` feature will use `MongoMovieRepository`
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "postgres", not(feature = "mongodb")))]
 pub type MovieRepo = postgres::PostgresMovieRepository;
+
+#[cfg(feature = "mongodb")]
+pub type MovieRepo = mongodb::MongoMovieRepository;
 
 /// Type alias for database operation results
 pub type DbResult<T> = Result<T, DatabaseError>;

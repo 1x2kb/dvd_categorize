@@ -84,7 +84,7 @@ fn get_host() -> String {
 fn init_router(db_pool: MovieRepo) -> Router {
     let state = DbState { movie_repo: db_pool };
 
-    Router::new()
+    let router = Router::new()
         .route(
             "/",
             get(hello_world),
@@ -170,16 +170,8 @@ fn init_router(db_pool: MovieRepo) -> Router {
             get(list_available_models),
         )
         .route(
-            "/ai/structured-search",
-            post(structured_search),
-        )
-        .route(
             "/csv/preview",
             post(preview_csv),
-        )
-        .route(
-            "/csv/parse",
-            post(parse_csv),
         )
         .route(
             "/csv/export",
@@ -200,7 +192,21 @@ fn init_router(db_pool: MovieRepo) -> Router {
         .route(
             "/stats/top-actors",
             get(stats_top_actors),
+        );
+    
+    // Conditionally add postgres-only routes
+    #[cfg(feature = "postgres")]
+    let router = router
+        .route(
+            "/ai/structured-search",
+            post(structured_search),
         )
+        .route(
+            "/csv/parse",
+            post(parse_csv),
+        );
+    
+    router
         .with_state(state)
         .layer(
             CorsLayer::new()

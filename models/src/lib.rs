@@ -69,8 +69,11 @@ pub trait Random {
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "postgres")]
+#[cfg(any(feature = "postgres", feature = "vector-similarity"))]
 use chrono::NaiveDateTime;
+
+#[cfg(feature = "vector-similarity")]
+use uuid::Uuid;
 
 #[cfg(feature = "vector-similarity")]
 pub mod vector_similarity;
@@ -104,27 +107,29 @@ pub struct ChatResponse {
     pub session_id: Option<String>,
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(feature = "vector-similarity")]
 #[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::chat_sessions, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatSession {
+    #[cfg(feature = "postgres")]
     pub id: i32,
     pub session_id: uuid::Uuid,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "postgres", feature = "vector-similarity"))]
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::chat_sessions, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewChatSession {
     pub session_id: uuid::Uuid,
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(feature = "vector-similarity")]
 #[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::chat_messages, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
+    #[cfg(feature = "postgres")]
     pub id: i32,
     pub session_id: uuid::Uuid,
     pub role: String,
@@ -132,7 +137,7 @@ pub struct ChatMessage {
     pub created_at: chrono::NaiveDateTime,
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "postgres", feature = "vector-similarity"))]
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::chat_messages, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewChatMessage {
@@ -149,16 +154,22 @@ pub struct CsvInput {
 #[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Actor {
+    #[cfg(feature = "postgres")]
     pub id: i32,
     pub name: String,
 }
 
 impl From<String> for Actor {
     fn from(value: String) -> Self {
-        Self { id: 0, name: value }
+        Self {
+            #[cfg(feature = "postgres")]
+            id: 0,
+            name: value,
+        }
     }
 }
 
+#[cfg(feature = "postgres")]
 impl
     From<(
         i32,
@@ -184,6 +195,7 @@ pub struct NewActor {
 #[cfg_attr(feature="postgres", derive(Queryable, Insertable, Identifiable), diesel(table_name = schema::director, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Director {
+    #[cfg(feature = "postgres")]
     pub id: i32,
     pub name: String,
 }
@@ -195,7 +207,11 @@ pub struct NewDirector {
 
 impl From<String> for Director {
     fn from(name: String) -> Self {
-        Self { id: 0, name }
+        Self {
+            #[cfg(feature = "postgres")]
+            id: 0,
+            name,
+        }
     }
 }
 #[cfg_attr(feature="postgres", derive(Insertable, Identifiable, Queryable), diesel(table_name = schema::movie, check_for_backend(diesel::pg::Pg)))]
@@ -616,6 +632,7 @@ impl TextMatchScoring for FullMovie {
     }
 }
 
+#[cfg(feature = "postgres")]
 impl
     From<(
         Movie,
@@ -640,7 +657,7 @@ impl
             director,
             actors,
             genres,
-            #[cfg(feature = "postgres")]
+            #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: movie
                 .embedding
                 .map(|v| v.into()),

@@ -15,5 +15,11 @@ WORKDIR /app
 RUN cargo install cargo-watch
 
 # Use tini to ensure proper signal forwarding to cargo watch
+ARG FEATURES=postgres,internet
+ENV API_FEATURES=${FEATURES}
+
+# Create entrypoint script to handle env vars properly without glob expansion
+RUN echo '#!/bin/sh\nset -f\ncargo watch -i "e2e/*" -i "e2e/**" -x "run -p dvd_catalog_api --features ${API_FEATURES}"' > /tmp/entry.sh && chmod +x /tmp/entry.sh
+
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["cargo", "watch", "-i", "e2e/*", "-i", "e2e/**", "-x", "run -p dvd_catalog_api --features postgres,internet"]
+CMD ["/tmp/entry.sh"]
