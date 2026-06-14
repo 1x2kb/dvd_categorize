@@ -52,6 +52,10 @@ impl MockMovieRepository {
     }
 }
 
+impl Repository for MockMovieRepository {
+    type Id = i32;
+}
+
 // Movie trait implementations
 
 #[async_trait]
@@ -367,6 +371,10 @@ impl MockActorRepository {
     }
 }
 
+impl Repository for MockActorRepository {
+    type Id = i32;
+}
+
 // Actor trait implementations
 
 #[async_trait]
@@ -457,6 +465,10 @@ impl MockDirectorRepository {
             next_id: AtomicI32::new(1),
         }
     }
+}
+
+impl Repository for MockDirectorRepository {
+    type Id = i32;
 }
 
 // Director trait implementations

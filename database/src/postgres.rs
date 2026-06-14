@@ -705,6 +705,13 @@ mod inner {
     }
 
     #[async_trait]
+    impl crate::traits::InsertFullMovies for PostgresMovieRepository {
+        async fn insert_full_movies_bulk(&self, _movies: Vec<FullMovie>) -> Result<usize, crate::DatabaseError> {
+            todo!("InsertFullMovies bulk not yet implemented for PostgresMovieRepository")
+        }
+    }
+
+    #[async_trait]
     impl UpdateMovieLocation for PostgresMovieRepository {
         async fn update_location(
             &self,

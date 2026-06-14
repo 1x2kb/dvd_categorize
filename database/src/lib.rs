@@ -44,7 +44,10 @@
 //! ```
 
 pub mod embedding;
-#[cfg(any(test, feature = "testing"))]
+// `mocks` is built around the Diesel/postgres model (i32 ids, `NewMovie`,
+// `NewMovieActor`, postgres-only repository traits), so it is only available
+// with the `postgres` backend.
+#[cfg(all(any(test, feature = "testing"), feature = "postgres"))]
 pub mod mocks;
 pub mod postgres;
 pub mod traits;
@@ -89,7 +92,7 @@ pub use models::schema::*;
 pub use models::*;
 
 pub use embedding::*;
-#[cfg(any(test, feature = "testing"))]
+#[cfg(all(any(test, feature = "testing"), feature = "postgres"))]
 pub use mocks::*;
 // Postgres-specific re-exports (only available when postgres feature is enabled)
 #[cfg(feature = "postgres")]

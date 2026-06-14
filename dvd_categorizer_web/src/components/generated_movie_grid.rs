@@ -875,7 +875,44 @@ fn handle_remove_catalog_items(
     );
 }
 
-/// Handle Save All button click — saves all saveable movies to catalog.
+/// POST /saveMovies — bulk-saves a list of AiMovieData to the catalog, returns count saved.
+async fn save_movies_to_catalog(movies: Vec<AiMovieData>, base: String) -> Result<usize, String> {
+    let body = serde_json::to_string(&movies).map_err(|e| e.to_string())?;
+    let response = gloo_net::http::Request::post(
+        &format!(
+            "{}/saveMovies",
+            base
+        ),
+    )
+    .header(
+        "Content-Type",
+        "application/json",
+    )
+    .body(body)
+    .map_err(|e| e.to_string())?
+    .send()
+    .await
+    .map_err(|e| e.to_string())?;
+    if !response.ok() {
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .unwrap_or_default();
+        return Err(
+            format!(
+                "Server error {}: {}",
+                status, body
+            ),
+        );
+    }
+    response
+        .json::<usize>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Handle Save All button click — bulk-saves all saveable movies to catalog.
 async fn handle_save_all(
     items: Vec<(
         String,
@@ -901,59 +938,40 @@ async fn handle_save_all(
             return;
         }
     };
-    let mut saved_count = 0usize;
-    let mut failed: Vec<String> = vec![];
-    for (key, movie) in items {
-        let title = movie
-            .title
-            .clone();
-        match save_movie_to_catalog(
-            movie,
-            base.clone(),
-        )
-        .await
-        {
-            Ok(_) => {
-                saved_count += 1;
-                entries.with_mut(|v| v.retain(|e| e.input_title != key));
-            }
-            Err(e) => failed.push(
-                format!(
-                    "{}: {}",
-                    title, e
-                ),
-            ),
-        }
-    }
+
+    let keys: Vec<String> = items.iter().map(|(k, _)| k.clone()).collect();
+    let movies: Vec<AiMovieData> = items.into_iter().map(|(_, m)| m).collect();
+
     let id = *next_toast_id.peek();
     next_toast_id.with_mut(|n| *n += 1);
-    if failed.is_empty() {
-        on_toast.call(
-            ToastMessage {
-                id,
-                kind: ToastKind::Success,
-                message: format!(
-                    "{} movie{} saved to catalog",
-                    saved_count,
-                    if saved_count == 1 { "" } else { "s" }
-                ),
-                duration_ms: 4000,
-            },
-        );
-    } else {
-        on_toast.call(
-            ToastMessage {
-                id,
-                kind: ToastKind::Warning,
-                message: format!(
-                    "{} saved, {} failed: {}",
-                    saved_count,
-                    failed.len(),
-                    failed.join(", ")
-                ),
-                duration_ms: 6000,
-            },
-        );
+    match save_movies_to_catalog(movies, base).await {
+        Ok(saved_count) => {
+            for key in &keys {
+                entries.with_mut(|v| v.retain(|e| &e.input_title != key));
+            }
+            on_toast.call(
+                ToastMessage {
+                    id,
+                    kind: ToastKind::Success,
+                    message: format!(
+                        "{} movie{} saved to catalog",
+                        saved_count,
+                        if saved_count == 1 { "" } else { "s" }
+                    ),
+                    duration_ms: 4000,
+                },
+            );
+        }
+        Err(e) => {
+            on_toast.call(
+                ToastMessage {
+                    id,
+                    kind: ToastKind::Warning,
+                    message: format!("Failed to save movies: {}", e),
+                    duration_ms: 6000,
+                },
+            );
+        }
     }
 }
 

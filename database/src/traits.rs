@@ -49,6 +49,31 @@ pub trait InsertMovies: Repository {
 }
 
 #[async_trait]
+pub trait InsertMoviesWithEmbeddings: Repository {
+    /// Insert movies with pre-generated embeddings in bulk.
+    /// Returns (id, name) tuples for successfully inserted movies.
+    /// Skips duplicates based on movie name.
+    async fn insert_batch_with_embeddings(
+        &self,
+        movies: Vec<(NewMovie, Option<Vec<f32>>)>,
+    ) -> Result<
+        Vec<(
+            Self::Id,
+            String,
+        )>,
+        DatabaseError,
+    >;
+}
+
+#[async_trait]
+pub trait InsertFullMovies: Send + Sync {
+    /// Bulk-insert a slice of fully-populated `FullMovie` objects (actors,
+    /// director, genres, embedding all preserved).  Skips duplicates by name.
+    /// Returns the number of movies actually inserted.
+    async fn insert_full_movies_bulk(&self, movies: Vec<FullMovie>) -> Result<usize, DatabaseError>;
+}
+
+#[async_trait]
 pub trait UpdateMovieLocation: Repository {
     async fn update_location(&self, movie_id: Self::Id, location: String) -> Result<(), DatabaseError>;
 }

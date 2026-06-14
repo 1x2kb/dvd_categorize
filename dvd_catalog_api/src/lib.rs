@@ -8,6 +8,10 @@ use axum::{
     Json,
 };
 use axum_macros::debug_handler;
+#[cfg(feature = "postgres")]
+use database::insert_full_movies;
+#[cfg(feature = "postgres")]
+use database::traits::SearchMoviesStructured;
 use database::{
     traits::{
         ChatSessions, GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies,
@@ -44,28 +48,54 @@ pub mod movie_search;
 pub use movie_search::extract_entities;
 
 fn db_msg_to_ollama(msg: &models::ChatMessage) -> ollama_rs::generation::chat::ChatMessage {
-    match msg.role.as_str() {
-        "user" => ollama_rs::generation::chat::ChatMessage::user(msg.content.clone()),
-        _ => ollama_rs::generation::chat::ChatMessage::assistant(msg.content.clone()),
+    match msg
+        .role
+        .as_str()
+    {
+        "user" => ollama_rs::generation::chat::ChatMessage::user(
+            msg.content
+                .clone(),
+        ),
+        _ => ollama_rs::generation::chat::ChatMessage::assistant(
+            msg.content
+                .clone(),
+        ),
     }
 }
 
 fn model_msg_to_ollama(msg: &models::RoledMessage) -> ollama_rs::generation::chat::ChatMessage {
     match msg.role {
-        models::Role::User => ollama_rs::generation::chat::ChatMessage::user(msg.message.clone()),
-        models::Role::Ai => {
-            ollama_rs::generation::chat::ChatMessage::assistant(msg.message.clone())
-        }
+        models::Role::User => ollama_rs::generation::chat::ChatMessage::user(
+            msg.message
+                .clone(),
+        ),
+        models::Role::Ai => ollama_rs::generation::chat::ChatMessage::assistant(
+            msg.message
+                .clone(),
+        ),
     }
 }
 
 async fn correct_titles_with_fallback(titles: &[String], model: Option<&str>) -> Vec<String> {
-    match ai_chat::correct_movie_titles(titles, model).await {
+    match ai_chat::correct_movie_titles(
+        titles, model,
+    )
+    .await
+    {
         Ok(c) if c.len() == titles.len() => {
-            info!("Title correction succeeded for {} titles", c.len());
-            for (orig, corr) in titles.iter().zip(c.iter()) {
+            info!(
+                "Title correction succeeded for {} titles",
+                c.len()
+            );
+            for (orig, corr) in titles
+                .iter()
+                .zip(c.iter())
+            {
                 if orig != corr {
-                    debug!("  '{}' -> '{}'", orig, corr);
+                    debug!(
+                        "  '{}' -> '{}'",
+                        orig, corr
+                    );
                 }
             }
             c
@@ -79,7 +109,10 @@ async fn correct_titles_with_fallback(titles: &[String], model: Option<&str>) ->
             titles.to_vec()
         }
         Err(e) => {
-            error!("Title correction failed: {}. Falling back to originals.", e);
+            error!(
+                "Title correction failed: {}. Falling back to originals.",
+                e
+            );
             titles.to_vec()
         }
     }
@@ -129,9 +162,7 @@ pub async fn hello_world() -> &'static str {
 
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_dvds(
-    State(state): State<DbState>,
-) -> Json<Option<Vec<FullMovie>>>
+pub async fn get_dvds(State(state): State<DbState>) -> Json<Option<Vec<FullMovie>>>
 where
     MovieRepo: GetAllMovies,
 {
@@ -262,11 +293,18 @@ where
         vec![ollama_rs::generation::chat::ChatMessage::system(
             system_prompt.to_string(),
         )];
-    history.extend(history_messages.iter().map(db_msg_to_ollama));
+    history.extend(
+        history_messages
+            .iter()
+            .map(db_msg_to_ollama),
+    );
 
     // New messages for this turn — passed to coordinator, NOT pre-added to history.
-    let new_messages: Vec<ollama_rs::generation::chat::ChatMessage> =
-        request.messages.iter().map(model_msg_to_ollama).collect();
+    let new_messages: Vec<ollama_rs::generation::chat::ChatMessage> = request
+        .messages
+        .iter()
+        .map(model_msg_to_ollama)
+        .collect();
 
     // Capture user content for DB persistence after the call
     let user_content_for_db: Vec<String> = request
@@ -540,8 +578,17 @@ where
     // Convert chat history to Ollama format (system + history + new messages)
     let messages: Vec<ollama_rs::generation::chat::ChatMessage> =
         std::iter::once(ollama_rs::generation::chat::ChatMessage::system(system_prompt))
-            .chain(history_messages.iter().map(db_msg_to_ollama))
-            .chain(request.messages.iter().map(model_msg_to_ollama))
+            .chain(
+                history_messages
+                    .iter()
+                    .map(db_msg_to_ollama),
+            )
+            .chain(
+                request
+                    .messages
+                    .iter()
+                    .map(model_msg_to_ollama),
+            )
             .collect();
 
     // Get model name from request or use default
@@ -824,6 +871,106 @@ pub async fn preview_csv(
     ))
 }
 
+#[cfg(feature = "postgres")]
+#[instrument(skip(state, value))]
+#[debug_handler]
+pub async fn parse_csv(
+    State(state): State<DbState>,
+    Json(value): Json<CsvInput>,
+) -> Result<
+    impl IntoResponse,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    let mut movies = csv_utils::parse_csv(
+        value
+            .input
+            .as_bytes(),
+    )
+    .map_err(
+        |e| {
+            let error = format!(
+                "Failed to parse CSV: {}",
+                e
+            );
+            error!(
+                "{}",
+                error
+            );
+            (
+                StatusCode::BAD_REQUEST,
+                error,
+            )
+        },
+    )?;
+
+    let embedding_texts: Vec<String> = movies
+        .iter()
+        .map(|m| m.embedding_str())
+        .collect();
+
+    let embeddings = ai_chat::get_embeddings(
+        embedding_texts,
+        ai_chat::EMBEDDING_MODEL,
+    )
+    .await
+    .map_err(
+        |e| {
+            let error = format!(
+                "Failed to generate embeddings: {}",
+                e
+            );
+            error!(
+                "{}",
+                error
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error,
+            )
+        },
+    )?;
+
+    for (movie, emb) in movies
+        .iter_mut()
+        .zip(embeddings)
+    {
+        movie.embedding = Some(emb);
+    }
+
+    // Insert movies using postgres-specific method
+    if let Err(e) = insert_full_movies(  
+        movies,
+        state
+            .movie_repo
+            .pool(),
+    )
+    .await
+    {
+        let error = format!(
+            "Failed to insert movies: {}",
+            e
+        );
+        error!(
+            "{}",
+            error
+        );
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            error,
+        ));
+    }
+
+    info!("Movies saved successfully");
+    Ok((
+        StatusCode::OK,
+        Json(()),
+    ))
+}
+
+#[cfg(feature = "mongodb")]
 #[instrument(skip(state))]
 #[debug_handler]
 pub async fn parse_csv(
@@ -892,26 +1039,30 @@ pub async fn parse_csv(
         movie.embedding = Some(emb);
     }
 
-    if let Err(e) = database::insert_full_movies(
-        movies,
-        state
-            .movie_repo
-            .pool(),
-    )
-    .await
+    use database::traits::InsertFullMovies;
+    match state
+        .movie_repo
+        .insert_full_movies_bulk(movies)
+        .await
     {
-        let error = format!(
-            "Failed to insert movies: {}",
-            e
-        );
-        error!(
-            "{}",
-            error
-        );
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            error,
-        ));
+        Ok(count) => info!(
+            "Bulk inserted {} movies successfully",
+            count
+        ),
+        Err(e) => {
+            let error = format!(
+                "Failed to bulk insert movies: {}",
+                e
+            );
+            error!(
+                "{}",
+                error
+            );
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error,
+            ));
+        }
     }
 
     info!("Movies saved successfully");
@@ -1046,7 +1197,9 @@ pub async fn validate_titles(
     // since it's the same model the user will use for generation.
     let corrected = correct_titles_with_fallback(
         &request.titles,
-        request.model.as_deref(),
+        request
+            .model
+            .as_deref(),
     )
     .await;
 
@@ -1190,7 +1343,11 @@ pub async fn generate_movies_stream(
     );
 
     // Validate + correct titles upfront — one fast Ollama call.
-    let corrected = correct_titles_with_fallback(&titles, model.as_deref()).await;
+    let corrected = correct_titles_with_fallback(
+        &titles,
+        model.as_deref(),
+    )
+    .await;
 
     let strip_the = |s: &str| {
         s.strip_prefix("the ")
@@ -1499,7 +1656,10 @@ async fn combined_search(
         .map(
             |movie| {
                 (
-                    movie.id, movie,
+                    movie
+                        .id
+                        .clone(),
+                    movie,
                 )
             },
         )
@@ -1664,27 +1824,29 @@ pub async fn update_movie_location(
         request.movie_id, request.location
     );
 
-    // Update the database
-    database::update_movie_location(
-        request.movie_id,
-        request.location,
-    )
-    .await
-    .map_err(
-        |e| {
-            error!(
-                "Failed to update movie location: {}",
-                e
-            );
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
+    // Update the database via the active repository backend
+    state
+        .movie_repo
+        .update_location(
+            request.movie_id,
+            request.location,
+        )
+        .await
+        .map_err(
+            |e| {
+                error!(
                     "Failed to update movie location: {}",
                     e
-                ),
-            )
-        },
-    )?;
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!(
+                        "Failed to update movie location: {}",
+                        e
+                    ),
+                )
+            },
+        )?;
 
     info!("Successfully updated movie location");
     Ok(Json(()))
@@ -1771,9 +1933,7 @@ pub async fn list_available_models() -> Result<
 /// Get recent movies ordered by added_on descending
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_recent_movies(
-    State(state): State<DbState>,
-) -> Json<Vec<ScoredMovie>>
+pub async fn get_recent_movies(State(state): State<DbState>) -> Json<Vec<ScoredMovie>>
 where
     MovieRepo: GetRecentMovies,
 {
@@ -1911,9 +2071,7 @@ where
 /// Get movies with unknown location from the database
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_unknown_location_movies(
-    State(state): State<DbState>,
-) -> Json<Vec<ScoredMovie>>
+pub async fn get_unknown_location_movies(State(state): State<DbState>) -> Json<Vec<ScoredMovie>>
 where
     MovieRepo: GetUnknownLocationMovies,
 {
@@ -1952,9 +2110,7 @@ where
 
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn unique_locations(
-    State(state): State<DbState>,
-) -> Json<Vec<String>>
+pub async fn unique_locations(State(state): State<DbState>) -> Json<Vec<String>>
 where
     MovieRepo: GetUniqueLocations,
 {
@@ -2019,7 +2175,9 @@ where
 pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsOverview> {
     info!("Getting stats overview");
 
-    let movies = match state
+    use database::GetStatsOverview;
+
+    let (total_movies, total_directors, total_actors) = match state
         .movie_repo
         .get_all()
         .await
@@ -2162,21 +2320,10 @@ pub async fn stats_genres(State(state): State<DbState>) -> Json<models::PieChart
         }
     };
 
-    use std::collections::HashMap;
-
-    let mut genre_counts: HashMap<String, usize> = HashMap::new();
-    for movie in movies {
-        for genre in &movie.genres {
-            *genre_counts
-                .entry(genre.clone())
-                .or_insert(0) += 1;
-        }
-    }
-
-    let mut data: Vec<(
+    let data: Vec<(
         String,
         f64,
-    )> = genre_counts
+    )> = genre_data
         .into_iter()
         .map(
             |(genre, count)| {
@@ -2396,6 +2543,100 @@ where
             Json(Vec::new())
         }
     }
+}
+
+/// Bulk-save generated movie cards to the catalog.
+#[instrument(skip(db_state))]
+#[debug_handler]
+pub async fn save_movies(
+    State(db_state): State<DbState>,
+    Json(movies): Json<Vec<models::AiMovieData>>,
+) -> Result<
+    Json<usize>,
+    (
+        StatusCode,
+        String,
+    ),
+>
+where
+    MovieRepo: database::traits::InsertFullMovies,
+{
+    use database::traits::InsertFullMovies;
+
+    if movies.is_empty() {
+        return Ok(Json(0));
+    }
+
+    info!(
+        "Bulk saving {} generated movies to catalog",
+        movies.len()
+    );
+
+    let embedding_texts: Vec<String> = movies
+        .iter()
+        .map(
+            |m| {
+                format!(
+                    "{} {} {}",
+                    m.title,
+                    m.description,
+                    m.genres
+                        .join(" ")
+                )
+            },
+        )
+        .collect();
+
+    let embeddings = match ai_chat::get_embeddings(
+        embedding_texts,
+        ai_chat::EMBEDDING_MODEL,
+    )
+    .await
+    {
+        Ok(e) => e,
+        Err(e) => {
+            warn!(
+                "Failed to generate embeddings for bulk save, proceeding without: {}",
+                e
+            );
+            vec![vec![]; movies.len()]
+        }
+    };
+
+    let full_movies: Vec<FullMovie> = movies
+        .into_iter()
+        .zip(embeddings)
+        .map(
+            |(m, emb)| {
+                let mut fm = m.to_full_movie();
+                if !emb.is_empty() {
+                    fm.embedding = Some(emb);
+                }
+                fm
+            },
+        )
+        .collect();
+
+    db_state
+        .movie_repo
+        .insert_full_movies_bulk(full_movies)
+        .await
+        .map(Json)
+        .map_err(
+            |e| {
+                error!(
+                    "Failed to bulk save movies: {}",
+                    e
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!(
+                        "Failed to save movies: {}",
+                        e
+                    ),
+                )
+            },
+        )
 }
 
 /// Save a generated movie card to the catalog.

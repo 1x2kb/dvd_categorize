@@ -102,6 +102,10 @@ fn init_router(db_pool: MovieRepo) -> Router {
             post(save_movie),
         )
         .route(
+            "/saveMovies",
+            post(save_movies),
+        )
+        .route(
             "/movie/location",
             post(update_movie_location),
         )
