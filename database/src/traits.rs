@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use models::{Actor, FullMovie, Movie, NewActor, NewDirector, NewMovie};
+use models::{Actor, FullMovie, Movie, NewActor, NewDirector, NewMovie, ScoredMovie};
 
 #[cfg(feature = "postgres")]
 use models::{NewMovieActor, NewMovieGenre, StructuredQuery};
@@ -76,7 +76,7 @@ pub trait SearchMoviesByEmbedding: Send + Sync {
         &self,
         embedding: Vec<f32>,
         limit: i64,
-    ) -> Result<Vec<FullMovie>, DatabaseError>;
+    ) -> Result<Vec<ScoredMovie>, DatabaseError>;
 }
 
 #[async_trait]

@@ -391,7 +391,7 @@ fn reciprocal_rank_fusion(
         MovieId,
         f32,
     )>,
-    vector_ranks: Vec<MovieId>,
+    vector_results: Vec<(MovieId, f32)>,
     k: f32,
 ) -> Vec<(
     MovieId,
@@ -422,15 +422,14 @@ fn reciprocal_rank_fusion(
             .or_insert(0.0) += rfr_score;
     }
 
-    // Add scores from vector search
-    for (rank, movie_id) in vector_ranks
+    // Add scores from vector search using actual similarity scores
+    for (movie_id, vector_score) in vector_results
         .iter()
-        .enumerate()
     {
-        let score = 1.0 / (k + rank as f32 + 1.0);
+        // Use the actual Qdrant similarity score (0-1) directly
         *scores
             .entry(movie_id.clone())
-            .or_insert(0.0) += score;
+            .or_insert(0.0) += vector_score;
     }
 
     // Sort by RRF score descending
@@ -554,17 +553,17 @@ async fn vector_only_search(
                 )
                 .await
             {
-                Ok(movies_from_db) => {
-                    let ids: Vec<MovieId> = movies_from_db
+                Ok(scored_movies) => {
+                    let results: Vec<(MovieId, f32)> = scored_movies
                         .into_iter()
-                        .map(|m| m.id)
+                        .map(|sm| (sm.movie.id, sm.vector_score))
                         .collect();
                     info!(
                         "Vector search found {} results in {:.2?}",
-                        ids.len(),
+                        results.len(),
                         vector_start.elapsed()
                     );
-                    ids
+                    results
                 }
                 Err(e) => {
                     error!(
@@ -584,22 +583,13 @@ async fn vector_only_search(
         }
     };
 
-    // Return normalized vector scores
+    // Return real Qdrant scores
     let final_results: Vec<(
         MovieId,
         f32,
     )> = vector_results
         .into_iter()
         .take(limit)
-        .enumerate()
-        .map(
-            |(rank, id)| {
-                let score = 1.0 / (1.0 + rank as f32);
-                (
-                    id, score,
-                )
-            },
-        )
         .collect();
 
     info!(
@@ -715,17 +705,17 @@ async fn hybrid_both_search(
                         )
                         .await
                     {
-                        Ok(movies_from_db) => {
-                            let ids: Vec<MovieId> = movies_from_db
+                        Ok(scored_movies) => {
+                            let results: Vec<(MovieId, f32)> = scored_movies
                                 .into_iter()
-                                .map(|m| m.id)
+                                .map(|sm| (sm.movie.id, sm.vector_score))
                                 .collect();
                             info!(
                                 "Vector search found {} results in {:.2?}",
-                                ids.len(),
+                                results.len(),
                                 vector_start.elapsed()
                             );
-                            ids
+                            results
                         }
                         Err(e) => {
                             error!(
@@ -784,15 +774,6 @@ async fn hybrid_both_search(
         vector_results
             .into_iter()
             .take(limit)
-            .enumerate()
-            .map(
-                |(rank, id)| {
-                    (
-                        id,
-                        1.0 / (RRF_K_VALUE + rank as f32 + 1.0),
-                    )
-                },
-            )
             .collect()
     } else {
         info!("No search results found");

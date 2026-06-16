@@ -19,7 +19,7 @@ pub mod inner {
 
     use crate::traits::*;
     use crate::{DatabaseError, DbResult};
-    use models::{Actor, ChatMessage, ChatSession, Director, FullMovie, NewChatMessage, NewMovie};
+    use models::{Actor, ChatMessage, ChatSession, Director, FullMovie, NewChatMessage, NewMovie, ScoredMovie};
 
     /// Serde helper that stores the document `_id` as a BSON `ObjectId` while
     /// keeping it as an `Option<String>` (hex) in Rust. `None` is skipped on
@@ -491,9 +491,9 @@ pub mod inner {
             Ok(())
         }
 
-        /// Search Qdrant for similar vectors and return movie IDs
-        async fn search_qdrant(&self, embedding: Vec<f32>, limit: i64) -> DbResult<Vec<String>> {
-            use log::{debug, warn};
+        /// Search Qdrant for similar vectors and return movie IDs with scores
+        async fn search_qdrant(&self, embedding: Vec<f32>, limit: i64) -> DbResult<Vec<(String, f32)>> {
+            use log::{debug, info, warn};
             use qdrant_client::qdrant::SearchPointsBuilder;
 
             debug!(
@@ -501,6 +501,7 @@ pub mod inner {
                 self.qdrant_collection,
                 embedding.len()
             );
+            info!("Search embedding (first 10): {:?}", &embedding.iter().take(10).collect::<Vec<_>>());
 
             let search_request = SearchPointsBuilder::new(
                 &self.qdrant_collection,
@@ -532,11 +533,12 @@ pub mod inner {
                     .len()
             );
 
-            let mut ids = Vec::new();
+            let mut results = Vec::new();
             for point in &response.result {
                 debug!(
-                    "Processing point id={:?}, payload keys={:?}",
+                    "Processing point id={:?}, score={}, payload keys={:?}",
                     point.id,
+                    point.score,
                     point
                         .payload
                         .keys()
@@ -568,10 +570,11 @@ pub mod inner {
 
                         if let Some(id) = movie_id {
                             debug!(
-                                "Extracted movie_id: {}",
-                                id
+                                "Extracted movie_id: {} with score: {}",
+                                id,
+                                point.score
                             );
-                            ids.push(id);
+                            results.push((id, point.score));
                         }
                     }
                     None => {
@@ -584,10 +587,10 @@ pub mod inner {
             }
 
             debug!(
-                "Qdrant search returning {} movie IDs",
-                ids.len()
+                "Qdrant search returning {} results with scores",
+                results.len()
             );
-            Ok(ids)
+            Ok(results)
         }
     }
 
@@ -1473,21 +1476,47 @@ pub mod inner {
             &self,
             embedding: Vec<f32>,
             limit: i64,
-        ) -> DbResult<Vec<FullMovie>> {
-            // Search Qdrant for similar vectors
-            let ids = self
+        ) -> DbResult<Vec<ScoredMovie>> {
+            use log::info;
+            use std::collections::HashMap;
+            
+            // Search Qdrant for similar vectors with scores
+            let results = self
                 .search_qdrant(
                     embedding, limit,
                 )
                 .await?;
 
-            if ids.is_empty() {
+            if results.is_empty() {
                 return Ok(Vec::new());
             }
 
+            // Log the scores for debugging
+            for (id, score) in &results {
+                info!("Qdrant result: movie_id={}, score={}", id, score);
+            }
+
+            // Create a map of movie_id -> score
+            let score_map: HashMap<String, f32> = results.iter().cloned().collect();
+
+            // Extract just the IDs for MongoDB lookup
+            let ids: Vec<String> = results.iter().map(|(id, _score)| id.clone()).collect();
+
             // Fetch full documents from MongoDB
-            self.get_by_ids(ids)
-                .await
+            let movies = self.get_by_ids(ids).await?;
+
+            // Wrap each movie with its Qdrant score
+            let scored_movies: Vec<ScoredMovie> = movies
+                .into_iter()
+                .filter_map(|movie| {
+                    score_map.get(&movie.id).map(|&vector_score| ScoredMovie {
+                        movie,
+                        vector_score,
+                    })
+                })
+                .collect();
+
+            Ok(scored_movies)
         }
     }
 
