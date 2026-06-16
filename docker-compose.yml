@@ -1,5 +1,6 @@
 services:
   postgres:
+    profiles: ["postgres"]
     image: pgvector/pgvector:pg17
     networks:
       - dvd-net
@@ -18,6 +19,7 @@ services:
       retries: 5
 
   mongodb:
+    profiles: ["mongodb"]
     image: mongo:7
     networks:
       - dvd-net
@@ -34,6 +36,21 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  mongo-express:
+    profiles: ["mongodb"]
+    image: mongo-express:latest
+    networks:
+      - dvd-net
+    ports:
+      - "8082:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: mongopassword
+      ME_CONFIG_MONGODB_URL: mongodb://admin:mongopassword@mongodb:27017/
+      ME_CONFIG_BASICAUTH: false
+    depends_on:
+      - mongodb
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -72,6 +89,7 @@ services:
     restart: unless-stopped
 
   dvd_categorize_api:
+    profiles: ["postgres"]
     networks:
       - dvd-net
     build:
@@ -81,7 +99,7 @@ services:
         UID: ${UID}
         GID: ${GID}
         USERNAME: ${USERNAME}
-        FEATURES: mongodb,internet
+        FEATURES: internet,ai
     ports:
       - "0.0.0.0:3000:3000"
     volumes:
@@ -89,10 +107,38 @@ services:
     depends_on:
       - diesel_migrate
       - postgres
-      - mongodb
       - qdrant
     environment:
       DATABASE_URL: postgres://app_user:strongpassword@postgres:5432/app_db
+      QDRANT_URL: http://qdrant:6334
+      QDRANT_COLLECTION: movies
+      RUST_LOG: "info,dvd_catalog=debug,database=debug,ai_chat=debug,models=debug,csv_utils=debug,categorizer_utilities=debug"
+      server_host: ${SERVER_HOST:-0.0.0.0}
+      server_port: ${SERVER_PORT:-3000}
+      OLLAMA_HOST: ollama
+      OLLAMA_PORT: "11434"
+      OLLAMA_NUM_CTX: "18000"
+
+  dvd_categorize_api_mongo:
+    profiles: ["mongodb"]
+    networks:
+      - dvd-net
+    build:
+      context: .
+      dockerfile: docker/run/api.Dockerfile
+      args:
+        UID: ${UID}
+        GID: ${GID}
+        USERNAME: ${USERNAME}
+        FEATURES: mongodb,internet,ai
+    ports:
+      - "0.0.0.0:3000:3000"
+    volumes:
+      - ./:/app
+    depends_on:
+      - mongodb
+      - qdrant
+    environment:
       MONGODB_URI: mongodb://admin:mongopassword@mongodb:27017/dvd_catalog?authSource=admin
       QDRANT_URL: http://qdrant:6334
       QDRANT_COLLECTION: movies
@@ -115,6 +161,7 @@ services:
       - ./:/app
 
   diesel_migrate:
+    profiles: ["postgres"]
     networks:
       - dvd-net
     build:

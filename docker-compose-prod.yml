@@ -7,6 +7,7 @@ volumes:
 
 services:
   postgres-prod:
+    profiles: ["postgres"]
     image: pgvector/pgvector:pg17
     environment:
       POSTGRES_USER: app_user
@@ -24,6 +25,7 @@ services:
     restart: unless-stopped
 
   mongodb-prod:
+    profiles: ["mongodb"]
     image: mongo:7
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
@@ -80,6 +82,7 @@ services:
     restart: unless-stopped
 
   diesel_migrate-prod:
+    profiles: ["postgres"]
     build:
       context: .
       dockerfile: docker/prod/diesel.Dockerfile
@@ -91,6 +94,7 @@ services:
     restart: "no"
 
   dvd_categorize_api-prod:
+    profiles: ["postgres"]
     build:
       context: .
       dockerfile: docker/prod/api.Dockerfile
@@ -101,12 +105,35 @@ services:
         condition: service_completed_successfully
       postgres-prod:
         condition: service_healthy
+      qdrant-prod:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres-prod:5432/app_db
+      QDRANT_URL: http://qdrant-prod:6334
+      QDRANT_COLLECTION: movies
+      RUST_LOG: ${RUST_LOG:-info}
+      server_host: 0.0.0.0
+      server_port: 3000
+      OLLAMA_HOST: ollama-prod
+      OLLAMA_PORT: "11434"
+      OLLAMA_NUM_CTX: "10000"
+    restart: unless-stopped
+
+  dvd_categorize_api-prod-mongo:
+    profiles: ["mongodb"]
+    build:
+      context: .
+      dockerfile: docker/prod/api.Dockerfile
+      args:
+        FEATURES: mongodb,internet,ai
+    ports:
+      - "0.0.0.0:3000:3000"  # API port
+    depends_on:
       mongodb-prod:
         condition: service_healthy
       qdrant-prod:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres-prod:5432/app_db
       MONGODB_URI: mongodb://admin:${MONGO_PASSWORD:-mongopassword}@mongodb-prod:27017/dvd_catalog?authSource=admin
       QDRANT_URL: http://qdrant-prod:6334
       QDRANT_COLLECTION: movies
