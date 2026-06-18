@@ -845,50 +845,25 @@ pub mod inner {
                 .collect();
             let existing_filter = doc! { "name": { "$in": &movie_names } };
 
-            let mut existing_cursor = self
+            use futures::TryStreamExt;
+            let existing_docs: Vec<MovieDocument> = self
                 .movies
                 .find(existing_filter)
                 .await
-                .map_err(
-                    |e| {
-                        DatabaseError::QueryError(
-                            format!(
-                                "MongoDB find error checking duplicates: {}",
-                                e
-                            ),
-                        )
-                    },
-                )?;
-
-            let mut existing_names = std::collections::HashSet::new();
-            while existing_cursor
-                .advance()
+                .map_err(|e| {
+                    DatabaseError::QueryError(format!(
+                        "MongoDB find error checking duplicates: {}",
+                        e
+                    ))
+                })?
+                .try_collect()
                 .await
-                .map_err(
-                    |e| {
-                        DatabaseError::QueryError(
-                            format!(
-                                "MongoDB cursor error: {}",
-                                e
-                            ),
-                        )
-                    },
-                )?
-            {
-                let doc: MovieDocument = existing_cursor
-                    .deserialize_current()
-                    .map_err(
-                        |e| {
-                            DatabaseError::QueryError(
-                                format!(
-                                    "MongoDB deserialize error: {}",
-                                    e
-                                ),
-                            )
-                        },
-                    )?;
-                existing_names.insert(doc.name);
-            }
+                .map_err(|e| {
+                    DatabaseError::QueryError(format!("MongoDB cursor error: {}", e))
+                })?;
+
+            let existing_names: std::collections::HashSet<String> =
+                existing_docs.into_iter().map(|doc| doc.name).collect();
 
             if !existing_names.is_empty() {
                 info!(
@@ -1506,7 +1481,7 @@ pub mod inner {
             let movies = self.get_by_ids(ids).await?;
 
             // Wrap each movie with its Qdrant score
-            let scored_movies: Vec<ScoredMovie> = movies
+            let mut scored_movies: Vec<ScoredMovie> = movies
                 .into_iter()
                 .filter_map(|movie| {
                     score_map.get(&movie.id).map(|&vector_score| ScoredMovie {
@@ -1515,6 +1490,13 @@ pub mod inner {
                     })
                 })
                 .collect();
+
+            // Sort by vector score descending (highest similarity first)
+            scored_movies.sort_by(|a, b| {
+                b.vector_score
+                    .partial_cmp(&a.vector_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
 
             Ok(scored_movies)
         }

@@ -1348,6 +1348,7 @@ dependencies = [
  "diesel-async",
  "dotenvy",
  "env_logger",
+ "futures",
  "log",
  "models",
  "mongodb",
