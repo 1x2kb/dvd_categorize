@@ -760,6 +760,32 @@ body {
     line-height: 1.4;
 }
 
+.title-chip-lock {
+    background: none;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: 0.875rem;
+    line-height: 1;
+    padding: 0 0.125rem;
+    border-radius: 50%;
+    transition: color 0.15s, background 0.15s;
+}
+
+.title-chip-lock:hover {
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.1);
+}
+
+.title-chip-locked {
+    border-color: rgba(251, 191, 36, 0.6);
+    background: rgba(251, 191, 36, 0.08);
+}
+
+.title-chip-locked .title-chip-lock {
+    color: #fbbf24;
+}
+
 .title-chip-remove {
     background: none;
     border: none;

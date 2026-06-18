@@ -1274,7 +1274,8 @@ pub mod inner {
                 "$or": [
                     { "location": { "$exists": false } },
                     { "location": Bson::Null },
-                    { "location": "" }
+                    { "location": "" },
+                    { "location": "Unknown" }
                 ]
             };
 

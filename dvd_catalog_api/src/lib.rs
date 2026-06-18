@@ -39,6 +39,9 @@ pub struct GenerateMoviesRequest {
     /// Chip positions parallel to titles, for ordering on the frontend.
     #[serde(default)]
     pub positions: Vec<usize>,
+    /// Flags parallel to titles indicating whether to skip AI title correction.
+    #[serde(default)]
+    pub skip_correction: Vec<bool>,
 }
 use tokio_stream::StreamExt;
 use tracing::instrument;
@@ -63,11 +66,47 @@ fn model_msg_to_ollama(msg: &models::RoledMessage) -> ollama_rs::generation::cha
     }
 }
 
-async fn correct_titles_with_fallback(titles: &[String], model: Option<&str>) -> Vec<String> {
-    match ai_chat::correct_movie_titles(titles, model).await {
-        Ok(c) if c.len() == titles.len() => {
+async fn correct_titles_with_fallback(
+    titles: &[String],
+    model: Option<&str>,
+    skip_correction: &[bool],
+) -> Vec<String> {
+    // If all titles should skip correction, return them as-is
+    if skip_correction.len() == titles.len() && skip_correction.iter().all(|&skip| skip) {
+        debug!("All titles marked to skip correction, returning originals");
+        return titles.to_vec();
+    }
+
+    // Separate titles that need correction from those that should be skipped
+    let mut titles_to_correct = Vec::new();
+    let mut indices_to_correct = Vec::new();
+    
+    for (i, title) in titles.iter().enumerate() {
+        let should_skip = skip_correction.get(i).copied().unwrap_or(false);
+        if !should_skip {
+            titles_to_correct.push(title.clone());
+            indices_to_correct.push(i);
+        }
+    }
+
+    // If no titles need correction, return originals
+    if titles_to_correct.is_empty() {
+        debug!("No titles need correction, returning originals");
+        return titles.to_vec();
+    }
+
+    debug!(
+        "Correcting {} of {} titles (skipping {} titles)",
+        titles_to_correct.len(),
+        titles.len(),
+        titles.len() - titles_to_correct.len()
+    );
+
+    // Get corrections for titles that need it
+    let corrected_subset = match ai_chat::correct_movie_titles(&titles_to_correct, model).await {
+        Ok(c) if c.len() == titles_to_correct.len() => {
             info!("Title correction succeeded for {} titles", c.len());
-            for (orig, corr) in titles.iter().zip(c.iter()) {
+            for (orig, corr) in titles_to_correct.iter().zip(c.iter()) {
                 if orig != corr {
                     debug!("  '{}' -> '{}'", orig, corr);
                 }
@@ -77,16 +116,24 @@ async fn correct_titles_with_fallback(titles: &[String], model: Option<&str>) ->
         Ok(c) => {
             error!(
                 "Title correction returned wrong count: sent {}, got {}",
-                titles.len(),
+                titles_to_correct.len(),
                 c.len()
             );
-            titles.to_vec()
+            titles_to_correct.clone()
         }
         Err(e) => {
             error!("Title correction failed: {}. Falling back to originals.", e);
-            titles.to_vec()
+            titles_to_correct.clone()
         }
+    };
+
+    // Merge corrected titles back with skipped titles
+    let mut result = titles.to_vec();
+    for (idx, corrected_idx) in indices_to_correct.iter().enumerate() {
+        result[*corrected_idx] = corrected_subset[idx].clone();
     }
+
+    result
 }
 
 #[derive(Clone)]
@@ -1131,6 +1178,7 @@ pub async fn validate_titles(
     let corrected = correct_titles_with_fallback(
         &request.titles,
         request.model.as_deref(),
+        &request.skip_correction,
     )
     .await;
 
@@ -1274,7 +1322,7 @@ pub async fn generate_movies_stream(
     );
 
     // Validate + correct titles upfront — one fast Ollama call.
-    let corrected = correct_titles_with_fallback(&titles, model.as_deref()).await;
+    let corrected = correct_titles_with_fallback(&titles, model.as_deref(), &request.skip_correction).await;
 
     let strip_the = |s: &str| {
         s.strip_prefix("the ")

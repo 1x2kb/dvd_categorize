@@ -347,6 +347,9 @@ pub struct ValidateTitlesRequest {
     pub titles: Vec<String>,
     /// The model to use for title correction — should match the generation model so it's already hot.
     pub model: Option<String>,
+    /// Flags parallel to titles indicating whether to skip AI title correction.
+    #[serde(default)]
+    pub skip_correction: Vec<bool>,
 }
 
 /// Per-title result from /ai/validate-titles.

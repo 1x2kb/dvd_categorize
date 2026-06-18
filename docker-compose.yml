@@ -99,7 +99,7 @@ services:
         UID: ${UID}
         GID: ${GID}
         USERNAME: ${USERNAME}
-        FEATURES: internet,ai
+        FEATURES: internet,ai,postgres
     ports:
       - "0.0.0.0:3000:3000"
     volumes:
