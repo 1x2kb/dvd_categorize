@@ -28,6 +28,7 @@ use models::{
 use ollama_rs::error::OllamaError;
 use prompts::{DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
 use serde::{Deserialize, Serialize};
+use futures::StreamExt;
 
 use std::{sync::Arc, time::Instant};
 
@@ -1052,75 +1053,79 @@ pub async fn parse_csv(
     ))
 }
 
-/// Generate movie data from titles using AI structured output
-#[instrument]
-#[debug_handler]
-pub async fn generate_movies(
-    Json(request): Json<GenerateMoviesRequest>,
-) -> Result<
-    impl IntoResponse,
-    (
-        StatusCode,
-        String,
-    ),
-> {
-    info!(
-        "Generating movie data for {} titles",
-        request
-            .titles
-            .len()
-    );
-
-    if request
-        .titles
-        .is_empty()
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "No movie titles provided".to_string(),
-        ));
-    }
-
-    #[cfg(feature = "internet")]
-    let generate_result = ai_chat::generate_movies_structured_with_rag(
-        &request.titles,
-        request
-            .model
-            .as_deref(),
-    )
-    .await;
-    #[cfg(not(feature = "internet"))]
-    let generate_result = ai_chat::generate_movies_structured(
-        &request.titles,
-        request
-            .model
-            .as_deref(),
-    )
-    .await;
-
-    match generate_result {
-        Ok(ai_movies) => {
-            info!(
-                "Successfully generated {} movies",
-                ai_movies.len()
+/// Generate movies with internet-enabled RAG, pipelining scraping and inference.
+/// Scrapes Wikipedia for movie N+1 while Ollama generates movie N.
+#[cfg(feature = "internet")]
+#[instrument(skip(clean_titles))]
+async fn generate_with_internet(
+    clean_titles: Vec<(String, usize)>,
+    model: Option<&str>,
+) -> impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> {
+    use futures::stream;
+    
+    stream! {
+        let mut titles_iter = clean_titles.into_iter().peekable();
+        let mut next_context: Option<((String, usize), String)> = if let Some(first) = titles_iter.next() {
+            let ctx = ai_chat::scrape_single(&first.0).await;
+            Some((first, ctx))
+        } else {
+            None
+        };
+        
+        while let Some(((title, pos), context)) = next_context.take() {
+            let next_title = titles_iter.next();
+            let (result, scraped_next) = tokio::join!(
+                ai_chat::generate_movie_with_context(&title, context, model),
+                async {
+                    match &next_title {
+                        Some(t) => Some(ai_chat::scrape_single(&t.0).await),
+                        None => None,
+                    }
+                }
             );
-            Ok((
-                StatusCode::OK,
-                Json(ai_movies),
-            ))
+            next_context = next_title.zip(scraped_next);
+            
+            match result {
+                Ok(mut movie) => {
+                    movie.input_title = Some(title);
+                    movie.position = pos;
+                    let event = GenerateStreamEvent::Movie(movie);
+                    match serde_json::to_string(&event) {
+                        Ok(json) => yield Ok::<axum::response::sse::Event, std::convert::Infallible>(axum::response::sse::Event::default().data(json)),
+                        Err(e) => yield Ok::<axum::response::sse::Event, std::convert::Infallible>(axum::response::sse::Event::default().event("error").data(e.to_string())),
+                    }
+                },
+                Err(e) => yield Ok::<axum::response::sse::Event, std::convert::Infallible>(axum::response::sse::Event::default().event("error").data(e)),
+            }
         }
-        Err(e) => {
-            error!(
-                "Failed to generate movies: {}",
-                e
-            );
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "Failed to generate movies: {}",
-                    e
-                ),
-            ))
+    }
+}
+
+/// Generate movies without internet, using only Ollama's training data.
+/// Generates one movie at a time sequentially.
+#[cfg(not(feature = "internet"))]
+#[instrument(skip(clean_titles))]
+async fn generate_without_internet(
+    clean_titles: Vec<(String, usize)>,
+    model: Option<&str>,
+) -> impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> {
+    use futures::stream;
+    
+    stream! {
+        for (title, pos) in clean_titles {
+            let result = ai_chat::generate_movie_single(&title, model).await;
+            match result {
+                Ok(mut movie) => {
+                    movie.input_title = Some(title);
+                    movie.position = pos;
+                    let event = GenerateStreamEvent::Movie(movie);
+                    match serde_json::to_string(&event) {
+                        Ok(json) => yield Ok::<axum::response::sse::Event, std::convert::Infallible>(axum::response::sse::Event::default().data(json)),
+                        Err(e) => yield Ok::<axum::response::sse::Event, std::convert::Infallible>(axum::response::sse::Event::default().event("error").data(e.to_string())),
+                    }
+                },
+                Err(e) => yield Ok::<axum::response::sse::Event, std::convert::Infallible>(axum::response::sse::Event::default().event("error").data(e)),
+            }
         }
     }
 }
@@ -1473,57 +1478,20 @@ pub async fn generate_movies_stream(
             }
         }
 
+        // Generate movies using appropriate method based on internet feature
         #[cfg(feature = "internet")]
         {
-            let mut titles_iter = clean_titles.into_iter().peekable();
-            let mut next_context: Option<((String, usize), String)> = if let Some(first) = titles_iter.next() {
-                let ctx = ai_chat::scrape_single(&first.0).await;
-                Some((first, ctx))
-            } else {
-                None
-            };
-            while let Some(((title, pos), context)) = next_context.take() {
-                let next_title = titles_iter.next();
-                let (result, scraped_next) = tokio::join!(
-                    ai_chat::generate_movie_with_context(&title, context, model.as_deref()),
-                    async {
-                        match &next_title {
-                            Some(t) => Some(ai_chat::scrape_single(&t.0).await),
-                            None => None,
-                        }
-                    }
-                );
-                next_context = next_title.zip(scraped_next);
-                match result {
-                    Ok(mut movie) => {
-                        movie.input_title = Some(title);
-                        movie.position = pos;
-                        let event = GenerateStreamEvent::Movie(movie);
-                        match serde_json::to_string(&event) {
-                            Ok(json) => yield Ok::<Event, std::convert::Infallible>(Event::default().data(json)),
-                            Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e.to_string())),
-                        }
-                    },
-                    Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e)),
-                }
+            let mut generation_stream = generate_with_internet(clean_titles, model.as_deref()).await;
+            while let Some(event) = generation_stream.next().await {
+                yield event;
             }
         }
+        
         #[cfg(not(feature = "internet"))]
         {
-            for (title, pos) in clean_titles {
-                let result = ai_chat::generate_movie_single(&title, model.as_deref()).await;
-                match result {
-                    Ok(mut movie) => {
-                        movie.input_title = Some(title);
-                        movie.position = pos;
-                        let event = GenerateStreamEvent::Movie(movie);
-                        match serde_json::to_string(&event) {
-                            Ok(json) => yield Ok::<Event, std::convert::Infallible>(Event::default().data(json)),
-                            Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e.to_string())),
-                        }
-                    },
-                    Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e)),
-                }
+            let mut generation_stream = generate_without_internet(clean_titles, model.as_deref()).await;
+            while let Some(event) = generation_stream.next().await {
+                yield event;
             }
         }
         yield Ok::<Event, std::convert::Infallible>(Event::default().event("done").data(""));

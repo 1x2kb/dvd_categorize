@@ -154,10 +154,6 @@ fn init_router(db_pool: MovieRepo) -> Router {
             post(validate_titles),
         )
         .route(
-            "/ai/generate-movies",
-            post(generate_movies),
-        )
-        .route(
             "/ai/generate-movies-stream",
             post(generate_movies_stream),
         )
