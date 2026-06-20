@@ -1473,7 +1473,6 @@ pub async fn generate_movies_stream(
             }
         }
 
-        // Pipeline-generate clean titles.
         #[cfg(feature = "internet")]
         {
             let mut titles_iter = clean_titles.into_iter().peekable();
