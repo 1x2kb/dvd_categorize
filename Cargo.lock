@@ -5371,6 +5371,10 @@ dependencies = [
 [[package]]
 name = "prompts"
 version = "0.1.0"
+dependencies = [
+ "models",
+ "ollama-rs",
+]
 
 [[package]]
 name = "prost"

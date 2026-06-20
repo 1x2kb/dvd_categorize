@@ -22,50 +22,21 @@ use database::insert_full_movies;
 use database::traits::SearchMoviesStructured;
 use log::{debug, error, info, warn};
 use models::{
-    CsvInput, GenerateStreamEvent, NeedsInputReason, ScoredMovie, TitleValidation,
+    ChatSessionWithPreview, CsvInput, GenerateMoviesRequest, GenerateStreamEvent,
+    NeedsInputReason, RandomMoviesQuery, RecentReleasesQuery, ScoredMovie, TitleValidation,
     ValidateTitlesRequest,
 };
 use ollama_rs::error::OllamaError;
-use prompts::{DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
-use serde::{Deserialize, Serialize};
-use futures::StreamExt;
+use prompts::{db_msg_to_ollama, model_msg_to_ollama, DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
+use futures_util::StreamExt;
 
 use std::{sync::Arc, time::Instant};
 
-/// Request to generate movie data from titles using AI
-#[derive(Debug, Deserialize)]
-pub struct GenerateMoviesRequest {
-    pub titles: Vec<String>,
-    pub model: Option<String>,
-    /// Chip positions parallel to titles, for ordering on the frontend.
-    #[serde(default)]
-    pub positions: Vec<usize>,
-    /// Flags parallel to titles indicating whether to skip AI title correction.
-    #[serde(default)]
-    pub skip_correction: Vec<bool>,
-}
-use tokio_stream::StreamExt;
 use tracing::instrument;
 
 // Movie search functionality module
 pub mod movie_search;
 pub use movie_search::extract_entities;
-
-fn db_msg_to_ollama(msg: &models::ChatMessage) -> ollama_rs::generation::chat::ChatMessage {
-    match msg.role.as_str() {
-        "user" => ollama_rs::generation::chat::ChatMessage::user(msg.content.clone()),
-        _ => ollama_rs::generation::chat::ChatMessage::assistant(msg.content.clone()),
-    }
-}
-
-fn model_msg_to_ollama(msg: &models::RoledMessage) -> ollama_rs::generation::chat::ChatMessage {
-    match msg.role {
-        models::Role::User => ollama_rs::generation::chat::ChatMessage::user(msg.message.clone()),
-        models::Role::Ai => {
-            ollama_rs::generation::chat::ChatMessage::assistant(msg.message.clone())
-        }
-    }
-}
 
 async fn correct_titles_with_fallback(
     titles: &[String],
@@ -140,38 +111,6 @@ async fn correct_titles_with_fallback(
 #[derive(Clone)]
 pub struct DbState {
     pub movie_repo: database::MovieRepo,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RandomMoviesQuery {
-    #[serde(default = "default_count")]
-    pub count: i64,
-}
-
-fn default_count() -> i64 {
-    3
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RecentReleasesQuery {
-    #[serde(default = "default_min_year")]
-    pub min_year: i32,
-    #[serde(default = "default_max_year")]
-    pub max_year: i32,
-    #[serde(default = "default_limit")]
-    pub limit: i64,
-}
-
-fn default_min_year() -> i32 {
-    2020
-}
-
-fn default_max_year() -> i32 {
-    2026 // Update this periodically or make it configurable
-}
-
-fn default_limit() -> i64 {
-    50
 }
 
 #[instrument]
@@ -1060,10 +999,8 @@ pub async fn parse_csv(
 async fn generate_with_internet(
     clean_titles: Vec<(String, usize)>,
     model: Option<&str>,
-) -> impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> {
-    use futures::stream;
-    
-    stream! {
+) -> impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> + use<'_> {
+    async_stream::stream! {
         let mut titles_iter = clean_titles.into_iter().peekable();
         let mut next_context: Option<((String, usize), String)> = if let Some(first) = titles_iter.next() {
             let ctx = ai_chat::scrape_single(&first.0).await;
@@ -1108,10 +1045,8 @@ async fn generate_with_internet(
 async fn generate_without_internet(
     clean_titles: Vec<(String, usize)>,
     model: Option<&str>,
-) -> impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> {
-    use futures::stream;
-    
-    stream! {
+) -> impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> + use<'_> {
+    async_stream::stream! {
         for (title, pos) in clean_titles {
             let result = ai_chat::generate_movie_single(&title, model).await;
             match result {
@@ -1481,7 +1416,8 @@ pub async fn generate_movies_stream(
         // Generate movies using appropriate method based on internet feature
         #[cfg(feature = "internet")]
         {
-            let mut generation_stream = generate_with_internet(clean_titles, model.as_deref()).await;
+            let generation_stream = generate_with_internet(clean_titles, model.as_deref()).await;
+            tokio::pin!(generation_stream);
             while let Some(event) = generation_stream.next().await {
                 yield event;
             }
@@ -1489,7 +1425,8 @@ pub async fn generate_movies_stream(
         
         #[cfg(not(feature = "internet"))]
         {
-            let mut generation_stream = generate_without_internet(clean_titles, model.as_deref()).await;
+            let generation_stream = generate_without_internet(clean_titles, model.as_deref()).await;
+            tokio::pin!(generation_stream);
             while let Some(event) = generation_stream.next().await {
                 yield event;
             }
@@ -2221,17 +2158,6 @@ pub async fn stats_genres(State(state): State<DbState>) -> Json<models::PieChart
         .collect();
 
     Json(models::PieChartData { data })
-}
-
-/// Chat session with first query preview
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatSessionWithPreview {
-    #[cfg(feature = "postgres")]
-    pub id: i32,
-    pub session_id: String,
-    pub created_at: String,
-    pub updated_at: String,
-    pub first_query: Option<String>,
 }
 
 /// List all chat sessions ordered by most recent

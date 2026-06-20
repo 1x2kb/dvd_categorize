@@ -1,10 +1,12 @@
 //! Default system prompts for AI chat modes.
 
+pub mod conversions;
 pub mod datapoints;
 pub mod movie_id_matcher;
 pub mod rag_answer;
 pub mod user_library;
 
+pub use conversions::*;
 pub use datapoints::*;
 pub use movie_id_matcher::*;
 pub use rag_answer::*;

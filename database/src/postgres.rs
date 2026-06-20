@@ -19,7 +19,7 @@ mod inner {
     use log::debug;
     use models::{
         schema, MovieActor, MovieGenre, NewActor, NewDirector, NewMovie, NewMovieActor,
-        NewMovieGenre, StructuredQuery,
+        NewMovieGenre, ScoredMovie, StructuredQuery,
     };
     #[cfg(feature = "ai")]
     use pgvector::VectorExpressionMethods;
@@ -683,7 +683,7 @@ mod inner {
             &self,
             embedding: Vec<f32>,
             limit: i64,
-        ) -> Result<Vec<FullMovie>, DatabaseError> {
+        ) -> Result<Vec<ScoredMovie>, DatabaseError> {
             let mut conn = self
                 .get_conn()
                 .await?;
@@ -704,10 +704,20 @@ mod inner {
                     .collect::<Vec<_>>()
             );
 
-            GetMoviesByIds::get_by_ids(
+            let movies = GetMoviesByIds::get_by_ids(
                 self, movie_ids,
             )
-            .await
+            .await?;
+
+            // Convert FullMovie to ScoredMovie with default score of 0.0
+            // The actual cosine distance scoring is handled by pgvector ordering
+            Ok(movies
+                .into_iter()
+                .map(|movie| ScoredMovie {
+                    movie,
+                    vector_score: 0.0,
+                })
+                .collect())
         }
     }
 

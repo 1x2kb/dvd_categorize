@@ -806,6 +806,64 @@ pub struct AvailableModelsResponse {
     pub models: Vec<AvailableModel>,
 }
 
+/// Request to generate movie data from titles using AI
+#[derive(Debug, Deserialize)]
+pub struct GenerateMoviesRequest {
+    pub titles: Vec<String>,
+    pub model: Option<String>,
+    /// Chip positions parallel to titles, for ordering on the frontend.
+    #[serde(default)]
+    pub positions: Vec<usize>,
+    /// Flags parallel to titles indicating whether to skip AI title correction.
+    #[serde(default)]
+    pub skip_correction: Vec<bool>,
+}
+
+/// Query parameters for random movies endpoint
+#[derive(Debug, Deserialize)]
+pub struct RandomMoviesQuery {
+    #[serde(default = "default_count")]
+    pub count: i64,
+}
+
+fn default_count() -> i64 {
+    3
+}
+
+/// Query parameters for recent releases endpoint
+#[derive(Debug, Deserialize)]
+pub struct RecentReleasesQuery {
+    #[serde(default = "default_min_year")]
+    pub min_year: i32,
+    #[serde(default = "default_max_year")]
+    pub max_year: i32,
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+}
+
+fn default_min_year() -> i32 {
+    2020
+}
+
+fn default_max_year() -> i32 {
+    2026 // Update this periodically or make it configurable
+}
+
+fn default_limit() -> i64 {
+    50
+}
+
+/// Chat session with first query preview
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatSessionWithPreview {
+    #[cfg(feature = "postgres")]
+    pub id: i32,
+    pub session_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub first_query: Option<String>,
+}
+
 #[cfg(feature = "testing")]
 impl Random for Actor {
     fn random() -> Self {
