@@ -78,9 +78,6 @@ use serde::{Deserialize, Serialize};
 use chrono::NaiveDateTime;
 
 #[cfg(feature = "vector-similarity")]
-use uuid::Uuid;
-
-#[cfg(feature = "vector-similarity")]
 pub mod vector_similarity;
 
 #[cfg(feature = "vector-similarity")]
@@ -159,7 +156,7 @@ pub struct CsvInput {
 #[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Actor {
-    #[cfg(feature = "postgres")]
+    #[cfg(any(feature = "postgres", feature = "postgres-types"))]
     pub id: i32,
     pub name: String,
 }
@@ -167,7 +164,7 @@ pub struct Actor {
 impl From<String> for Actor {
     fn from(value: String) -> Self {
         Self {
-            #[cfg(feature = "postgres")]
+            #[cfg(any(feature = "postgres", feature = "postgres-types"))]
             id: 0,
             name: value,
         }
@@ -200,7 +197,7 @@ pub struct NewActor {
 #[cfg_attr(feature="postgres", derive(Queryable, Insertable, Identifiable), diesel(table_name = schema::director, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Director {
-    #[cfg(feature = "postgres")]
+    #[cfg(any(feature = "postgres", feature = "postgres-types"))]
     pub id: i32,
     pub name: String,
 }
@@ -213,7 +210,7 @@ pub struct NewDirector {
 impl From<String> for Director {
     fn from(name: String) -> Self {
         Self {
-            #[cfg(feature = "postgres")]
+            #[cfg(any(feature = "postgres", feature = "postgres-types"))]
             id: 0,
             name,
         }
@@ -285,11 +282,11 @@ pub struct NewMovieGenre {
 
 /// Movie identifier type, selected by the active storage backend.
 ///
-/// - `postgres`: `i32` serial primary key
-/// - otherwise (e.g. `mongodb`): `String` (ObjectId hex)
-#[cfg(feature = "postgres")]
+/// - `postgres` or `postgres-types`: `i32` serial primary key
+/// - `mongodb` or `mongodb-types`: `String` (ObjectId hex)
+#[cfg(any(feature = "postgres", feature = "postgres-types"))]
 pub type MovieId = i32;
-#[cfg(not(feature = "postgres"))]
+#[cfg(not(any(feature = "postgres", feature = "postgres-types")))]
 pub type MovieId = String;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

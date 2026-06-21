@@ -96,14 +96,11 @@ services:
       context: .
       dockerfile: docker/run/api.Dockerfile
       args:
-        UID: ${UID}
-        GID: ${GID}
-        USERNAME: ${USERNAME}
         FEATURES: internet,ai,postgres
     ports:
       - "0.0.0.0:3000:3000"
     volumes:
-      - ./:/app
+      - api_postgres_cache:/app/target
     depends_on:
       - diesel_migrate
       - postgres
@@ -127,14 +124,11 @@ services:
       context: .
       dockerfile: docker/run/api.Dockerfile
       args:
-        UID: ${UID}
-        GID: ${GID}
-        USERNAME: ${USERNAME}
         FEATURES: mongodb,internet,ai
     ports:
       - "0.0.0.0:3000:3000"
     volumes:
-      - ./:/app
+      - api_mongodb_cache:/app/target
     depends_on:
       - mongodb
       - qdrant
@@ -150,15 +144,32 @@ services:
       OLLAMA_NUM_CTX: "18000"
 
   dvd_categorize_web:
+    profiles: ["postgres"]
     networks:
       - dvd-net
     build:
       context: .
       dockerfile: docker/run/web.Dockerfile
+      args:
+        FEATURES: postgres-api
     ports:
       - "0.0.0.0:8080:8080"
     volumes:
-      - ./:/app
+      - web_postgres_cache:/app/target
+
+  dvd_categorize_web_mongo:
+    profiles: ["mongodb"]
+    networks:
+      - dvd-net
+    build:
+      context: .
+      dockerfile: docker/run/web.Dockerfile
+      args:
+        FEATURES: mongodb-api
+    ports:
+      - "0.0.0.0:8080:8080"
+    volumes:
+      - web_mongodb_cache:/app/target
 
   diesel_migrate:
     profiles: ["postgres"]
@@ -287,7 +298,11 @@ volumes:
   prometheus_data:
   ollama_data:
     external: true
+  api_postgres_cache:
+  api_mongodb_cache:
+  web_postgres_cache:
+  web_mongodb_cache:
 
 networks:
   dvd-net:
-    driver: bridge 
+    driver: bridge
