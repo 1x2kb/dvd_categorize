@@ -1924,6 +1924,12 @@ pub mod inner {
                 }},
                 doc! { "$sort": { "count": -1 } },
                 doc! { "$limit": limit },
+                doc! { "$project": {
+                    "_id": 0,
+                    "release_year": "$_id",
+                    "count": 1
+                }},
+                doc! { "$sort": { "release_year": 1 } },
             ];
 
             let mut cursor = self
@@ -1969,11 +1975,13 @@ pub mod inner {
                         },
                     )?;
                 let year = doc
-                    .get_i32("_id")
+                    .get_i32("release_year")
                     .unwrap_or(0);
+                // MongoDB $sum returns i32, fallback to i64 for edge cases
                 let count = doc
-                    .get_i64("count")
-                    .unwrap_or(0);
+                    .get_i32("count")
+                    .map(|v| v as i64)
+                    .unwrap_or_else(|_| doc.get_i64("count").unwrap_or(0));
                 results.push((
                     year, count,
                 ));
@@ -1994,6 +2002,7 @@ pub mod inner {
                 i64,
             )>,
         > {
+            use log::info;
             use mongodb::bson::doc;
 
             let pipeline = vec![
@@ -2005,6 +2014,7 @@ pub mod inner {
                 doc! { "$sort": { "count": -1 } },
                 doc! { "$limit": limit },
             ];
+            info!("Genre stats: Running aggregation pipeline");
 
             let mut cursor = self
                 .movies
@@ -2052,16 +2062,22 @@ pub mod inner {
                     .get_str("_id")
                     .ok()
                 {
+                    // MongoDB $sum returns i32, fallback to i64 for edge cases
                     let count = doc
-                        .get_i64("count")
-                        .unwrap_or(0);
+                        .get_i32("count")
+                        .map(|v| v as i64)
+                        .unwrap_or_else(|_| doc.get_i64("count").unwrap_or(0));
+                    info!("Genre: {}, Count: {}", genre, count);
                     results.push((
                         genre.to_string(),
                         count,
                     ));
+                } else {
+                    info!("Genre aggregation doc missing _id: {:?}", doc);
                 }
             }
 
+            info!("Genre stats returning {} results", results.len());
             Ok(results)
         }
     }
@@ -2135,9 +2151,11 @@ pub mod inner {
                     .get_str("_id")
                     .ok()
                 {
+                    // MongoDB $sum returns i32, fallback to i64 for edge cases
                     let count = doc
-                        .get_i64("count")
-                        .unwrap_or(0);
+                        .get_i32("count")
+                        .map(|v| v as i64)
+                        .unwrap_or_else(|_| doc.get_i64("count").unwrap_or(0));
                     results.push((
                         actor.to_string(),
                         count,
@@ -2148,6 +2166,9 @@ pub mod inner {
             Ok(results)
         }
     }
+
+    // Implement the StatsProvider supertrait
+    impl StatsProvider for MongoMovieRepository {}
 }
 
 #[cfg(feature = "mongodb")]

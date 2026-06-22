@@ -10,7 +10,8 @@ use axum::{
 use axum_macros::debug_handler;
 use database::{
     traits::{
-        ChatSessions, GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies,
+        ChatSessions, GetAllMovies, GetGenreStats, GetMovieById, GetMoviesByReleaseYear,
+        GetMoviesByYearStats, GetRecentMovies, GetStatsOverview, GetTopActorsStats,
         GetUniqueLocations, GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies,
         Repository, UpdateMovieLocation,
     },
@@ -2054,10 +2055,11 @@ where
 /// Get stats overview
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsOverview> {
+pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsOverview>
+where
+    MovieRepo: database::GetStatsOverview,
+{
     info!("Getting stats overview");
-
-    use database::{GetStatsOverview};
 
     let (total_movies, total_directors, total_actors) = match state
         .movie_repo
@@ -2092,10 +2094,11 @@ pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsO
 /// Get movies by year data (top 15 years by count)
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn stats_movies_by_year(State(state): State<DbState>) -> Json<models::BarChartData> {
+pub async fn stats_movies_by_year(State(state): State<DbState>) -> Json<models::BarChartData>
+where
+    MovieRepo: database::GetMoviesByYearStats,
+{
     info!("Getting movies by year stats");
-
-    use database::GetMoviesByYearStats;
 
     let year_data = match state
         .movie_repo
@@ -2132,10 +2135,11 @@ pub async fn stats_movies_by_year(State(state): State<DbState>) -> Json<models::
 /// Get genre distribution data (top 10)
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn stats_genres(State(state): State<DbState>) -> Json<models::PieChartData> {
+pub async fn stats_genres(State(state): State<DbState>) -> Json<models::PieChartData>
+where
+    MovieRepo: database::GetGenreStats,
+{
     info!("Getting genre distribution stats");
-
-    use database::GetGenreStats;
 
     let genre_data = match state
         .movie_repo
@@ -2423,10 +2427,11 @@ where
 /// Get top actors data
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn stats_top_actors(State(state): State<DbState>) -> Json<models::BarChartData> {
+pub async fn stats_top_actors(State(state): State<DbState>) -> Json<models::BarChartData>
+where
+    MovieRepo: database::GetTopActorsStats,
+{
     info!("Getting top actors stats");
-
-    use database::GetTopActorsStats;
 
     let actor_data = match state
         .movie_repo
