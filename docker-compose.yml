@@ -88,7 +88,7 @@ services:
       retries: 3
     restart: unless-stopped
 
-  dvd_categorize_api:
+  dvd_categorize_api_postgres:
     profiles: ["postgres"]
     networks:
       - dvd-net
