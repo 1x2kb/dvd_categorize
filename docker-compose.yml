@@ -100,6 +100,7 @@ services:
     ports:
       - "0.0.0.0:3000:3000"
     volumes:
+      - .:/app
       - api_postgres_cache:/app/target
     depends_on:
       - diesel_migrate
@@ -128,6 +129,7 @@ services:
     ports:
       - "0.0.0.0:3000:3000"
     volumes:
+      - .:/app
       - api_mongodb_cache:/app/target
     depends_on:
       - mongodb
@@ -155,6 +157,7 @@ services:
     ports:
       - "0.0.0.0:8080:8080"
     volumes:
+      - .:/app
       - web_postgres_cache:/app/target
 
   dvd_categorize_web_mongo:
@@ -169,6 +172,7 @@ services:
     ports:
       - "0.0.0.0:8080:8080"
     volumes:
+      - .:/app
       - web_mongodb_cache:/app/target
 
   diesel_migrate:
