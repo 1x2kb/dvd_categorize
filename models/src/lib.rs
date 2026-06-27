@@ -74,8 +74,6 @@ pub trait Random {
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(feature = "postgres", feature = "vector-similarity"))]
-use chrono::NaiveDateTime;
 
 #[cfg(feature = "vector-similarity")]
 pub mod vector_similarity;

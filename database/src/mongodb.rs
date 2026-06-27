@@ -202,7 +202,7 @@ pub mod inner {
         fn extract_db_name(uri: &str) -> Option<String> {
             // Simple extraction - handles mongodb://host/dbname and mongodb+srv://host/dbname
             uri.split('/')
-                .last()
+                .next_back()
                 .map(
                     |s| {
                         s.split('?')
@@ -822,7 +822,7 @@ pub mod inner {
                 String,
             )>,
         > {
-            use log::{debug, info, warn};
+            use log::{debug, info};
 
             if movies.is_empty() {
                 return Ok(Vec::new());
@@ -876,7 +876,7 @@ pub mod inner {
             let mut new_docs = Vec::new();
             let mut embeddings_to_insert = Vec::new(); // (index, embedding) pairs
 
-            for (idx, (movie, embedding)) in movies
+            for (_idx, (movie, embedding)) in movies
                 .into_iter()
                 .enumerate()
             {
@@ -1380,9 +1380,8 @@ pub mod inner {
                             )
                         },
                     )?;
-                if let Some(loc) = doc
+                if let Ok(loc) = doc
                     .get_str("_id")
-                    .ok()
                 {
                     locations.push(loc.to_string());
                 }
@@ -2058,9 +2057,8 @@ pub mod inner {
                             )
                         },
                     )?;
-                if let Some(genre) = doc
+                if let Ok(genre) = doc
                     .get_str("_id")
-                    .ok()
                 {
                     // MongoDB $sum returns i32, fallback to i64 for edge cases
                     let count = doc
@@ -2147,9 +2145,8 @@ pub mod inner {
                             )
                         },
                     )?;
-                if let Some(actor) = doc
+                if let Ok(actor) = doc
                     .get_str("_id")
-                    .ok()
                 {
                     // MongoDB $sum returns i32, fallback to i64 for edge cases
                     let count = doc
