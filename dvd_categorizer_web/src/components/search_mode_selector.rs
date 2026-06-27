@@ -27,24 +27,6 @@ pub fn SearchModeSelector(props: SearchModeSelectorProps) -> Element {
                 "Text"
             }
 
-            button {
-                class: if matches!(props.search_mode, SearchMode::Both) { "mode-button active" } else { "mode-button" },
-                onclick: move |_| props.on_mode_change.call(SearchMode::Both),
-                "Both"
-            }
-
-            button {
-                class: if matches!(props.search_mode, SearchMode::Vector) { "mode-button active" } else { "mode-button" },
-                onclick: move |_| props.on_mode_change.call(SearchMode::Vector),
-                "Vector"
-            }
-
-            button {
-                class: if matches!(props.search_mode, SearchMode::Structured) { "mode-button active" } else { "mode-button" },
-                onclick: move |_| props.on_mode_change.call(SearchMode::Structured),
-                "Structured"
-            }
-
             // Model selector (hidden for Text mode)
             if !matches!(props.search_mode, SearchMode::Text) {
                 div {

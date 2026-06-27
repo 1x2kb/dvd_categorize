@@ -34,7 +34,7 @@
 //! let request = SearchRequest {
 //!     query: "science fiction".to_string(),
 //!     disable_enhancement: false,
-//!     search_mode: SearchMode::Both,
+//!     search_mode: SearchMode::Text,
 //!     model: None,
 //! };
 //! ```
@@ -72,6 +72,8 @@ pub trait Random {
 
 #[cfg(feature = "postgres")]
 use diesel::prelude::*;
+#[cfg(feature = "postgres")]
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 
@@ -737,6 +739,8 @@ pub enum SearchMode {
     Text,
     #[cfg(feature = "ai")]
     Vector,
+    #[cfg(feature = "ai")]
+    Both,
     #[cfg(feature = "ai")]
     Structured,
 }

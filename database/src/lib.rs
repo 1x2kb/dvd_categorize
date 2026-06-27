@@ -77,10 +77,15 @@ pub mod structured_search {
     pub use crate::postgres::structured_search::*;
 }
 
+use std::env;
 use std::error::Error;
 use std::fmt::Display;
 
 use diesel::ConnectionError;
+#[cfg(feature = "postgres")]
+use diesel::{prelude::*, ExpressionMethods, GroupedBy, QueryDsl};
+#[cfg(feature = "postgres")]
+use diesel_async::{pooled_connection::deadpool::Pool, AsyncPgConnection, RunQueryDsl};
 // Schema module is only available when postgres feature is enabled
 #[cfg(feature = "postgres")]
 pub use models::schema::*;

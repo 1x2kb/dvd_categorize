@@ -1114,7 +1114,7 @@ pub async fn chat(
         repo,
         15,
         false,
-        models::SearchMode::Both,
+        models::SearchMode::Text,
         None,
     )
     .await;

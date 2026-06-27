@@ -226,7 +226,7 @@ pub fn InsertMedia() -> Element {
                             rsx! {
                                 MovieGrid {
                                     movies: scored_movies,
-                                    search_mode: models::SearchMode::Both,
+                                    search_mode: models::SearchMode::Text,
                                     on_location_updated: move |(movie_id, new_location): (models::MovieId, String)| {
                                         // Update the movie in the dvd_data list
                                         let current_dvds = dvd_data();
