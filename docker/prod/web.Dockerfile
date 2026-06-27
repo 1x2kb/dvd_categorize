@@ -15,7 +15,7 @@ RUN echo "========================================" && \
     echo "Building Web Frontend (PRODUCTION) with features:" && \
     echo "  ${FEATURES}" && \
     echo "========================================" && \
-    dx build --release --package dvd_categorizer_web --no-default-features --features ${FEATURES}
+    dx build --release --platform web --package dvd_categorizer_web --no-default-features --features ${FEATURES}
 
 # Runtime stage with nginx
 FROM nginx:alpine

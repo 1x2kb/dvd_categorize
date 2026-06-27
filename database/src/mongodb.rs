@@ -1502,6 +1502,141 @@ pub mod inner {
         }
     }
 
+    #[async_trait]
+    impl SearchMoviesStructured for MongoMovieRepository {
+        async fn search_structured(
+            &self,
+            query: &models::StructuredQuery,
+        ) -> DbResult<Vec<FullMovie>> {
+            use log::info;
+
+            info!(
+                "MongoDB structured search with criteria: {:?}",
+                query
+            );
+
+            let mut filters = Vec::new();
+
+            // Actor filters (AND logic - all must match)
+            if !query.actors.is_empty() {
+                info!("Filtering by actors: {:?}", query.actors);
+                for actor_name in &query.actors {
+                    filters.push(doc! {
+                        "actors.name": {
+                            "$regex": actor_name,
+                            "$options": "i"
+                        }
+                    });
+                }
+            }
+
+            // Director filters (AND logic - all must match)
+            if !query.directors.is_empty() {
+                info!("Filtering by directors: {:?}", query.directors);
+                for director_name in &query.directors {
+                    filters.push(doc! {
+                        "director.name": {
+                            "$regex": director_name,
+                            "$options": "i"
+                        }
+                    });
+                }
+            }
+
+            // Genre filters (AND logic - all must match)
+            if !query.genres.is_empty() {
+                info!("Filtering by genres: {:?}", query.genres);
+                for genre in &query.genres {
+                    filters.push(doc! {
+                        "genres": {
+                            "$regex": genre,
+                            "$options": "i"
+                        }
+                    });
+                }
+            }
+
+            // Title keyword filters (AND logic - all must match)
+            if !query.title_keywords.is_empty() {
+                info!("Filtering by title keywords: {:?}", query.title_keywords);
+                for keyword in &query.title_keywords {
+                    filters.push(doc! {
+                        "name": {
+                            "$regex": keyword,
+                            "$options": "i"
+                        }
+                    });
+                }
+            }
+
+            // Description keyword filters (OR logic - any must match)
+            if !query.description_keywords.is_empty() {
+                info!(
+                    "Filtering by description keywords (OR): {:?}",
+                    query.description_keywords
+                );
+                let desc_filters: Vec<mongodb::bson::Document> = query
+                    .description_keywords
+                    .iter()
+                    .map(|keyword| {
+                        doc! {
+                            "description": {
+                                "$regex": keyword,
+                                "$options": "i"
+                            }
+                        }
+                    })
+                    .collect();
+
+                if !desc_filters.is_empty() {
+                    filters.push(doc! { "$or": desc_filters });
+                }
+            }
+
+            // Build final filter with $and if we have multiple conditions
+            let filter = if filters.is_empty() {
+                doc! {}
+            } else if filters.len() == 1 {
+                filters.into_iter().next().unwrap()
+            } else {
+                doc! { "$and": filters }
+            };
+
+            info!("MongoDB filter: {:?}", filter);
+
+            // Execute query
+            let mut cursor = self
+                .movies
+                .find(filter)
+                .await
+                .map_err(|e| {
+                    DatabaseError::QueryError(format!("MongoDB find error: {}", e))
+                })?;
+
+            let mut movies = Vec::new();
+            while cursor
+                .advance()
+                .await
+                .map_err(|e| {
+                    DatabaseError::QueryError(format!("MongoDB cursor error: {}", e))
+                })?
+            {
+                let doc = cursor
+                    .deserialize_current()
+                    .map_err(|e| {
+                        DatabaseError::QueryError(format!(
+                            "MongoDB deserialize error: {}",
+                            e
+                        ))
+                    })?;
+                movies.push(doc.into());
+            }
+
+            info!("MongoDB structured search returned {} movies", movies.len());
+            Ok(movies)
+        }
+    }
+
     // Chat sessions implementation using MongoDB
     #[async_trait]
     impl ChatSessions for MongoMovieRepository {

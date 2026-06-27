@@ -4,8 +4,6 @@ pub mod app_data;
 pub mod components;
 pub mod views;
 
-use dotenvy::dotenv;
-use log::error;
 pub use views::insert_media::InsertMedia;
 #[cfg(feature = "ai-backend")]
 pub use views::model_pull::ModelPull;
@@ -48,14 +46,6 @@ const STATS_CSS: Asset = asset!("/assets/stats.css");
 fn main() {
     console_error_panic_hook::set_once();
     wasm_logger::init(wasm_logger::Config::default());
-
-    if let Err(e) = dotenv() {
-        error!(
-            "Error loading .env file: {}",
-            e
-        );
-        // Handle error gracefully
-    }
 
     dioxus::launch(App);
 }

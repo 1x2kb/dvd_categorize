@@ -14,20 +14,35 @@ pub struct SearchModeSelectorProps {
 pub fn SearchModeSelector(props: SearchModeSelectorProps) -> Element {
     #[cfg(feature = "ai-backend")]
     {
+        let mode_description = match props.search_mode {
+            SearchMode::Text => "Keyword-based search using database text matching",
+            SearchMode::Vector => "Semantic search using AI embeddings to find similar content",
+            SearchMode::Both => "Combines Text and Vector searches using Reciprocal Rank Fusion (RRF)",
+            SearchMode::Structured => "AI-powered natural language query parsing into structured database filters",
+        };
+
         rsx! {
             div {
-                class: "search-mode-tabs",
+                class: "search-mode-container",
 
-                span {
-                    class: "mode-label",
-                    "Mode:"
+                div {
+                    class: "search-mode-description",
+                    "{mode_description}"
                 }
 
-                button {
-                    class: if matches!(props.search_mode, SearchMode::Text) { "mode-button active" } else { "mode-button" },
-                    onclick: move |_| props.on_mode_change.call(SearchMode::Text),
-                    "Text"
-                }
+                div {
+                    class: "search-mode-tabs",
+
+                    span {
+                        class: "mode-label",
+                        "Mode:"
+                    }
+
+                    button {
+                        class: if matches!(props.search_mode, SearchMode::Text) { "mode-button active" } else { "mode-button" },
+                        onclick: move |_| props.on_mode_change.call(SearchMode::Text),
+                        "Text"
+                    }
 
                 button {
                     class: if matches!(props.search_mode, SearchMode::Vector) { "mode-button active" } else { "mode-button" },
@@ -81,6 +96,7 @@ pub fn SearchModeSelector(props: SearchModeSelectorProps) -> Element {
                             }
                         }
                     }
+                }
                 }
             }
         }
