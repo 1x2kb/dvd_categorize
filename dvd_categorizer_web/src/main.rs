@@ -141,56 +141,51 @@ fn MoviePrompt() -> Element {
     }
 }
 
+/// Helper function to render AI-specific navigation links
+#[cfg(feature = "ai-backend")]
+fn render_ai_links() -> Element {
+    rsx! {
+        Link {
+            to: Route::AiChat {},
+            "Chat"
+        }
+        Link {
+            to: Route::MoviePrompt {}, "Generator"
+        }
+        Link {
+            to: Route::ModelPull {}, "Models"
+        }
+    }
+}
+
 /// Shared navbar component.
 #[component]
 fn Navbar() -> Element {
     #[cfg(feature = "ai-backend")]
-    {
-        rsx! {
-            div {
-                id: "navbar",
-                Link {
-                    to: Route::AiChat {},
-                    "Chat"
-                }
-                Link {
-                    to: Route::LiveResults {}, "Live"
-                }
-                Link {
-                    to: Route::InsertMedia {}, "Insert"
-                }
-                Link {
-                    to: Route::MoviePrompt {}, "Generator"
-                }
-                Link {
-                    to: Route::ModelPull {}, "Models"
-                }
-                Link {
-                    to: Route::Stats {}, "Stats"
-                }
-            }
-
-            Outlet::<Route> {}
-        }
-    }
+    let ai_links = render_ai_links();
     
     #[cfg(not(feature = "ai-backend"))]
-    {
-        rsx! {
-            div {
-                id: "navbar",
-                Link {
-                    to: Route::LiveResults {}, "Live"
-                }
-                Link {
-                    to: Route::InsertMedia {}, "Insert"
-                }
-                Link {
-                    to: Route::Stats {}, "Stats"
-                }
+    let ai_links = rsx! {};
+    
+    rsx! {
+        div {
+            id: "navbar",
+            
+            // Always-available links
+            Link {
+                to: Route::LiveResults {}, "Live"
             }
-
-            Outlet::<Route> {}
+            Link {
+                to: Route::InsertMedia {}, "Insert"
+            }
+            Link {
+                to: Route::Stats {}, "Stats"
+            }
+            
+            // empty when ai-backend feature is disabled can't include #cfg in rsx!
+            { ai_links }
         }
+
+        Outlet::<Route> {}
     }
 }
