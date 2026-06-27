@@ -1,3 +1,7 @@
+// Ensure at least one backend is enabled
+#[cfg(not(any(feature = "postgres", feature = "mongodb")))]
+compile_error!("dvd_catalog_api requires either `postgres` or `mongodb` feature to be enabled");
+
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,

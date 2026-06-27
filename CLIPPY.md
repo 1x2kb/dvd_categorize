@@ -23,6 +23,14 @@ Both commands automatically commit any fixes applied by clippy.
 ## Feature Structure
 
 ### Database Backends (Mutually Exclusive)
+
+**Compile-time checks ensure:**
+- `database` and `dvd_catalog_api` crates **require** either `postgres` or `mongodb` feature
+- `postgres` and `mongodb` features are **mutually exclusive** (cannot both be enabled)
+- Frontend can use `postgres-types` or `mongodb-types` without requiring full backend features
+- Attempting to compile backend crates without a backend will produce a clear error message
+
+**Available backends:**
 - **postgres**: PostgreSQL with Diesel ORM
 - **mongodb**: MongoDB with Qdrant vector store
 

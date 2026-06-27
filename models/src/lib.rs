@@ -44,6 +44,9 @@
 #[cfg(all(feature = "postgres", feature = "mongodb"))]
 compile_error!("features `postgres` and `mongodb` are mutually exclusive");
 
+// The -types features are for frontend use and don't require full backend features
+// No additional check needed here since they're just type definitions
+
 #[cfg(feature = "ai")]
 pub mod ai_state;
 

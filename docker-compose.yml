@@ -153,7 +153,7 @@ services:
       context: .
       dockerfile: docker/run/web.Dockerfile
       args:
-        FEATURES: postgres-api
+        FEATURES: postgres-api,ai-backend
     ports:
       - "0.0.0.0:8080:8080"
     volumes:
@@ -168,7 +168,7 @@ services:
       context: .
       dockerfile: docker/run/web.Dockerfile
       args:
-        FEATURES: mongodb-api
+        FEATURES: mongodb-api,ai-backend
     ports:
       - "0.0.0.0:8080:8080"
     volumes:
