@@ -23,4 +23,4 @@ RUN echo "========================================" && \
     echo "========================================"
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["sh", "-c", "echo 'Starting dx serve with features: ${WEB_FEATURES}' && dx serve -p dvd_categorizer_web --addr 0.0.0.0 --port 8080 --no-default-features --features ${WEB_FEATURES}"]
+CMD ["sh", "-c", "echo 'Starting dx serve with features: ${WEB_FEATURES}' && dx serve --platform web -p dvd_categorizer_web --addr 0.0.0.0 --port 8080 --no-default-features --features ${WEB_FEATURES}"]

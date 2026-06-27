@@ -12,8 +12,9 @@ pub use views::model_pull::ModelPull;
 #[cfg(feature = "ai-backend")]
 pub use views::movie_generator::MoviePrompt;
 pub use views::stats::Stats;
+pub use views::ai_live_results::LiveResults;
 #[cfg(feature = "ai-backend")]
-pub use views::{ai_chat::AiChat, ai_live_results::AiLiveResults};
+pub use views::ai_chat::AiChat;
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
@@ -22,10 +23,10 @@ enum Route {
         #[route("/ai/chat")]
         AiChat {},
         #[route("/ai/live")]
-        AiLiveRedirect {},
-        #[redirect("/", || Route::AiLiveResults {})]
+        LiveRedirect {},
+        #[redirect("/", || Route::LiveResults {})]
         #[route("/live")]
-        AiLiveResults {},
+        LiveResults {},
         #[route("/movies/new")]
         InsertMedia {},
         #[route("/ai/models")]
@@ -86,10 +87,10 @@ fn App() -> Element {
 }
 
 #[component]
-fn AiLiveRedirect() -> Element {
+fn LiveRedirect() -> Element {
     let nav = navigator();
     use_effect(move || {
-        nav.replace(Route::AiLiveResults {});
+        nav.replace(Route::LiveResults {});
     });
     rsx! { div {} }
 }
@@ -143,17 +144,53 @@ fn MoviePrompt() -> Element {
 /// Shared navbar component.
 #[component]
 fn Navbar() -> Element {
-    rsx! {
-        div {
-            id: "navbar",
-            Link {
-                to: Route::InsertMedia {}, "Insert"
+    #[cfg(feature = "ai-backend")]
+    {
+        rsx! {
+            div {
+                id: "navbar",
+                Link {
+                    to: Route::AiChat {},
+                    "Chat"
+                }
+                Link {
+                    to: Route::LiveResults {}, "Live"
+                }
+                Link {
+                    to: Route::InsertMedia {}, "Insert"
+                }
+                Link {
+                    to: Route::MoviePrompt {}, "Generator"
+                }
+                Link {
+                    to: Route::ModelPull {}, "Models"
+                }
+                Link {
+                    to: Route::Stats {}, "Stats"
+                }
             }
-            Link {
-                to: Route::Stats {}, "Stats"
-            }
-        }
 
-        Outlet::<Route> {}
+            Outlet::<Route> {}
+        }
+    }
+    
+    #[cfg(not(feature = "ai-backend"))]
+    {
+        rsx! {
+            div {
+                id: "navbar",
+                Link {
+                    to: Route::LiveResults {}, "Live"
+                }
+                Link {
+                    to: Route::InsertMedia {}, "Insert"
+                }
+                Link {
+                    to: Route::Stats {}, "Stats"
+                }
+            }
+
+            Outlet::<Route> {}
+        }
     }
 }

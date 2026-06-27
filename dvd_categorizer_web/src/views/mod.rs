@@ -1,6 +1,5 @@
 #[cfg(feature = "ai-backend")]
 pub mod ai_chat;
-#[cfg(feature = "ai-backend")]
 pub mod ai_live_results;
 pub mod insert_media;
 #[cfg(feature = "ai-backend")]

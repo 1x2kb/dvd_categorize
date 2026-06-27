@@ -218,7 +218,7 @@ async fn fetch_available_models() -> Result<models::AvailableModelsResponse, req
 }
 
 #[component]
-pub fn AiLiveResults() -> Element {
+pub fn LiveResults() -> Element {
     let mut movies: Signal<Arc<Vec<ScoredMovie>>> = use_signal(|| Arc::new(Vec::new()));
     let mut input_value = use_signal(String::new);
     let mut is_loading = use_signal(|| false);
