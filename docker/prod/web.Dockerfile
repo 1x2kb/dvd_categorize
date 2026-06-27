@@ -10,7 +10,12 @@ RUN cargo install --locked dioxus-cli --version 0.7.9
 COPY . .
 
 # Build the web application for production
-RUN dx build --release --package dvd_categorizer_web
+ARG FEATURES=postgres-api
+RUN echo "========================================" && \
+    echo "Building Web Frontend (PRODUCTION) with features:" && \
+    echo "  ${FEATURES}" && \
+    echo "========================================" && \
+    dx build --release --platform web --package dvd_categorizer_web --no-default-features --features ${FEATURES}
 
 # Runtime stage with nginx
 FROM nginx:alpine

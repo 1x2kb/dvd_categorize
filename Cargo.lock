@@ -2281,7 +2281,6 @@ dependencies = [
  "console_error_panic_hook",
  "dioxus",
  "dioxus_grapher",
- "dotenvy",
  "gloo-net",
  "gloo-timers 0.4.0",
  "js-sys",

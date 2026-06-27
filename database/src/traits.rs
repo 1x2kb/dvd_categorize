@@ -1,8 +1,11 @@
 use async_trait::async_trait;
 use models::{Actor, FullMovie, Movie, NewActor, NewDirector, NewMovie, ScoredMovie};
 
+#[cfg(all(feature = "ai", any(feature = "postgres", feature = "mongodb")))]
+use models::StructuredQuery;
+
 #[cfg(feature = "postgres")]
-use models::{NewMovieActor, NewMovieGenre, StructuredQuery};
+use models::{NewMovieActor, NewMovieGenre};
 
 use crate::DatabaseError;
 
@@ -117,7 +120,7 @@ pub trait MoviesByLocation: Send + Sync {
     ) -> Result<Vec<FullMovie>, DatabaseError>;
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "ai", any(feature = "postgres", feature = "mongodb")))]
 #[async_trait]
 pub trait SearchMoviesStructured: Send + Sync {
     async fn search_structured(

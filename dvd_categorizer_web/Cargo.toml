@@ -12,8 +12,7 @@ dioxus = { workspace = true, features = ["router"] }
 dioxus_grapher = { path = "../dioxus_grapher" }
 log.workspace = true
 wasm-logger = "0.2"
-dotenvy.workspace = true
-models = { path = "../models", features = [], optional = false }
+models = { path = "../models", optional = false }
 prompts = { path = "../prompts" }
 reqwest = { version = "0.13.2", default-features = false, features = ["json"] }
 serde.workspace = true
@@ -28,9 +27,10 @@ gloo-net = "0.6"
 pulldown-cmark = "0.12"
 
 [features]
-default = ["web"]
+default = ["web", "ai-backend"]
 web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
+ai-backend = []
 postgres-api = ["models/postgres-types"]
 mongodb-api = ["models/mongodb-types"]

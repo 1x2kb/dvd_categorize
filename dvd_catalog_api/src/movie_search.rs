@@ -12,6 +12,7 @@ use database::{
 };
 #[cfg(feature = "ai")]
 use database::traits::SearchMoviesByEmbedding;
+use database::traits::SearchMoviesStructured;
 use log::{error, info};
 use tracing::instrument;
 
@@ -792,11 +793,11 @@ async fn hybrid_both_search(
     )
 }
 
-/// Performs structured query search using AI to parse the query and dynamic Diesel queries
-#[cfg(feature = "postgres")]
-#[instrument]
+/// Performs structured query search using AI to parse the query and database-specific queries
+#[instrument(skip(repo))]
 async fn structured_query_search(
     query: &str,
+    repo: &MovieRepo,
     limit: usize,
     model: Option<&str>,
 ) -> (
@@ -825,74 +826,39 @@ async fn structured_query_search(
                 structured_query
             );
 
-            let pool = match database::get_connection_pool().await {
-                Ok(pool) => pool,
-                Err(e) => {
-                    error!(
-                        "Failed to get database pool: {:?}",
-                        e
+            match repo.search_structured(&structured_query).await {
+                Ok(movies) => {
+                    info!(
+                        "Structured search found {} movies in {:.2?}",
+                        movies.len(),
+                        start_time.elapsed()
                     );
-                    return (
-                        Vec::new(),
-                        query.to_string(),
-                    );
-                }
-            };
-            match pool
-                .get()
-                .await
-            {
-                Ok(mut conn) => {
-                    match database::structured_search::search_movies_structured(
-                        &structured_query,
-                        &mut conn,
-                    )
-                    .await
-                    {
-                        Ok(movies) => {
-                            info!(
-                                "Structured search found {} movies in {:.2?}",
-                                movies.len(),
-                                start_time.elapsed()
-                            );
 
-                            let results: Vec<(
-                                MovieId,
-                                f32,
-                            )> = movies
-                                .into_iter()
-                                .take(limit)
-                                .enumerate()
-                                .map(
-                                    |(rank, movie)| {
-                                        let score = 1.0 / (1.0 + rank as f32);
-                                        (
-                                            movie.id.clone(), score,
-                                        )
-                                    },
+                    let results: Vec<(
+                        MovieId,
+                        f32,
+                    )> = movies
+                        .into_iter()
+                        .take(limit)
+                        .enumerate()
+                        .map(
+                            |(rank, movie)| {
+                                let score = 1.0 / (1.0 + rank as f32);
+                                (
+                                    movie.id.clone(), score,
                                 )
-                                .collect();
+                            },
+                        )
+                        .collect();
 
-                            (
-                                results,
-                                structured_query_str,
-                            )
-                        }
-                        Err(e) => {
-                            error!(
-                                "Structured search database error: {:?}",
-                                e
-                            );
-                            (
-                                Vec::new(),
-                                query.to_string(),
-                            )
-                        }
-                    }
+                    (
+                        results,
+                        structured_query_str,
+                    )
                 }
                 Err(e) => {
                     error!(
-                        "Failed to get database connection: {:?}",
+                        "Structured search database error: {:?}",
                         e
                     );
                     (
@@ -983,18 +949,10 @@ pub async fn hybrid_search(
             }
         }
         models::SearchMode::Structured => {
-            #[cfg(feature = "postgres")]
-            {
-                structured_query_search(
-                    query, limit, model,
-                )
-                .await
-            }
-            #[cfg(not(feature = "postgres"))]
-            {
-                log::warn!("Structured search mode requires postgres feature, falling back to text search");
-                text_only_search(query, repo, limit).await
-            }
+            structured_query_search(
+                query, repo, limit, model,
+            )
+            .await
         }
     }
 }
@@ -1114,7 +1072,7 @@ pub async fn chat(
         repo,
         15,
         false,
-        models::SearchMode::Both,
+        models::SearchMode::Text,
         None,
     )
     .await;

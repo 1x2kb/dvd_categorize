@@ -111,6 +111,22 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
+/* Search mode container */
+.search-mode-container {
+    background: #1f2937;
+}
+
+/* Search mode description */
+.search-mode-description {
+    padding: 12px 16px;
+    background: rgba(8, 145, 178, 0.1);
+    border-bottom: 1px solid rgba(8, 145, 178, 0.2);
+    color: #d1d5db;
+    font-size: 13px;
+    font-style: italic;
+    text-align: center;
+}
+
 /* Search mode tabs */
 .search-mode-tabs {
     display: flex;

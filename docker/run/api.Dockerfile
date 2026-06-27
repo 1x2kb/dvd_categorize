@@ -15,5 +15,11 @@ COPY . .
 ARG FEATURES=postgres,internet
 ENV API_FEATURES=${FEATURES}
 
+# Echo features for debugging
+RUN echo "========================================" && \
+    echo "Building API with features:" && \
+    echo "  ${FEATURES}" && \
+    echo "========================================"
+
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["sh", "-c", "set -f && cargo clean -p dvd_catalog_api && cargo watch -i 'e2e/*' -i 'e2e/**' -x \"run -p dvd_catalog_api --no-default-features --features ${API_FEATURES}\""]
+CMD ["sh", "-c", "echo 'Starting API with features: ${API_FEATURES}' && set -f && cargo clean -p dvd_catalog_api && cargo watch -i 'e2e/*' -i 'e2e/**' -x \"run -p dvd_catalog_api --no-default-features --features ${API_FEATURES}\""]

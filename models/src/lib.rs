@@ -34,7 +34,7 @@
 //! let request = SearchRequest {
 //!     query: "science fiction".to_string(),
 //!     disable_enhancement: false,
-//!     search_mode: SearchMode::Both,
+//!     search_mode: SearchMode::Text,
 //!     model: None,
 //! };
 //! ```
@@ -43,6 +43,9 @@
 // representations (i32 vs String), so exactly one may be enabled at a time.
 #[cfg(all(feature = "postgres", feature = "mongodb"))]
 compile_error!("features `postgres` and `mongodb` are mutually exclusive");
+
+// The -types features are for frontend use and don't require full backend features
+// No additional check needed here since they're just type definitions
 
 #[cfg(feature = "ai")]
 pub mod ai_state;
@@ -72,10 +75,10 @@ pub trait Random {
 
 #[cfg(feature = "postgres")]
 use diesel::prelude::*;
+#[cfg(feature = "postgres")]
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(feature = "postgres", feature = "vector-similarity"))]
-use chrono::NaiveDateTime;
 
 #[cfg(feature = "vector-similarity")]
 pub mod vector_similarity;
@@ -735,9 +738,9 @@ impl
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]
 pub enum SearchMode {
+    #[default]
     Text,
     Vector,
-    #[default]
     Both,
     Structured,
 }

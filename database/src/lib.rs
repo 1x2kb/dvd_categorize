@@ -43,6 +43,10 @@
 //! }
 //! ```
 
+// Ensure at least one backend is enabled
+#[cfg(not(any(feature = "postgres", feature = "mongodb")))]
+compile_error!("database crate requires either `postgres` or `mongodb` feature to be enabled");
+
 pub mod embedding;
 #[cfg(any(test, feature = "testing"))]
 pub mod mocks;
@@ -77,14 +81,14 @@ pub mod structured_search {
     pub use crate::postgres::structured_search::*;
 }
 
-use std::env;
 use std::error::Error;
 use std::fmt::Display;
 
-use diesel::prelude::*;
 use diesel::ConnectionError;
-use diesel_async::pooled_connection::deadpool::Pool;
-use diesel_async::{AsyncPgConnection, RunQueryDsl};
+#[cfg(feature = "postgres")]
+use diesel::{prelude::*, ExpressionMethods, GroupedBy, QueryDsl};
+#[cfg(feature = "postgres")]
+use diesel_async::{pooled_connection::deadpool::Pool, AsyncPgConnection, RunQueryDsl};
 // Schema module is only available when postgres feature is enabled
 #[cfg(feature = "postgres")]
 pub use models::schema::*;
@@ -314,7 +318,7 @@ pub(crate) async fn load_actors_and_genres(
 /// or if the pool cannot be created.
 #[cfg(feature = "postgres")]
 pub async fn get_connection_pool() -> Result<Pool<AsyncPgConnection>, DatabaseError> {
-    let database_url = env::var("DATABASE_URL").map_err(
+    let database_url = std::env::var("DATABASE_URL").map_err(
         |_| {
             DatabaseError::ConnectionError(
                 diesel::ConnectionError::BadConnection(

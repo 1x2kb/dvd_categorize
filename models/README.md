@@ -161,7 +161,7 @@ use models::{FullMovie, SearchMode, SearchRequest};
 let request = SearchRequest {
     query: "science fiction".to_string(),
     disable_enhancement: false,
-    search_mode: SearchMode::Both,
+    search_mode: SearchMode::Text,
     model: None,
 };
 ```

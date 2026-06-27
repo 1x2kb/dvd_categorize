@@ -4,13 +4,15 @@ pub mod app_data;
 pub mod components;
 pub mod views;
 
-use dotenvy::dotenv;
-use log::error;
 pub use views::insert_media::InsertMedia;
+#[cfg(feature = "ai-backend")]
 pub use views::model_pull::ModelPull;
+#[cfg(feature = "ai-backend")]
 pub use views::movie_generator::MoviePrompt;
 pub use views::stats::Stats;
-pub use views::{ai_chat::AiChat, ai_live_results::AiLiveResults};
+pub use views::ai_live_results::LiveResults;
+#[cfg(feature = "ai-backend")]
+pub use views::ai_chat::AiChat;
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
@@ -19,10 +21,10 @@ enum Route {
         #[route("/ai/chat")]
         AiChat {},
         #[route("/ai/live")]
-        AiLiveRedirect {},
-        #[redirect("/", || Route::AiLiveResults {})]
+        LiveRedirect {},
+        #[redirect("/", || Route::LiveResults {})]
         #[route("/live")]
-        AiLiveResults {},
+        LiveResults {},
         #[route("/movies/new")]
         InsertMedia {},
         #[route("/ai/models")]
@@ -44,14 +46,6 @@ const STATS_CSS: Asset = asset!("/assets/stats.css");
 fn main() {
     console_error_panic_hook::set_once();
     wasm_logger::init(wasm_logger::Config::default());
-
-    if let Err(e) = dotenv() {
-        error!(
-            "Error loading .env file: {}",
-            e
-        );
-        // Handle error gracefully
-    }
 
     dioxus::launch(App);
 }
@@ -83,39 +77,103 @@ fn App() -> Element {
 }
 
 #[component]
-fn AiLiveRedirect() -> Element {
+fn LiveRedirect() -> Element {
     let nav = navigator();
     use_effect(move || {
-        nav.replace(Route::AiLiveResults {});
+        nav.replace(Route::LiveResults {});
     });
     rsx! { div {} }
+}
+
+// Stub components when ai-backend feature is disabled
+#[cfg(not(feature = "ai-backend"))]
+#[component]
+fn AiChat() -> Element {
+    rsx! {
+        div { class: "error-message",
+            h1 { "AI Features Not Available" }
+            p { "This application was compiled without AI backend support." }
+            p { "Please use a build with the 'ai-backend' feature enabled." }
+        }
+    }
+}
+
+#[cfg(not(feature = "ai-backend"))]
+#[component]
+fn AiLiveResults() -> Element {
+    rsx! {
+        div { class: "error-message",
+            h1 { "AI Features Not Available" }
+            p { "This application was compiled without AI backend support." }
+        }
+    }
+}
+
+#[cfg(not(feature = "ai-backend"))]
+#[component]
+fn ModelPull() -> Element {
+    rsx! {
+        div { class: "error-message",
+            h1 { "AI Features Not Available" }
+            p { "This application was compiled without AI backend support." }
+        }
+    }
+}
+
+#[cfg(not(feature = "ai-backend"))]
+#[component]
+fn MoviePrompt() -> Element {
+    rsx! {
+        div { class: "error-message",
+            h1 { "AI Features Not Available" }
+            p { "This application was compiled without AI backend support." }
+        }
+    }
+}
+
+/// Helper function to render AI-specific navigation links
+#[cfg(feature = "ai-backend")]
+fn render_ai_links() -> Element {
+    rsx! {
+        Link {
+            to: Route::AiChat {},
+            "Chat"
+        }
+        Link {
+            to: Route::MoviePrompt {}, "Generator"
+        }
+        Link {
+            to: Route::ModelPull {}, "Models"
+        }
+    }
 }
 
 /// Shared navbar component.
 #[component]
 fn Navbar() -> Element {
+    #[cfg(feature = "ai-backend")]
+    let ai_links = render_ai_links();
+    
+    #[cfg(not(feature = "ai-backend"))]
+    let ai_links = rsx! {};
+    
     rsx! {
         div {
             id: "navbar",
+            
+            // Always-available links
             Link {
-                to: Route::AiChat {},
-                "Chat"
+                to: Route::LiveResults {}, "Live"
             }
             Link {
-                to: Route::AiLiveResults {}, "Live"
+                to: Route::InsertMedia {}, "Insert"
             }
             Link {
-                    to: Route::InsertMedia {}, "Insert"
+                to: Route::Stats {}, "Stats"
             }
-            Link {
-                    to: Route::MoviePrompt {}, "Generator"
-            }
-            Link {
-                    to: Route::ModelPull {}, "Models"
-            }
-            Link {
-                    to: Route::Stats {}, "Stats"
-            }
+            
+            // empty when ai-backend feature is disabled can't include #cfg in rsx!
+            { ai_links }
         }
 
         Outlet::<Route> {}
