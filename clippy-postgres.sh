@@ -8,7 +8,7 @@ echo "Running clippy --fix for PostgreSQL backend..."
 echo ""
 
 cargo clippy --workspace --no-default-features \
-  --features database/postgres,dvd_catalog_api/postgres,dvd_catalog_api/ai,csv_utils/postgres,ai_chat/internet,dvd_categorizer_web/web \
+  --features database/postgres,dvd_catalog_api/postgres,dvd_catalog_api/ai,csv_utils/postgres,ai_chat/internet,dvd_categorizer_web/web,dvd_categorizer_web/ai-backend \
   --fix
 
 echo ""

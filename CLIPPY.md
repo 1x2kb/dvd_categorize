@@ -61,6 +61,7 @@ Both commands automatically commit any fixes applied by clippy.
 #### `dvd_categorizer_web`
 - `web` - Web/WASM target (default)
 - `desktop` - Desktop application target
+- `ai-backend` - Enable AI-powered search modes (Vector, Both, Structured)
 
 ## Why Two Scripts?
 
@@ -68,12 +69,12 @@ The workspace has mutually exclusive backends:
 
 ### `clippy-postgres.sh`
 - Checks entire workspace with PostgreSQL backend enabled
-- Enables: `database/postgres`, `dvd_catalog_api/postgres`, `csv_utils/postgres`, `ai_chat/internet`, `dvd_categorizer_web/web`
+- Enables: `database/postgres`, `dvd_catalog_api/postgres`, `dvd_catalog_api/ai`, `csv_utils/postgres`, `ai_chat/internet`, `dvd_categorizer_web/web`, `dvd_categorizer_web/ai-backend`
 - Use for production code (PostgreSQL is the primary backend)
 
 ### `clippy-mongodb.sh`
 - Checks entire workspace with MongoDB backend enabled
-- Enables: `database/mongodb`, `ai_chat/internet`, `dvd_categorizer_web/web`
+- Enables: `database/mongodb`, `dvd_catalog_api/mongodb`, `dvd_catalog_api/ai`, `ai_chat/internet`, `dvd_categorizer_web/web`, `dvd_categorizer_web/ai-backend`, `csv_utils/vector-similarity`
 - Use when working on MongoDB backend features
 
 **Run both scripts** to ensure all code paths are checked, since the backends are mutually exclusive.
