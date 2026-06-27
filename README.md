@@ -128,6 +128,8 @@ docker compose up
 | **Web UI** | http://localhost:8080 |
 | **API** | http://localhost:3000 |
 | **Ollama** | http://localhost:11434 |
+| **Qdrant Dashboard** | http://localhost:6333/dashboard |
+| **Mongo Express** | http://localhost:8082 |
 
 ### Monitoring & Observability
 

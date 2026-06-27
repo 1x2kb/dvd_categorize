@@ -39,6 +39,11 @@
 //! };
 //! ```
 
+// The `postgres` and `mongodb` backends select different `FullMovie::id`
+// representations (i32 vs String), so exactly one may be enabled at a time.
+#[cfg(all(feature = "postgres", feature = "mongodb"))]
+compile_error!("features `postgres` and `mongodb` are mutually exclusive");
+
 #[cfg(feature = "ai")]
 pub mod ai_state;
 
@@ -69,7 +74,7 @@ pub trait Random {
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "postgres")]
+#[cfg(any(feature = "postgres", feature = "vector-similarity"))]
 use chrono::NaiveDateTime;
 
 #[cfg(feature = "vector-similarity")]
@@ -104,27 +109,29 @@ pub struct ChatResponse {
     pub session_id: Option<String>,
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(feature = "vector-similarity")]
 #[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::chat_sessions, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatSession {
+    #[cfg(feature = "postgres")]
     pub id: i32,
     pub session_id: uuid::Uuid,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "postgres", feature = "vector-similarity"))]
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::chat_sessions, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewChatSession {
     pub session_id: uuid::Uuid,
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(feature = "vector-similarity")]
 #[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::chat_messages, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
+    #[cfg(feature = "postgres")]
     pub id: i32,
     pub session_id: uuid::Uuid,
     pub role: String,
@@ -132,7 +139,7 @@ pub struct ChatMessage {
     pub created_at: chrono::NaiveDateTime,
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(feature = "vector-similarity")]
 #[cfg_attr(feature="postgres", derive(Insertable), diesel(table_name = schema::chat_messages, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewChatMessage {
@@ -149,16 +156,22 @@ pub struct CsvInput {
 #[cfg_attr(feature="postgres", derive(Queryable, Selectable, Identifiable), diesel(table_name = schema::actor, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Actor {
+    #[cfg(any(feature = "postgres", feature = "postgres-types"))]
     pub id: i32,
     pub name: String,
 }
 
 impl From<String> for Actor {
     fn from(value: String) -> Self {
-        Self { id: 0, name: value }
+        Self {
+            #[cfg(any(feature = "postgres", feature = "postgres-types"))]
+            id: 0,
+            name: value,
+        }
     }
 }
 
+#[cfg(feature = "postgres")]
 impl
     From<(
         i32,
@@ -184,6 +197,7 @@ pub struct NewActor {
 #[cfg_attr(feature="postgres", derive(Queryable, Insertable, Identifiable), diesel(table_name = schema::director, check_for_backend(diesel::pg::Pg)))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Director {
+    #[cfg(any(feature = "postgres", feature = "postgres-types"))]
     pub id: i32,
     pub name: String,
 }
@@ -195,7 +209,11 @@ pub struct NewDirector {
 
 impl From<String> for Director {
     fn from(name: String) -> Self {
-        Self { id: 0, name }
+        Self {
+            #[cfg(any(feature = "postgres", feature = "postgres-types"))]
+            id: 0,
+            name,
+        }
     }
 }
 #[cfg_attr(feature="postgres", derive(Insertable, Identifiable, Queryable), diesel(table_name = schema::movie, check_for_backend(diesel::pg::Pg)))]
@@ -262,9 +280,18 @@ pub struct NewMovieGenre {
     pub genre: String,
 }
 
+/// Movie identifier type, selected by the active storage backend.
+///
+/// - `postgres` or `postgres-types`: `i32` serial primary key
+/// - `mongodb` or `mongodb-types`: `String` (ObjectId hex)
+#[cfg(any(feature = "postgres", feature = "postgres-types"))]
+pub type MovieId = i32;
+#[cfg(not(any(feature = "postgres", feature = "postgres-types")))]
+pub type MovieId = String;
+
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct FullMovie {
-    pub id: i32,
+    pub id: MovieId,
     pub name: String,
     pub description: Option<String>,
 
@@ -317,6 +344,9 @@ pub struct ValidateTitlesRequest {
     pub titles: Vec<String>,
     /// The model to use for title correction — should match the generation model so it's already hot.
     pub model: Option<String>,
+    /// Flags parallel to titles indicating whether to skip AI title correction.
+    #[serde(default)]
+    pub skip_correction: Vec<bool>,
 }
 
 /// Per-title result from /ai/validate-titles.
@@ -356,7 +386,7 @@ pub struct AiMovieData {
 
 impl AiMovieData {
     /// Convert AiMovieData to FullMovie for display
-    pub fn to_full_movie(&self, id: i32) -> FullMovie {
+    pub fn to_full_movie(&self) -> FullMovie {
         let display_name = if self.year == 0 {
             self.title
                 .clone()
@@ -368,7 +398,7 @@ impl AiMovieData {
         };
 
         FullMovie {
-            id,
+            id: MovieId::default(),
             key_hash: FullMovie::generate_key_hash(&display_name),
             name: self
                 .title
@@ -416,6 +446,46 @@ impl FullMovie {
         let mut hasher = DefaultHasher::new();
         name.hash(&mut hasher);
         hasher.finish()
+    }
+
+    /// Calculate text search relevance score for a single query string.
+    /// Returns f32 score based on which fields match (Postgres-compatible scoring):
+    /// - Title match: 100.0
+    /// - Director match: 25.0
+    /// - Actor match: 20.0
+    /// - Genre match: 15.0
+    /// Multiple matches accumulate (e.g., title + actor = 120.0)
+    pub fn text_search_score(&self, query: &str) -> f32 {
+        if query.is_empty() {
+            return 0.0;
+        }
+
+        let query_lower = query.to_lowercase();
+        let mut score: f32 = 0.0;
+
+        // Title scoring (100 points for title match)
+        if self.name.to_lowercase().contains(&query_lower) {
+            score += 100.0;
+        }
+
+        // Actor scoring (20 points for actor match)
+        if self.actors.iter().any(|a| a.name.to_lowercase().contains(&query_lower)) {
+            score += 20.0;
+        }
+
+        // Director scoring (25 points for director match)
+        if let Some(ref d) = self.director {
+            if d.name.to_lowercase().contains(&query_lower) {
+                score += 25.0;
+            }
+        }
+
+        // Genre scoring (15 points for genre match)
+        if self.genres.iter().any(|g| g.to_lowercase().contains(&query_lower)) {
+            score += 15.0;
+        }
+
+        score
     }
 
     /// Get the display name formatted as "Name (Year)"
@@ -616,6 +686,7 @@ impl TextMatchScoring for FullMovie {
     }
 }
 
+#[cfg(feature = "postgres")]
 impl
     From<(
         Movie,
@@ -624,6 +695,8 @@ impl
         Vec<String>,
     )> for FullMovie
 {
+    // Converts the postgres `Movie` entity (i32 id); only available with the
+    // postgres backend.
     fn from(
         (movie, director, actors, genres): (
             Movie,
@@ -640,7 +713,7 @@ impl
             director,
             actors,
             genres,
-            #[cfg(feature = "postgres")]
+            #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: movie
                 .embedding
                 .map(|v| v.into()),
@@ -704,7 +777,7 @@ pub struct SearchResponse {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UpdateLocationRequest {
-    pub movie_id: i32,
+    pub movie_id: MovieId,
     pub location: String,
 }
 
@@ -728,6 +801,64 @@ pub struct AvailableModel {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AvailableModelsResponse {
     pub models: Vec<AvailableModel>,
+}
+
+/// Request to generate movie data from titles using AI
+#[derive(Debug, Deserialize)]
+pub struct GenerateMoviesRequest {
+    pub titles: Vec<String>,
+    pub model: Option<String>,
+    /// Chip positions parallel to titles, for ordering on the frontend.
+    #[serde(default)]
+    pub positions: Vec<usize>,
+    /// Flags parallel to titles indicating whether to skip AI title correction.
+    #[serde(default)]
+    pub skip_correction: Vec<bool>,
+}
+
+/// Query parameters for random movies endpoint
+#[derive(Debug, Deserialize)]
+pub struct RandomMoviesQuery {
+    #[serde(default = "default_count")]
+    pub count: i64,
+}
+
+fn default_count() -> i64 {
+    3
+}
+
+/// Query parameters for recent releases endpoint
+#[derive(Debug, Deserialize)]
+pub struct RecentReleasesQuery {
+    #[serde(default = "default_min_year")]
+    pub min_year: i32,
+    #[serde(default = "default_max_year")]
+    pub max_year: i32,
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+}
+
+fn default_min_year() -> i32 {
+    2020
+}
+
+fn default_max_year() -> i32 {
+    2026 // Update this periodically or make it configurable
+}
+
+fn default_limit() -> i64 {
+    50
+}
+
+/// Chat session with first query preview
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatSessionWithPreview {
+    #[cfg(feature = "postgres")]
+    pub id: i32,
+    pub session_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub first_query: Option<String>,
 }
 
 #[cfg(feature = "testing")]

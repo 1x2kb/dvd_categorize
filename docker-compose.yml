@@ -1,5 +1,6 @@
 services:
   postgres:
+    profiles: ["postgres"]
     image: pgvector/pgvector:pg17
     networks:
       - dvd-net
@@ -16,6 +17,50 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  mongodb:
+    profiles: ["mongodb"]
+    image: mongo:7
+    networks:
+      - dvd-net
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: mongopassword
+      MONGO_INITDB_DATABASE: dvd_catalog
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mongo-express:
+    profiles: ["mongodb"]
+    image: mongo-express:latest
+    networks:
+      - dvd-net
+    ports:
+      - "8082:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: mongopassword
+      ME_CONFIG_MONGODB_URL: mongodb://admin:mongopassword@mongodb:27017/
+      ME_CONFIG_BASICAUTH: false
+    depends_on:
+      - mongodb
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    networks:
+      - dvd-net
+    ports:
+      - "6333:6333"  # HTTP API
+      - "6334:6334"  # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
 
   ollama:
     image: ollama/ollama:rocm
@@ -43,27 +88,56 @@ services:
       retries: 3
     restart: unless-stopped
 
-  dvd_categorize_api:
+  dvd_categorize_api_postgres:
+    profiles: ["postgres"]
     networks:
       - dvd-net
     build:
       context: .
       dockerfile: docker/run/api.Dockerfile
       args:
-        UID: ${UID}
-        GID: ${GID}
-        USERNAME: ${USERNAME}
+        FEATURES: internet,ai,postgres
     ports:
       - "0.0.0.0:3000:3000"
     volumes:
-      - ./:/app
+      - .:/app
+      - api_postgres_cache:/app/target
     depends_on:
-      diesel_migrate:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
+      - diesel_migrate
+      - postgres
+      - qdrant
     environment:
       DATABASE_URL: postgres://app_user:strongpassword@postgres:5432/app_db
+      QDRANT_URL: http://qdrant:6334
+      QDRANT_COLLECTION: movies
+      RUST_LOG: "info,dvd_catalog=debug,database=debug,ai_chat=debug,models=debug,csv_utils=debug,categorizer_utilities=debug"
+      server_host: ${SERVER_HOST:-0.0.0.0}
+      server_port: ${SERVER_PORT:-3000}
+      OLLAMA_HOST: ollama
+      OLLAMA_PORT: "11434"
+      OLLAMA_NUM_CTX: "18000"
+
+  dvd_categorize_api_mongo:
+    profiles: ["mongodb"]
+    networks:
+      - dvd-net
+    build:
+      context: .
+      dockerfile: docker/run/api.Dockerfile
+      args:
+        FEATURES: mongodb,internet,ai
+    ports:
+      - "0.0.0.0:3000:3000"
+    volumes:
+      - .:/app
+      - api_mongodb_cache:/app/target
+    depends_on:
+      - mongodb
+      - qdrant
+    environment:
+      MONGODB_URI: mongodb://admin:mongopassword@mongodb:27017/dvd_catalog?authSource=admin
+      QDRANT_URL: http://qdrant:6334
+      QDRANT_COLLECTION: movies
       RUST_LOG: "info,dvd_catalog=debug,database=debug,ai_chat=debug,models=debug,csv_utils=debug,categorizer_utilities=debug"
       server_host: ${SERVER_HOST:-0.0.0.0}
       server_port: ${SERVER_PORT:-3000}
@@ -72,17 +146,37 @@ services:
       OLLAMA_NUM_CTX: "18000"
 
   dvd_categorize_web:
+    profiles: ["postgres"]
     networks:
       - dvd-net
     build:
       context: .
       dockerfile: docker/run/web.Dockerfile
+      args:
+        FEATURES: postgres-api
     ports:
       - "0.0.0.0:8080:8080"
     volumes:
-      - ./:/app
+      - .:/app
+      - web_postgres_cache:/app/target
+
+  dvd_categorize_web_mongo:
+    profiles: ["mongodb"]
+    networks:
+      - dvd-net
+    build:
+      context: .
+      dockerfile: docker/run/web.Dockerfile
+      args:
+        FEATURES: mongodb-api
+    ports:
+      - "0.0.0.0:8080:8080"
+    volumes:
+      - .:/app
+      - web_mongodb_cache:/app/target
 
   diesel_migrate:
+    profiles: ["postgres"]
     networks:
       - dvd-net
     build:
@@ -201,12 +295,18 @@ services:
 volumes:
   postgres_data:
   pgdata:
+  mongo_data:
+  qdrant_data:
   loki_data:
   grafana_data:
   prometheus_data:
   ollama_data:
     external: true
+  api_postgres_cache:
+  api_mongodb_cache:
+  web_postgres_cache:
+  web_mongodb_cache:
 
 networks:
   dvd-net:
-    driver: bridge 
+    driver: bridge

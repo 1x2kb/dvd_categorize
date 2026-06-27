@@ -6,8 +6,8 @@ description = "Miscellaneous utility functions for the DVD Categorizer applicati
 readme = "README.md"
 
 [dependencies]
-database = { path = "../database" }
+database = { path = "../database", default-features = false }
 rand = "0.10"
 
 [dev-dependencies]
-database = { path = "../database", features = ["testing"] }
+database = { path = "../database", default-features = false, features = ["testing"] }

@@ -22,7 +22,7 @@ log.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tokio.workspace = true
-database = { path = "../database" }
+database = { path = "../database", default-features = false }
 models = { path = "../models", features = [
     "vector-similarity",
     "text-matching",
@@ -33,11 +33,11 @@ ai_tools = { path = "../ai_tools" }
 ollama-rs.workspace = true
 csv_utils = { path = "../csv_utils" }
 categorizer_utilities = { path = "../categorizer_utilities" }
-prompts = { path = "../prompts" }
+prompts = { path = "../prompts", features = ["conversions"] }
 serde.workspace = true
 
 [features]
-default = ["postgres", "ai"]
+default = []
 internet = ["ai_chat/internet"]
 postgres = ["database/postgres"]
 ai = ["database/ai"]

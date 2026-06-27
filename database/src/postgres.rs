@@ -19,7 +19,7 @@ mod inner {
     use log::debug;
     use models::{
         schema, MovieActor, MovieGenre, NewActor, NewDirector, NewMovie, NewMovieActor,
-        NewMovieGenre, StructuredQuery,
+        NewMovieGenre, ScoredMovie, StructuredQuery,
     };
     #[cfg(feature = "ai")]
     use pgvector::VectorExpressionMethods;
@@ -204,9 +204,7 @@ mod inner {
             )
             .await?;
 
-            let query_lower = query.to_lowercase();
-
-            // Score results
+            // Score results using centralized text_search_score function
             let mut scored_results: Vec<(
                 FullMovie,
                 f32,
@@ -216,64 +214,17 @@ mod inner {
                 .zip(genres_per_movie)
                 .filter_map(
                     |(((movie_row, director), movie_actors), movie_genres)| {
-                        let mut score: f32 = 0.0;
-
-                        // Title scoring
-                        if movie_row
-                            .name
-                            .to_lowercase()
-                            .contains(&query_lower)
-                        {
-                            score += 100.0;
-                        }
-
-                        // Actor scoring
-                        if movie_actors
-                            .iter()
-                            .any(
-                                |a| {
-                                    a.name
-                                        .to_lowercase()
-                                        .contains(&query_lower)
-                                },
-                            )
-                        {
-                            score += 20.0;
-                        }
-
-                        // Director scoring
-                        if let Some(ref d) = director {
-                            if d.name
-                                .to_lowercase()
-                                .contains(&query_lower)
-                            {
-                                score += 25.0;
-                            }
-                        }
-
-                        // Genre scoring
-                        if movie_genres
-                            .iter()
-                            .any(
-                                |g| {
-                                    g.to_lowercase()
-                                        .contains(&query_lower)
-                                },
-                            )
-                        {
-                            score += 15.0;
-                        }
+                        let movie = build_full_movie_from_row(
+                            movie_row,
+                            director,
+                            movie_actors,
+                            movie_genres,
+                        );
+                        // Use centralized database-agnostic scoring
+                        let score = movie.text_search_score(query);
 
                         if score > 0.0 {
-                            Some((
-                                build_full_movie_from_row(
-                                    movie_row,
-                                    director,
-                                    movie_actors,
-                                    movie_genres,
-                                ),
-                                score,
-                            ))
+                            Some((movie, score))
                         } else {
                             None
                         }
@@ -732,7 +683,7 @@ mod inner {
             &self,
             embedding: Vec<f32>,
             limit: i64,
-        ) -> Result<Vec<FullMovie>, DatabaseError> {
+        ) -> Result<Vec<ScoredMovie>, DatabaseError> {
             let mut conn = self
                 .get_conn()
                 .await?;
@@ -753,10 +704,20 @@ mod inner {
                     .collect::<Vec<_>>()
             );
 
-            GetMoviesByIds::get_by_ids(
+            let movies = GetMoviesByIds::get_by_ids(
                 self, movie_ids,
             )
-            .await
+            .await?;
+
+            // Convert FullMovie to ScoredMovie with default score of 0.0
+            // The actual cosine distance scoring is handled by pgvector ordering
+            Ok(movies
+                .into_iter()
+                .map(|movie| ScoredMovie {
+                    movie,
+                    vector_score: 0.0,
+                })
+                .collect())
         }
     }
 
@@ -2174,6 +2135,96 @@ mod inner {
                 full_movies.len()
             );
             Ok(full_movies)
+        }
+    }
+
+    // ==================== Stats Trait Implementations ====================
+
+    #[async_trait]
+    impl GetStatsOverview for PostgresMovieRepository {
+        async fn get_stats_overview(&self) -> Result<(i64, i64, i64), DatabaseError> {
+            let mut conn = self.get_conn().await?;
+
+            // Count total movies
+            let total_movies: i64 = schema::movie::table
+                .count()
+                .get_result(&mut conn)
+                .await?;
+
+            // Count unique directors
+            let total_directors: i64 = schema::director::table
+                .count()
+                .get_result(&mut conn)
+                .await?;
+
+            // Count unique actors
+            let total_actors: i64 = schema::actor::table
+                .count()
+                .get_result(&mut conn)
+                .await?;
+
+            Ok((total_movies, total_directors, total_actors))
+        }
+    }
+
+    #[async_trait]
+    impl GetMoviesByYearStats for PostgresMovieRepository {
+        async fn get_movies_by_year(&self, limit: i64) -> Result<Vec<(i32, i64)>, DatabaseError> {
+            let mut conn = self.get_conn().await?;
+
+            let results: Vec<(i32, i64)> = schema::movie::table
+                .group_by(schema::movie::release_year)
+                .select((
+                    schema::movie::release_year,
+                    diesel::dsl::count(schema::movie::id),
+                ))
+                .order_by(diesel::dsl::count(schema::movie::id).desc())
+                .limit(limit)
+                .load(&mut conn)
+                .await?;
+
+            Ok(results)
+        }
+    }
+
+    #[async_trait]
+    impl GetGenreStats for PostgresMovieRepository {
+        async fn get_genre_counts(&self, limit: i64) -> Result<Vec<(String, i64)>, DatabaseError> {
+            let mut conn = self.get_conn().await?;
+
+            let results: Vec<(String, i64)> = schema::movie_genre::table
+                .group_by(schema::movie_genre::genre)
+                .select((
+                    schema::movie_genre::genre,
+                    diesel::dsl::count(schema::movie_genre::movie_id),
+                ))
+                .order_by(diesel::dsl::count(schema::movie_genre::movie_id).desc())
+                .limit(limit)
+                .load(&mut conn)
+                .await?;
+
+            Ok(results)
+        }
+    }
+
+    #[async_trait]
+    impl GetTopActorsStats for PostgresMovieRepository {
+        async fn get_top_actors(&self, limit: i64) -> Result<Vec<(String, i64)>, DatabaseError> {
+            let mut conn = self.get_conn().await?;
+
+            let results: Vec<(String, i64)> = schema::movie_actor::table
+                .inner_join(schema::actor::table)
+                .group_by(schema::actor::name)
+                .select((
+                    schema::actor::name,
+                    diesel::dsl::count(schema::movie_actor::movie_id),
+                ))
+                .order_by(diesel::dsl::count(schema::movie_actor::movie_id).desc())
+                .limit(limit)
+                .load(&mut conn)
+                .await?;
+
+            Ok(results)
         }
     }
 } // End of inner module

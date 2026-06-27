@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use models::UpdateLocationRequest;
+use models::{MovieId, UpdateLocationRequest};
 use wasm_bindgen::JsCast;
 
 // Context to track if any location editor is currently active
@@ -7,7 +7,7 @@ pub fn use_editing_context() -> Signal<bool> {
     use_context::<Signal<bool>>()
 }
 
-async fn update_location_on_server(movie_id: i32, location: String) -> Result<(), String> {
+async fn update_location_on_server(movie_id: MovieId, location: String) -> Result<(), String> {
     let window = web_sys::window().ok_or("No window")?;
     let hostname = window
         .location()
@@ -46,10 +46,10 @@ async fn update_location_on_server(movie_id: i32, location: String) -> Result<()
 
 #[derive(Props, Clone, PartialEq)]
 pub struct LocationEditorProps {
-    pub movie_id: i32,
+    pub movie_id: MovieId,
     pub initial_location: String,
     pub on_location_updated: EventHandler<(
-        i32,
+        MovieId,
         String,
     )>,
 }
@@ -80,6 +80,11 @@ pub fn LocationEditor(props: LocationEditorProps) -> Element {
 
     // Get global editing context
     let mut global_editing = use_editing_context();
+
+    // MovieId may be non-Copy (String under mongodb); give each move closure its
+    // own owned clone so neither moves `props.movie_id`.
+    let movie_id_keydown = props.movie_id.clone();
+    let movie_id_click = props.movie_id.clone();
 
     // Update global editing state when local editing changes
     use_effect(
@@ -148,12 +153,12 @@ pub fn LocationEditor(props: LocationEditorProps) -> Element {
                         onkeydown: move |evt| {
                             if evt.key() == Key::Enter && !is_saving() {
                                 let on_updated = props.on_location_updated;
-                                let movie_id = props.movie_id;
+                                let movie_id = movie_id_keydown.clone();
                                 spawn(async move {
                                     is_saving.set(true);
                                     save_error.set(None);
 
-                                    match update_location_on_server(movie_id, location_input()).await {
+                                    match update_location_on_server(movie_id.clone(), location_input()).await {
                                         Ok(_) => {
                                             let new_loc = location_input();
                                             current_location.set(new_loc.clone());
@@ -180,12 +185,12 @@ pub fn LocationEditor(props: LocationEditorProps) -> Element {
                         class: "location-save-button",
                         onclick: move |_| {
                             let on_updated = props.on_location_updated;
-                            let movie_id = props.movie_id;
+                            let movie_id = movie_id_click.clone();
                             spawn(async move {
                                 is_saving.set(true);
                                 save_error.set(None);
 
-                                match update_location_on_server(movie_id, location_input()).await {
+                                match update_location_on_server(movie_id.clone(), location_input()).await {
                                     Ok(_) => {
                                         let new_loc = location_input();
                                         current_location.set(new_loc.clone());

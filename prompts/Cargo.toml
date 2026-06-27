@@ -4,3 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+models = { path = "../models", features = ["vector-similarity"], optional = true }
+ollama-rs = { workspace = true, optional = true }
+
+[features]
+default = []
+conversions = ["models", "ollama-rs"]

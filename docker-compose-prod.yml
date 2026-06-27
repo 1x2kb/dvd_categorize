@@ -1,10 +1,13 @@
 volumes:
   pgdata:
+  mongo_data:
+  qdrant_data:
   ollama_data: # Note that this must be created manually. Prevents it from being deleted on docker compose down -v since models are very large files.
     external: true
 
 services:
   postgres-prod:
+    profiles: ["postgres"]
     image: pgvector/pgvector:pg17
     environment:
       POSTGRES_USER: app_user
@@ -16,6 +19,38 @@ services:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app_user -d app_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  mongodb-prod:
+    profiles: ["mongodb"]
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-mongopassword}
+      MONGO_INITDB_DATABASE: dvd_catalog
+    ports:
+      - "0.0.0.0:27018:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  qdrant-prod:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6335:6333"  # HTTP API
+      - "6336:6334"  # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -47,6 +82,7 @@ services:
     restart: unless-stopped
 
   diesel_migrate-prod:
+    profiles: ["postgres"]
     build:
       context: .
       dockerfile: docker/prod/diesel.Dockerfile
@@ -58,6 +94,7 @@ services:
     restart: "no"
 
   dvd_categorize_api-prod:
+    profiles: ["postgres"]
     build:
       context: .
       dockerfile: docker/prod/api.Dockerfile
@@ -68,8 +105,38 @@ services:
         condition: service_completed_successfully
       postgres-prod:
         condition: service_healthy
+      qdrant-prod:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres-prod:5432/app_db
+      QDRANT_URL: http://qdrant-prod:6334
+      QDRANT_COLLECTION: movies
+      RUST_LOG: ${RUST_LOG:-info}
+      server_host: 0.0.0.0
+      server_port: 3000
+      OLLAMA_HOST: ollama-prod
+      OLLAMA_PORT: "11434"
+      OLLAMA_NUM_CTX: "10000"
+    restart: unless-stopped
+
+  dvd_categorize_api-prod-mongo:
+    profiles: ["mongodb"]
+    build:
+      context: .
+      dockerfile: docker/prod/api.Dockerfile
+      args:
+        FEATURES: mongodb,internet,ai
+    ports:
+      - "0.0.0.0:3000:3000"  # API port
+    depends_on:
+      mongodb-prod:
+        condition: service_healthy
+      qdrant-prod:
+        condition: service_healthy
+    environment:
+      MONGODB_URI: mongodb://admin:${MONGO_PASSWORD:-mongopassword}@mongodb-prod:27017/dvd_catalog?authSource=admin
+      QDRANT_URL: http://qdrant-prod:6334
+      QDRANT_COLLECTION: movies
       RUST_LOG: ${RUST_LOG:-info}
       server_host: 0.0.0.0
       server_port: 3000

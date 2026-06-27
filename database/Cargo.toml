@@ -6,15 +6,18 @@ description = "Async PostgreSQL database layer with Diesel ORM, pgvector support
 readme = "README.md"
 
 [features]
-default = ["postgres"]
+# No backend is selected by default: each binary picks exactly one of
+# `postgres` or `mongodb` (they are mutually exclusive).
+default = []
 testing = ["rand"]
 postgres = [
     "diesel/postgres",
     "diesel-async/postgres",
     "models/postgres",
+    "models/vector-similarity",
     "pgvector",
 ]
-mongodb = ["dep:mongodb"]
+mongodb = ["dep:mongodb", "dep:qdrant-client", "models/mongodb"]
 ai = []
 
 [[example]]
@@ -38,3 +41,5 @@ tracing.workspace = true
 models = { path = "../models", features = ["ai"] }
 pgvector = { version = "0.4.0", features = ["diesel"], optional = true }
 mongodb = { version = "3.7.0", optional = true }
+qdrant-client = { workspace = true, optional = true }
+futures = "0.3"

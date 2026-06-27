@@ -8,7 +8,7 @@ use categorizer_utilities::strip_punctuation;
 use database::{
     question::AiAction,
     traits::GetAllMovies,
-    FullMovie, PostgresMovieRepository,
+    FullMovie, MovieId, MovieRepo,
 };
 #[cfg(feature = "ai")]
 use database::traits::SearchMoviesByEmbedding;
@@ -346,11 +346,11 @@ fn keyword_search(
     criteria: &SearchCriteria,
     limit: usize,
 ) -> Vec<(
-    i32,
+    MovieId,
     f32,
 )> {
     let mut scored_movies: Vec<(
-        i32,
+        MovieId,
         f32,
     )> = movies
         .iter()
@@ -360,7 +360,7 @@ fn keyword_search(
                     movie, criteria,
                 );
                 (
-                    movie.id, score,
+                    movie.id.clone(), score,
                 )
             },
         )
@@ -388,18 +388,18 @@ fn keyword_search(
 /// Returns a vector of (movie_id, score) tuples sorted by score descending
 fn reciprocal_rank_fusion(
     keyword_results: Vec<(
-        i32,
+        MovieId,
         f32,
     )>,
-    vector_ranks: Vec<i32>,
+    vector_results: Vec<(MovieId, f32)>,
     k: f32,
 ) -> Vec<(
-    i32,
+    MovieId,
     f32,
 )> {
     use std::collections::HashMap;
 
-    let mut scores: HashMap<i32, f32> = HashMap::new();
+    let mut scores: HashMap<MovieId, f32> = HashMap::new();
 
     // Add scores from keyword search with exact match detection
     for (rank, (movie_id, keyword_score)) in keyword_results
@@ -418,24 +418,23 @@ fn reciprocal_rank_fusion(
         }
 
         *scores
-            .entry(*movie_id)
+            .entry(movie_id.clone())
             .or_insert(0.0) += rfr_score;
     }
 
-    // Add scores from vector search
-    for (rank, movie_id) in vector_ranks
+    // Add scores from vector search using actual similarity scores
+    for (movie_id, vector_score) in vector_results
         .iter()
-        .enumerate()
     {
-        let score = 1.0 / (k + rank as f32 + 1.0);
+        // Use the actual Qdrant similarity score (0-1) directly
         *scores
-            .entry(*movie_id)
-            .or_insert(0.0) += score;
+            .entry(movie_id.clone())
+            .or_insert(0.0) += vector_score;
     }
 
     // Sort by RRF score descending
     let mut ranked: Vec<(
-        i32,
+        MovieId,
         f32,
     )> = scores
         .into_iter()
@@ -455,11 +454,11 @@ fn reciprocal_rank_fusion(
 #[instrument(skip(repo))]
 async fn text_only_search(
     query: &str,
-    repo: &PostgresMovieRepository,
+    repo: &MovieRepo,
     limit: usize,
 ) -> (
     Vec<(
-        i32,
+        MovieId,
         f32,
     )>,
     String,
@@ -513,13 +512,13 @@ async fn text_only_search(
 #[instrument(skip(repo))]
 async fn vector_only_search(
     query: &str,
-    repo: &PostgresMovieRepository,
+    repo: &MovieRepo,
     limit: usize,
     disable_enhancement: bool,
     model: Option<&str>,
 ) -> (
     Vec<(
-        i32,
+        MovieId,
         f32,
     )>,
     String,
@@ -554,17 +553,17 @@ async fn vector_only_search(
                 )
                 .await
             {
-                Ok(movies_from_db) => {
-                    let ids: Vec<i32> = movies_from_db
+                Ok(scored_movies) => {
+                    let results: Vec<(MovieId, f32)> = scored_movies
                         .into_iter()
-                        .map(|m| m.id)
+                        .map(|sm| (sm.movie.id, sm.vector_score))
                         .collect();
                     info!(
                         "Vector search found {} results in {:.2?}",
-                        ids.len(),
+                        results.len(),
                         vector_start.elapsed()
                     );
-                    ids
+                    results
                 }
                 Err(e) => {
                     error!(
@@ -584,22 +583,13 @@ async fn vector_only_search(
         }
     };
 
-    // Return normalized vector scores
+    // Return real Qdrant scores
     let final_results: Vec<(
-        i32,
+        MovieId,
         f32,
     )> = vector_results
         .into_iter()
         .take(limit)
-        .enumerate()
-        .map(
-            |(rank, id)| {
-                let score = 1.0 / (1.0 + rank as f32);
-                (
-                    id, score,
-                )
-            },
-        )
         .collect();
 
     info!(
@@ -620,13 +610,13 @@ async fn vector_only_search(
 async fn hybrid_both_search(
     query: &str,
     movies: Arc<Vec<FullMovie>>,
-    repo: &PostgresMovieRepository,
+    repo: &MovieRepo,
     limit: usize,
     disable_enhancement: bool,
     model: Option<&str>,
 ) -> (
     Vec<(
-        i32,
+        MovieId,
         f32,
     )>,
     String,
@@ -715,17 +705,17 @@ async fn hybrid_both_search(
                         )
                         .await
                     {
-                        Ok(movies_from_db) => {
-                            let ids: Vec<i32> = movies_from_db
+                        Ok(scored_movies) => {
+                            let results: Vec<(MovieId, f32)> = scored_movies
                                 .into_iter()
-                                .map(|m| m.id)
+                                .map(|sm| (sm.movie.id, sm.vector_score))
                                 .collect();
                             info!(
                                 "Vector search found {} results in {:.2?}",
-                                ids.len(),
+                                results.len(),
                                 vector_start.elapsed()
                             );
-                            ids
+                            results
                         }
                         Err(e) => {
                             error!(
@@ -749,7 +739,7 @@ async fn hybrid_both_search(
 
     // Fuse results using RRF
     let final_results: Vec<(
-        i32,
+        MovieId,
         f32,
     )> = if !keyword_results.is_empty() && !vector_results.is_empty() {
         info!("Fusing keyword and vector results with RRF");
@@ -784,15 +774,6 @@ async fn hybrid_both_search(
         vector_results
             .into_iter()
             .take(limit)
-            .enumerate()
-            .map(
-                |(rank, id)| {
-                    (
-                        id,
-                        1.0 / (RRF_K_VALUE + rank as f32 + 1.0),
-                    )
-                },
-            )
             .collect()
     } else {
         info!("No search results found");
@@ -812,6 +793,7 @@ async fn hybrid_both_search(
 }
 
 /// Performs structured query search using AI to parse the query and dynamic Diesel queries
+#[cfg(feature = "postgres")]
 #[instrument]
 async fn structured_query_search(
     query: &str,
@@ -819,7 +801,7 @@ async fn structured_query_search(
     model: Option<&str>,
 ) -> (
     Vec<(
-        i32,
+        MovieId,
         f32,
     )>,
     String,
@@ -875,7 +857,7 @@ async fn structured_query_search(
                             );
 
                             let results: Vec<(
-                                i32,
+                                MovieId,
                                 f32,
                             )> = movies
                                 .into_iter()
@@ -885,7 +867,7 @@ async fn structured_query_search(
                                     |(rank, movie)| {
                                         let score = 1.0 / (1.0 + rank as f32);
                                         (
-                                            movie.id, score,
+                                            movie.id.clone(), score,
                                         )
                                     },
                                 )
@@ -944,14 +926,14 @@ async fn structured_query_search(
 pub async fn hybrid_search(
     query: &str,
     movies: Arc<Vec<FullMovie>>,
-    repo: &PostgresMovieRepository,
+    repo: &MovieRepo,
     limit: usize,
     disable_enhancement: bool,
     search_mode: models::SearchMode,
     model: Option<&str>,
 ) -> (
     Vec<(
-        i32,
+        MovieId,
         f32,
     )>,
     String,
@@ -1001,10 +983,18 @@ pub async fn hybrid_search(
             }
         }
         models::SearchMode::Structured => {
-            structured_query_search(
-                query, limit, model,
-            )
-            .await
+            #[cfg(feature = "postgres")]
+            {
+                structured_query_search(
+                    query, limit, model,
+                )
+                .await
+            }
+            #[cfg(not(feature = "postgres"))]
+            {
+                log::warn!("Structured search mode requires postgres feature, falling back to text search");
+                text_only_search(query, repo, limit).await
+            }
         }
     }
 }
@@ -1131,12 +1121,12 @@ pub async fn chat(
 
     let full_movies = if !movie_results.is_empty() {
         // Create lookup map
-        let movies_map: std::collections::HashMap<i32, &FullMovie> = arc_dvds
+        let movies_map: std::collections::HashMap<MovieId, &FullMovie> = arc_dvds
             .iter()
             .map(
                 |movie| {
                     (
-                        movie.id, movie,
+                        movie.id.clone(), movie,
                     )
                 },
             )

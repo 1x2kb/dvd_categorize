@@ -11,19 +11,27 @@ use web_sys::ReadableStreamDefaultReader;
 
 use crate::components::generated_movie_grid::GeneratedMovieGrid;
 
+/// Represents a title chip with optional skip_correction flag
+#[derive(Clone, Debug, PartialEq)]
+struct TitleChip {
+    title: String,
+    skip_correction: bool,
+}
+
 /// Request to generate movies from titles
 #[derive(Serialize)]
 struct GenerateMoviesRequest {
     titles: Vec<String>,
     model: Option<String>,
     positions: Vec<usize>,
+    skip_correction: Vec<bool>,
 }
 
 #[component]
 pub fn MoviePrompt() -> Element {
     let mut title_input = use_signal(|| "".to_string());
-    let mut chips: Signal<Vec<String>> = use_signal(Vec::new);
-    let mut selected_model = use_signal(|| "".to_string());
+    let mut chips: Signal<Vec<TitleChip>> = use_signal(Vec::new);
+    let mut selected_model = use_signal(|| None::<String>);
     let mut available_models = use_signal(Vec::<AvailableModel>::new);
     let mut is_loading = use_signal(|| false);
     let mut error_message = use_signal(|| None::<String>);
@@ -63,18 +71,6 @@ pub fn MoviePrompt() -> Element {
                                 .json::<AvailableModelsResponse>()
                                 .await
                             {
-                                if let Some(first_model) = parsed
-                                    .models
-                                    .first()
-                                {
-                                    if selected_model().is_empty() {
-                                        selected_model.set(
-                                            first_model
-                                                .name
-                                                .clone(),
-                                        );
-                                    }
-                                }
                                 available_models.set(parsed.models);
                             }
                         }
@@ -104,15 +100,16 @@ pub fn MoviePrompt() -> Element {
         if new_titles.is_empty() {
             return;
         }
-        let added: Vec<String> = new_titles
+        let added: Vec<TitleChip> = new_titles
             .into_iter()
             .filter(
                 |t| {
                     !chips()
                         .iter()
-                        .any(|c| c.to_lowercase() == t.to_lowercase())
+                        .any(|c| c.title.to_lowercase() == t.to_lowercase())
                 },
             )
+            .map(|title| TitleChip { title, skip_correction: false })
             .collect();
         if added.is_empty() {
             title_input.set("".to_string());
@@ -164,15 +161,23 @@ pub fn MoviePrompt() -> Element {
                 label { class: "input-label", "AI Model:" }
                 select {
                     class: "model-select",
-                    onchange: move |e| selected_model.set(e.value()),
-                    if !available_models().iter().any(|m| m.name == selected_model()) && !selected_model().is_empty() {
-                        option { value: "{selected_model}", selected: true, "{selected_model}" }
-                    }
+                    value: match selected_model() {
+                        Some(ref model) => model.clone(),
+                        None => "default".to_string(),
+                    },
+                    onchange: move |e| {
+                        let value = e.value();
+                        if value == "default" {
+                            selected_model.set(None);
+                        } else {
+                            selected_model.set(Some(value));
+                        }
+                    },
+                    option { value: "default", "Default" }
                     for model in available_models().iter() {
                         option {
                             key: "{model.name}",
                             value: "{model.name}",
-                            selected: model.name == selected_model(),
                             "{model.name}"
                         }
                     }
@@ -203,7 +208,7 @@ pub fn MoviePrompt() -> Element {
                                 let raw = title_input();
                                 let new_titles: Vec<String> = raw.split('|').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
                                 if new_titles.is_empty() { return; }
-                                let added: Vec<String> = new_titles.into_iter().filter(|t| !chips().iter().any(|c| c.to_lowercase() == t.to_lowercase())).collect();
+                                let added: Vec<TitleChip> = new_titles.into_iter().filter(|t| !chips().iter().any(|c| c.title.to_lowercase() == t.to_lowercase())).map(|title| TitleChip { title, skip_correction: false }).collect();
                                 if added.is_empty() { title_input.set("".to_string()); return; }
                                 chips.with_mut(|v| v.extend(added));
                                 title_input.set("".to_string());
@@ -221,8 +226,16 @@ pub fn MoviePrompt() -> Element {
                 if !chips().is_empty() {
                     div { class: "title-chip-list",
                         for (idx, chip) in chips().iter().enumerate() {
-                            div { class: "title-chip", key: "{idx}-{chip}",
-                                span { class: "title-chip-text", "{chip}" }
+                            div { 
+                                class: if chip.skip_correction { "title-chip title-chip-locked" } else { "title-chip" },
+                                key: "{idx}-{chip.title}",
+                                button {
+                                    class: "title-chip-lock",
+                                    title: if chip.skip_correction { "Unlock title correction" } else { "Lock title (disable AI correction)" },
+                                    onclick: move |_| chips.with_mut(|v| { v[idx].skip_correction = !v[idx].skip_correction; }),
+                                    if chip.skip_correction { "🔒" } else { "🔓" }
+                                }
+                                span { class: "title-chip-text", "{chip.title}" }
                                 button {
                                     class: "title-chip-remove",
                                     title: "Remove",
@@ -265,9 +278,10 @@ pub fn MoviePrompt() -> Element {
                         GeneratedMovieGrid {
                             movies: generated_movies,
                             pending_inputs: pending_inputs,
-                            input_titles: chips(),
+                            input_titles: chips().iter().map(|c| c.title.clone()).collect(),
+                            skip_correction: chips().iter().map(|c| c.skip_correction).collect(),
                             generate_trigger: generate_trigger,
-                            model: selected_model(),
+                            model: selected_model().unwrap_or_default(),
                             on_movies_changed: move |updated: Vec<AiMovieData>| {
                                 generated_movies.set(updated);
                             },
@@ -284,13 +298,13 @@ pub fn MoviePrompt() -> Element {
                             on_dismiss_toast: move |id: u32| dismiss_toast(id),
                             on_title_corrected: move |(original, corrected): (String, String)| {
                                 chips.with_mut(|v| {
-                                    if let Some(c) = v.iter_mut().find(|c| c.to_lowercase() == original.to_lowercase()) {
-                                        *c = corrected;
+                                    if let Some(c) = v.iter_mut().find(|c| c.title.to_lowercase() == original.to_lowercase()) {
+                                        c.title = corrected;
                                     }
                                 });
                             },
                             on_title_removed: move |title: String| {
-                                chips.with_mut(|v| v.retain(|c| c.to_lowercase() != title.to_lowercase()));
+                                chips.with_mut(|v| v.retain(|c| c.title.to_lowercase() != title.to_lowercase()));
                             },
                         }
                     }
@@ -325,6 +339,7 @@ pub async fn get_api_base() -> Result<String, String> {
 pub async fn stream_generated_movies(
     titles: Vec<String>,
     positions: Vec<usize>,
+    skip_correction: Vec<bool>,
     model: String,
     mut on_movie: impl FnMut(AiMovieData, Option<NeedsInputReason>),
     on_done: impl FnOnce(),
@@ -346,6 +361,7 @@ pub async fn stream_generated_movies(
         titles,
         model: if model.is_empty() { None } else { Some(model) },
         positions,
+        skip_correction,
     };
 
     let body = match serde_json::to_string(&request) {

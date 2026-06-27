@@ -10,60 +10,76 @@ use axum::{
 use axum_macros::debug_handler;
 use database::{
     traits::{
-        ChatSessions, GetAllMovies, GetMovieById, GetMoviesByReleaseYear, GetRecentMovies,
+        ChatSessions, GetAllMovies, GetGenreStats, GetMovieById, GetMoviesByReleaseYear,
+        GetMoviesByYearStats, GetRecentMovies, GetStatsOverview, GetTopActorsStats,
         GetUniqueLocations, GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies,
-        Repository, SearchMoviesStructured,
+        Repository, UpdateMovieLocation,
     },
-    FullMovie, MovieRepo, SearchRequest,
+    FullMovie, MovieId, MovieRepo, SearchRequest,
 };
+#[cfg(feature = "postgres")]
+use database::insert_full_movies;
+#[cfg(feature = "postgres")]
+use database::traits::SearchMoviesStructured;
 use log::{debug, error, info, warn};
 use models::{
-    CsvInput, GenerateStreamEvent, NeedsInputReason, ScoredMovie, TitleValidation,
+    ChatSessionWithPreview, CsvInput, GenerateMoviesRequest, GenerateStreamEvent,
+    NeedsInputReason, RandomMoviesQuery, RecentReleasesQuery, ScoredMovie, TitleValidation,
     ValidateTitlesRequest,
 };
 use ollama_rs::error::OllamaError;
-use prompts::{DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
-use serde::{Deserialize, Serialize};
+use prompts::{db_msg_to_ollama, model_msg_to_ollama, DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
+use futures_util::StreamExt;
 
 use std::{sync::Arc, time::Instant};
 
-/// Request to generate movie data from titles using AI
-#[derive(Debug, Deserialize)]
-pub struct GenerateMoviesRequest {
-    pub titles: Vec<String>,
-    pub model: Option<String>,
-    /// Chip positions parallel to titles, for ordering on the frontend.
-    #[serde(default)]
-    pub positions: Vec<usize>,
-}
-use tokio_stream::StreamExt;
 use tracing::instrument;
 
 // Movie search functionality module
 pub mod movie_search;
 pub use movie_search::extract_entities;
 
-fn db_msg_to_ollama(msg: &models::ChatMessage) -> ollama_rs::generation::chat::ChatMessage {
-    match msg.role.as_str() {
-        "user" => ollama_rs::generation::chat::ChatMessage::user(msg.content.clone()),
-        _ => ollama_rs::generation::chat::ChatMessage::assistant(msg.content.clone()),
+async fn correct_titles_with_fallback(
+    titles: &[String],
+    model: Option<&str>,
+    skip_correction: &[bool],
+) -> Vec<String> {
+    // If all titles should skip correction, return them as-is
+    if skip_correction.len() == titles.len() && skip_correction.iter().all(|&skip| skip) {
+        debug!("All titles marked to skip correction, returning originals");
+        return titles.to_vec();
     }
-}
 
-fn model_msg_to_ollama(msg: &models::RoledMessage) -> ollama_rs::generation::chat::ChatMessage {
-    match msg.role {
-        models::Role::User => ollama_rs::generation::chat::ChatMessage::user(msg.message.clone()),
-        models::Role::Ai => {
-            ollama_rs::generation::chat::ChatMessage::assistant(msg.message.clone())
+    // Separate titles that need correction from those that should be skipped
+    let mut titles_to_correct = Vec::new();
+    let mut indices_to_correct = Vec::new();
+    
+    for (i, title) in titles.iter().enumerate() {
+        let should_skip = skip_correction.get(i).copied().unwrap_or(false);
+        if !should_skip {
+            titles_to_correct.push(title.clone());
+            indices_to_correct.push(i);
         }
     }
-}
 
-async fn correct_titles_with_fallback(titles: &[String], model: Option<&str>) -> Vec<String> {
-    match ai_chat::correct_movie_titles(titles, model).await {
-        Ok(c) if c.len() == titles.len() => {
+    // If no titles need correction, return originals
+    if titles_to_correct.is_empty() {
+        debug!("No titles need correction, returning originals");
+        return titles.to_vec();
+    }
+
+    debug!(
+        "Correcting {} of {} titles (skipping {} titles)",
+        titles_to_correct.len(),
+        titles.len(),
+        titles.len() - titles_to_correct.len()
+    );
+
+    // Get corrections for titles that need it
+    let corrected_subset = match ai_chat::correct_movie_titles(&titles_to_correct, model).await {
+        Ok(c) if c.len() == titles_to_correct.len() => {
             info!("Title correction succeeded for {} titles", c.len());
-            for (orig, corr) in titles.iter().zip(c.iter()) {
+            for (orig, corr) in titles_to_correct.iter().zip(c.iter()) {
                 if orig != corr {
                     debug!("  '{}' -> '{}'", orig, corr);
                 }
@@ -73,53 +89,29 @@ async fn correct_titles_with_fallback(titles: &[String], model: Option<&str>) ->
         Ok(c) => {
             error!(
                 "Title correction returned wrong count: sent {}, got {}",
-                titles.len(),
+                titles_to_correct.len(),
                 c.len()
             );
-            titles.to_vec()
+            titles_to_correct.clone()
         }
         Err(e) => {
             error!("Title correction failed: {}. Falling back to originals.", e);
-            titles.to_vec()
+            titles_to_correct.clone()
         }
+    };
+
+    // Merge corrected titles back with skipped titles
+    let mut result = titles.to_vec();
+    for (idx, corrected_idx) in indices_to_correct.iter().enumerate() {
+        result[*corrected_idx] = corrected_subset[idx].clone();
     }
+
+    result
 }
 
 #[derive(Clone)]
 pub struct DbState {
     pub movie_repo: database::MovieRepo,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RandomMoviesQuery {
-    #[serde(default = "default_count")]
-    pub count: i64,
-}
-
-fn default_count() -> i64 {
-    3
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RecentReleasesQuery {
-    #[serde(default = "default_min_year")]
-    pub min_year: i32,
-    #[serde(default = "default_max_year")]
-    pub max_year: i32,
-    #[serde(default = "default_limit")]
-    pub limit: i64,
-}
-
-fn default_min_year() -> i32 {
-    2020
-}
-
-fn default_max_year() -> i32 {
-    2026 // Update this periodically or make it configurable
-}
-
-fn default_limit() -> i64 {
-    50
 }
 
 #[instrument]
@@ -166,6 +158,7 @@ pub async fn get_dvd(
 where
     MovieRepo: GetMovieById,
 {
+    let id_clone = id.clone();
     match state
         .movie_repo
         .get_by_id(id)
@@ -175,7 +168,7 @@ where
         Err(e) => {
             error!(
                 "Failed to get movie {}: {}",
-                id, e
+                id_clone, e
             );
             Json(None)
         }
@@ -471,12 +464,15 @@ where
                 extracted.structured_query.description_keywords
             );
 
-            // Search movies from DB using structured query
+            // Search movies from DB using structured query (postgres only)
+            #[cfg(feature = "postgres")]
             let results = db_state
                 .movie_repo
                 .search_structured(&extracted.structured_query)
                 .await
                 .unwrap_or_default();
+            #[cfg(not(feature = "postgres"))]
+            let results: Vec<FullMovie> = Vec::new(); // MongoDB: TODO implement structured search
 
             info!(
                 "RAG search returned {} movies, injecting {} into context",
@@ -824,6 +820,7 @@ pub async fn preview_csv(
     ))
 }
 
+#[cfg(feature = "postgres")]
 #[instrument(skip(state))]
 #[debug_handler]
 pub async fn parse_csv(
@@ -892,26 +889,16 @@ pub async fn parse_csv(
         movie.embedding = Some(emb);
     }
 
-    if let Err(e) = database::insert_full_movies(
+    // Insert movies using postgres-specific method
+    if let Err(e) = insert_full_movies(
         movies,
-        state
-            .movie_repo
-            .pool(),
+        state.movie_repo.pool(),
     )
     .await
     {
-        let error = format!(
-            "Failed to insert movies: {}",
-            e
-        );
-        error!(
-            "{}",
-            error
-        );
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            error,
-        ));
+        let error = format!("Failed to insert movies: {}", e);
+        error!("{}", error);
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
     }
 
     info!("Movies saved successfully");
@@ -921,11 +908,12 @@ pub async fn parse_csv(
     ))
 }
 
-/// Generate movie data from titles using AI structured output
-#[instrument]
+#[cfg(feature = "mongodb")]
+#[instrument(skip(state))]
 #[debug_handler]
-pub async fn generate_movies(
-    Json(request): Json<GenerateMoviesRequest>,
+pub async fn parse_csv(
+    State(state): State<DbState>,
+    Json(value): Json<CsvInput>,
 ) -> Result<
     impl IntoResponse,
     (
@@ -933,63 +921,147 @@ pub async fn generate_movies(
         String,
     ),
 > {
-    info!(
-        "Generating movie data for {} titles",
-        request
-            .titles
-            .len()
-    );
-
-    if request
-        .titles
-        .is_empty()
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "No movie titles provided".to_string(),
-        ));
-    }
-
-    #[cfg(feature = "internet")]
-    let generate_result = ai_chat::generate_movies_structured_with_rag(
-        &request.titles,
-        request
-            .model
-            .as_deref(),
-    )
-    .await;
-    #[cfg(not(feature = "internet"))]
-    let generate_result = ai_chat::generate_movies_structured(
-        &request.titles,
-        request
-            .model
-            .as_deref(),
-    )
-    .await;
-
-    match generate_result {
-        Ok(ai_movies) => {
-            info!(
-                "Successfully generated {} movies",
-                ai_movies.len()
-            );
-            Ok((
-                StatusCode::OK,
-                Json(ai_movies),
-            ))
-        }
+    let mut movies = match csv_utils::parse_csv(
+        value
+            .input
+            .as_bytes(),
+    ) {
+        Ok(movies) => movies,
         Err(e) => {
-            error!(
-                "Failed to generate movies: {}",
+            let error = format!(
+                "Failed to parse CSV: {}",
                 e
             );
-            Err((
+            error!(
+                "{}",
+                error
+            );
+            return Err((
+                StatusCode::BAD_REQUEST,
+                error,
+            ));
+        }
+    };
+
+    let embedding_texts: Vec<String> = movies
+        .iter()
+        .map(|m| m.embedding_str())
+        .collect();
+
+    let embeddings = ai_chat::get_embeddings(
+        embedding_texts,
+        ai_chat::EMBEDDING_MODEL,
+    )
+    .await
+    .map_err(
+        |e| {
+            let error = format!(
+                "Failed to generate embeddings: {}",
+                e
+            );
+            error!(
+                "{}",
+                error
+            );
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "Failed to generate movies: {}",
-                    e
-                ),
-            ))
+                error,
+            )
+        },
+    )?;
+
+    for (movie, emb) in movies
+        .iter_mut()
+        .zip(embeddings)
+    {
+        movie.embedding = Some(emb);
+    }
+
+    // Insert one at a time since insert() handles FullMovie properly
+    for movie in movies {
+        if let Err(e) = state.movie_repo.insert(movie).await {
+            let error = format!("Failed to insert movie: {}", e);
+            error!("{}", error);
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
+        }
+    }
+
+    info!("Movies saved successfully");
+    Ok((
+        StatusCode::OK,
+        Json(()),
+    ))
+}
+
+/// Generate movies with internet-enabled RAG, pipelining scraping and inference.
+/// Scrapes Wikipedia for movie N+1 while Ollama generates movie N.
+#[cfg(feature = "internet")]
+#[instrument(skip(clean_titles))]
+async fn generate_with_internet(
+    clean_titles: Vec<(String, usize)>,
+    model: Option<&str>,
+) -> impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> + use<'_> {
+    async_stream::stream! {
+        let mut titles_iter = clean_titles.into_iter().peekable();
+        let mut next_context: Option<((String, usize), String)> = if let Some(first) = titles_iter.next() {
+            let ctx = ai_chat::scrape_single(&first.0).await;
+            Some((first, ctx))
+        } else {
+            None
+        };
+        
+        while let Some(((title, pos), context)) = next_context.take() {
+            let next_title = titles_iter.next();
+            let (result, scraped_next) = tokio::join!(
+                ai_chat::generate_movie_with_context(&title, context, model),
+                async {
+                    match &next_title {
+                        Some(t) => Some(ai_chat::scrape_single(&t.0).await),
+                        None => None,
+                    }
+                }
+            );
+            next_context = next_title.zip(scraped_next);
+            
+            match result {
+                Ok(mut movie) => {
+                    movie.input_title = Some(title);
+                    movie.position = pos;
+                    let event = GenerateStreamEvent::Movie(movie);
+                    match serde_json::to_string(&event) {
+                        Ok(json) => yield Ok::<axum::response::sse::Event, std::convert::Infallible>(axum::response::sse::Event::default().data(json)),
+                        Err(e) => yield Ok::<axum::response::sse::Event, std::convert::Infallible>(axum::response::sse::Event::default().event("error").data(e.to_string())),
+                    }
+                },
+                Err(e) => yield Ok::<axum::response::sse::Event, std::convert::Infallible>(axum::response::sse::Event::default().event("error").data(e)),
+            }
+        }
+    }
+}
+
+/// Generate movies without internet, using only Ollama's training data.
+/// Generates one movie at a time sequentially.
+#[cfg(not(feature = "internet"))]
+#[instrument(skip(clean_titles))]
+async fn generate_without_internet(
+    clean_titles: Vec<(String, usize)>,
+    model: Option<&str>,
+) -> impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> + use<'_> {
+    async_stream::stream! {
+        for (title, pos) in clean_titles {
+            let result = ai_chat::generate_movie_single(&title, model).await;
+            match result {
+                Ok(mut movie) => {
+                    movie.input_title = Some(title);
+                    movie.position = pos;
+                    let event = GenerateStreamEvent::Movie(movie);
+                    match serde_json::to_string(&event) {
+                        Ok(json) => yield Ok::<axum::response::sse::Event, std::convert::Infallible>(axum::response::sse::Event::default().data(json)),
+                        Err(e) => yield Ok::<axum::response::sse::Event, std::convert::Infallible>(axum::response::sse::Event::default().event("error").data(e.to_string())),
+                    }
+                },
+                Err(e) => yield Ok::<axum::response::sse::Event, std::convert::Infallible>(axum::response::sse::Event::default().event("error").data(e)),
+            }
         }
     }
 }
@@ -1047,6 +1119,7 @@ pub async fn validate_titles(
     let corrected = correct_titles_with_fallback(
         &request.titles,
         request.model.as_deref(),
+        &request.skip_correction,
     )
     .await;
 
@@ -1190,7 +1263,7 @@ pub async fn generate_movies_stream(
     );
 
     // Validate + correct titles upfront — one fast Ollama call.
-    let corrected = correct_titles_with_fallback(&titles, model.as_deref()).await;
+    let corrected = correct_titles_with_fallback(&titles, model.as_deref(), &request.skip_correction).await;
 
     let strip_the = |s: &str| {
         s.strip_prefix("the ")
@@ -1341,58 +1414,22 @@ pub async fn generate_movies_stream(
             }
         }
 
-        // Pipeline-generate clean titles.
+        // Generate movies using appropriate method based on internet feature
         #[cfg(feature = "internet")]
         {
-            let mut titles_iter = clean_titles.into_iter().peekable();
-            let mut next_context: Option<((String, usize), String)> = if let Some(first) = titles_iter.next() {
-                let ctx = ai_chat::scrape_single(&first.0).await;
-                Some((first, ctx))
-            } else {
-                None
-            };
-            while let Some(((title, pos), context)) = next_context.take() {
-                let next_title = titles_iter.next();
-                let (result, scraped_next) = tokio::join!(
-                    ai_chat::generate_movie_with_context(&title, context, model.as_deref()),
-                    async {
-                        match &next_title {
-                            Some(t) => Some(ai_chat::scrape_single(&t.0).await),
-                            None => None,
-                        }
-                    }
-                );
-                next_context = next_title.zip(scraped_next);
-                match result {
-                    Ok(mut movie) => {
-                        movie.input_title = Some(title);
-                        movie.position = pos;
-                        let event = GenerateStreamEvent::Movie(movie);
-                        match serde_json::to_string(&event) {
-                            Ok(json) => yield Ok::<Event, std::convert::Infallible>(Event::default().data(json)),
-                            Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e.to_string())),
-                        }
-                    },
-                    Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e)),
-                }
+            let generation_stream = generate_with_internet(clean_titles, model.as_deref()).await;
+            tokio::pin!(generation_stream);
+            while let Some(event) = generation_stream.next().await {
+                yield event;
             }
         }
+        
         #[cfg(not(feature = "internet"))]
         {
-            for (title, pos) in clean_titles {
-                let result = ai_chat::generate_movie_single(&title, model.as_deref()).await;
-                match result {
-                    Ok(mut movie) => {
-                        movie.input_title = Some(title);
-                        movie.position = pos;
-                        let event = GenerateStreamEvent::Movie(movie);
-                        match serde_json::to_string(&event) {
-                            Ok(json) => yield Ok::<Event, std::convert::Infallible>(Event::default().data(json)),
-                            Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e.to_string())),
-                        }
-                    },
-                    Err(e) => yield Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(e)),
-                }
+            let generation_stream = generate_without_internet(clean_titles, model.as_deref()).await;
+            tokio::pin!(generation_stream);
+            while let Some(event) = generation_stream.next().await {
+                yield event;
             }
         }
         yield Ok::<Event, std::convert::Infallible>(Event::default().event("done").data(""));
@@ -1494,12 +1531,12 @@ async fn combined_search(
     }
 
     // Create lookup map from our Arc
-    let movies_map: std::collections::HashMap<i32, &FullMovie> = all_movies
+    let movies_map: std::collections::HashMap<MovieId, &FullMovie> = all_movies
         .iter()
         .map(
             |movie| {
                 (
-                    movie.id, movie,
+                    movie.id.clone(), movie,
                 )
             },
         )
@@ -1647,10 +1684,10 @@ pub async fn get_matching_movies(
 }
 
 /// Update the location of a movie
-#[instrument(skip(_state))]
+#[instrument(skip(state))]
 #[debug_handler]
 pub async fn update_movie_location(
-    State(_state): State<DbState>,
+    State(state): State<DbState>,
     Json(request): Json<models::UpdateLocationRequest>,
 ) -> Result<
     Json<()>,
@@ -1664,12 +1701,14 @@ pub async fn update_movie_location(
         request.movie_id, request.location
     );
 
-    // Update the database
-    database::update_movie_location(
-        request.movie_id,
-        request.location,
-    )
-    .await
+    // Update the database via the active repository backend
+    state
+        .movie_repo
+        .update_location(
+            request.movie_id,
+            request.location,
+        )
+        .await
     .map_err(
         |e| {
             error!(
@@ -2016,18 +2055,21 @@ where
 /// Get stats overview
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsOverview> {
+pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsOverview>
+where
+    MovieRepo: database::GetStatsOverview,
+{
     info!("Getting stats overview");
 
-    let movies = match state
+    let (total_movies, total_directors, total_actors) = match state
         .movie_repo
-        .get_all()
+        .get_stats_overview()
         .await
     {
-        Ok(movies) => movies,
+        Ok(stats) => stats,
         Err(e) => {
             error!(
-                "Failed to get movies for stats: {}",
+                "Failed to get stats overview: {}",
                 e
             );
             return Json(
@@ -2040,42 +2082,11 @@ pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsO
         }
     };
 
-    use std::collections::HashSet;
-
-    let total_movies = movies.len();
-    let total_directors = movies
-        .iter()
-        .filter_map(
-            |m| {
-                m.director
-                    .as_ref()
-            },
-        )
-        .map(
-            |d| {
-                d.name
-                    .clone()
-            },
-        )
-        .collect::<HashSet<_>>()
-        .len();
-    let total_actors = movies
-        .iter()
-        .flat_map(|m| &m.actors)
-        .map(
-            |a| {
-                a.name
-                    .clone()
-            },
-        )
-        .collect::<HashSet<_>>()
-        .len();
-
     Json(
         models::StatsOverview {
-            total_movies,
-            total_directors,
-            total_actors,
+            total_movies: total_movies as usize,
+            total_directors: total_directors as usize,
+            total_actors: total_actors as usize,
         },
     )
 }
@@ -2083,18 +2094,21 @@ pub async fn stats_overview(State(state): State<DbState>) -> Json<models::StatsO
 /// Get movies by year data (top 15 years by count)
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn stats_movies_by_year(State(state): State<DbState>) -> Json<models::BarChartData> {
+pub async fn stats_movies_by_year(State(state): State<DbState>) -> Json<models::BarChartData>
+where
+    MovieRepo: database::GetMoviesByYearStats,
+{
     info!("Getting movies by year stats");
 
-    let movies = match state
+    let year_data = match state
         .movie_repo
-        .get_all()
+        .get_movies_by_year(15)
         .await
     {
-        Ok(movies) => movies,
+        Ok(data) => data,
         Err(e) => {
             error!(
-                "Failed to get movies for stats: {}",
+                "Failed to get movies by year: {}",
                 e
             );
             return Json(
@@ -2105,29 +2119,6 @@ pub async fn stats_movies_by_year(State(state): State<DbState>) -> Json<models::
             );
         }
     };
-
-    use std::collections::HashMap;
-
-    let mut year_counts: HashMap<i32, usize> = HashMap::new();
-    for movie in movies {
-        if movie.release_year > 0 {
-            *year_counts
-                .entry(movie.release_year)
-                .or_insert(0) += 1;
-        }
-    }
-
-    let mut year_data: Vec<(
-        i32,
-        usize,
-    )> = year_counts
-        .into_iter()
-        .collect();
-    // Sort by count descending and take top 15
-    year_data.sort_by(|(_, a), (_, b)| b.cmp(a));
-    year_data.truncate(15);
-    // Re-sort by year for display
-    year_data.sort_by_key(|(year, _)| *year);
 
     let labels: Vec<String> = year_data
         .iter()
@@ -2144,70 +2135,33 @@ pub async fn stats_movies_by_year(State(state): State<DbState>) -> Json<models::
 /// Get genre distribution data (top 10)
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn stats_genres(State(state): State<DbState>) -> Json<models::PieChartData> {
+pub async fn stats_genres(State(state): State<DbState>) -> Json<models::PieChartData>
+where
+    MovieRepo: database::GetGenreStats,
+{
     info!("Getting genre distribution stats");
 
-    let movies = match state
+    let genre_data = match state
         .movie_repo
-        .get_all()
+        .get_genre_counts(10)
         .await
     {
-        Ok(movies) => movies,
+        Ok(data) => data,
         Err(e) => {
             error!(
-                "Failed to get movies for stats: {}",
+                "Failed to get genre stats: {}",
                 e
             );
             return Json(models::PieChartData { data: vec![] });
         }
     };
 
-    use std::collections::HashMap;
-
-    let mut genre_counts: HashMap<String, usize> = HashMap::new();
-    for movie in movies {
-        for genre in &movie.genres {
-            *genre_counts
-                .entry(genre.clone())
-                .or_insert(0) += 1;
-        }
-    }
-
-    let mut data: Vec<(
-        String,
-        f64,
-    )> = genre_counts
+    let data: Vec<(String, f64)> = genre_data
         .into_iter()
-        .map(
-            |(genre, count)| {
-                (
-                    genre,
-                    count as f64,
-                )
-            },
-        )
+        .map(|(genre, count)| (genre, count as f64))
         .collect();
 
-    // Sort by count descending and take top 10
-    data.sort_by(
-        |(_, a), (_, b)| {
-            b.partial_cmp(a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        },
-    );
-    data.truncate(10);
-
     Json(models::PieChartData { data })
-}
-
-/// Chat session with first query preview
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatSessionWithPreview {
-    pub id: i32,
-    pub session_id: String,
-    pub created_at: String,
-    pub updated_at: String,
-    pub first_query: Option<String>,
 }
 
 /// List all chat sessions ordered by most recent
@@ -2261,6 +2215,7 @@ where
 
                 sessions_with_preview.push(
                     ChatSessionWithPreview {
+                        #[cfg(feature = "postgres")]
                         id: session.id,
                         session_id: session
                             .session_id
@@ -2358,8 +2313,7 @@ where
 
 /// Structured search endpoint — filter by actors, genres, directors, title/description keywords.
 /// Used by `ai_tools` over HTTP so tools avoid diesel-async (which isn't Sync for ollama-rs).
-#[instrument(skip(db_state, query), fields(actors = query.actors.len(), genres = query.genres.len(), directors = query.directors.len()))]
-#[debug_handler]
+#[cfg(feature = "postgres")]
 pub async fn structured_search(
     State(db_state): State<DbState>,
     Json(query): Json<models::StructuredQuery>,
@@ -2418,7 +2372,7 @@ where
         "Saving generated movie to catalog: {}",
         movie.title
     );
-    let mut full_movie = movie.to_full_movie(0);
+    let mut full_movie = movie.to_full_movie();
 
     let embedding_text = format!(
         "{} {} {}",
@@ -2473,18 +2427,21 @@ where
 /// Get top actors data
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn stats_top_actors(State(state): State<DbState>) -> Json<models::BarChartData> {
+pub async fn stats_top_actors(State(state): State<DbState>) -> Json<models::BarChartData>
+where
+    MovieRepo: database::GetTopActorsStats,
+{
     info!("Getting top actors stats");
 
-    let movies = match state
+    let actor_data = match state
         .movie_repo
-        .get_all()
+        .get_top_actors(10)
         .await
     {
-        Ok(movies) => movies,
+        Ok(data) => data,
         Err(e) => {
             error!(
-                "Failed to get movies for stats: {}",
+                "Failed to get top actors stats: {}",
                 e
             );
             return Json(
@@ -2495,30 +2452,6 @@ pub async fn stats_top_actors(State(state): State<DbState>) -> Json<models::BarC
             );
         }
     };
-
-    use std::collections::HashMap;
-
-    let mut actor_counts: HashMap<String, usize> = HashMap::new();
-    for movie in movies {
-        for actor in &movie.actors {
-            *actor_counts
-                .entry(
-                    actor
-                        .name
-                        .clone(),
-                )
-                .or_insert(0) += 1;
-        }
-    }
-
-    let mut actor_data: Vec<(
-        String,
-        usize,
-    )> = actor_counts
-        .into_iter()
-        .collect();
-    actor_data.sort_by(|(_, a), (_, b)| b.cmp(a));
-    actor_data.truncate(10);
 
     let labels: Vec<String> = actor_data
         .iter()

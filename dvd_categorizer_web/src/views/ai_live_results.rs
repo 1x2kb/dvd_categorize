@@ -526,7 +526,7 @@ pub fn AiLiveResults() -> Element {
             MovieGrid {
                 movies: Arc::clone(&movies()),
                 search_mode: search_mode(),
-                on_location_updated: move |(movie_id, new_location): (i32, String)| {
+                on_location_updated: move |(movie_id, new_location): (models::MovieId, String)| {
                     log::info!("Location update callback called for movie {} with location: {}", movie_id, new_location);
                     // Update the movie in the list
                     let current_movies = movies();

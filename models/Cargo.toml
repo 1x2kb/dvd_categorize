@@ -6,10 +6,17 @@ description = "Shared domain models and types with feature-gated functionality f
 readme = "README.md"
 
 [features]
-postgres = ["diesel", "pgvector", "chrono", "uuid"]
+postgres = ["diesel", "pgvector", "chrono", "uuid", "postgres-types"]
+# Postgres field structure without diesel - for frontend to deserialize API responses
+postgres-types = []
+# MongoDB backend: shares the vector-similarity data shape but selects the
+# document-store id representation. Mutually exclusive with `postgres`.
+mongodb = ["vector-similarity", "mongodb-types"]
+# MongoDB field structure without dependencies - for frontend to deserialize API responses
+mongodb-types = []
 testing = ["rand"]
 ai = ["ollama-rs"]
-vector-similarity = []
+vector-similarity = ["chrono", "uuid"]
 text-matching = []
 
 [dependencies]

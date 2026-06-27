@@ -46,6 +46,8 @@
 pub mod embedding;
 #[cfg(any(test, feature = "testing"))]
 pub mod mocks;
+#[cfg(feature = "mongodb")]
+pub mod mongodb;
 pub mod postgres;
 pub mod traits;
 
@@ -100,13 +102,21 @@ pub use postgres::full_movies::insert_full_movies;
 pub use postgres::movies::update_movie_location;
 pub use traits::*;
 
+// `postgres` and `mongodb` select different backends (and different
+// `FullMovie::id` representations), so exactly one may be enabled at a time.
+#[cfg(all(feature = "postgres", feature = "mongodb"))]
+compile_error!("features `postgres` and `mongodb` are mutually exclusive");
+
 /// Type alias for the active movie repository backend.
 /// 
 /// This resolves to a concrete type at compile time based on which database feature is enabled.
 /// - `postgres` feature: Uses `PostgresMovieRepository`
-/// - Future: `mongodb` feature will use `MongoMovieRepository`
+/// - `mongodb` feature: Uses `MongoMovieRepository`
 #[cfg(feature = "postgres")]
 pub type MovieRepo = postgres::PostgresMovieRepository;
+
+#[cfg(feature = "mongodb")]
+pub type MovieRepo = mongodb::MongoMovieRepository;
 
 /// Type alias for database operation results
 pub type DbResult<T> = Result<T, DatabaseError>;

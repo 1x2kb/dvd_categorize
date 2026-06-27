@@ -9,8 +9,8 @@ readme = "README.md"
 internet = ["reqwest", "scraper"]
 
 [dependencies]
-database = { path = "../database" }
-models = { path = "../models", features = ["postgres", "ai"] }
+database = { path = "../database", default-features = false }
+models = { path = "../models", features = ["vector-similarity", "ai"] }
 ollama-rs.workspace = true
 tokio-stream = "0.1"
 prompts = { path = "../prompts" }

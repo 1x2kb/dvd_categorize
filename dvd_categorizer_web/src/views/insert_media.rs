@@ -88,16 +88,26 @@ pub fn InsertMedia() -> Element {
                                     Ok(response) => {
                                         let status = response.status();
                                         if status.is_success() {
-                                            match response.json::<Vec<FullMovie>>().await {
-                                                Ok(dvds) => {
-                                                    let count = dvds.len();
-                                                    let movie_word = if count == 1 { "movie" } else { "movies" };
-                                                    dvd_data.set(Arc::new(dvds));
-                                                    is_previewing.set(true);
-                                                    error_message.set(Some(format!("✓ Successfully loaded {} {} for preview", count, movie_word)));
+                                            // Get text first to log full response on error
+                                            match response.text().await {
+                                                Ok(text) => {
+                                                    match serde_json::from_str::<Vec<FullMovie>>(&text) {
+                                                        Ok(dvds) => {
+                                                            let count = dvds.len();
+                                                            let movie_word = if count == 1 { "movie" } else { "movies" };
+                                                            dvd_data.set(Arc::new(dvds));
+                                                            is_previewing.set(true);
+                                                            error_message.set(Some(format!("✓ Successfully loaded {} {} for preview", count, movie_word)));
+                                                        },
+                                                        Err(e) => {
+                                                            let err_msg = format!("Serde error: {}\n\nResponse body:\n{}", e, text);
+                                                            error!("{}", err_msg);
+                                                            error_message.set(Some(err_msg));
+                                                        }
+                                                    }
                                                 },
                                                 Err(e) => {
-                                                    let err_msg = format!("Error parsing response: {}", e);
+                                                    let err_msg = format!("Failed to get response text: {}", e);
                                                     error!("{}", err_msg);
                                                     error_message.set(Some(err_msg));
                                                 }
@@ -217,7 +227,7 @@ pub fn InsertMedia() -> Element {
                                 MovieGrid {
                                     movies: scored_movies,
                                     search_mode: models::SearchMode::Both,
-                                    on_location_updated: move |(movie_id, new_location): (i32, String)| {
+                                    on_location_updated: move |(movie_id, new_location): (models::MovieId, String)| {
                                         // Update the movie in the dvd_data list
                                         let current_dvds = dvd_data();
                                         let updated_dvds: Vec<FullMovie> = current_dvds

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use models::{
     Actor, FullMovie, Movie, NewActor, NewDirector, NewMovie, NewMovieActor, NewMovieGenre,
-    StructuredQuery,
+    ScoredMovie, StructuredQuery,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -180,7 +180,7 @@ impl SearchMoviesByEmbedding for MockMovieRepository {
         &self,
         _embedding: Vec<f32>,
         limit: i64,
-    ) -> Result<Vec<FullMovie>, DatabaseError> {
+    ) -> Result<Vec<ScoredMovie>, DatabaseError> {
         Ok(
             self.movies
                 .read()
@@ -188,6 +188,10 @@ impl SearchMoviesByEmbedding for MockMovieRepository {
                 .values()
                 .take(limit as usize)
                 .cloned()
+                .map(|movie| ScoredMovie {
+                    movie,
+                    vector_score: 0.0,
+                })
                 .collect(),
         )
     }

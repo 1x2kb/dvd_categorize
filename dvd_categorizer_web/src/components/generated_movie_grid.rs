@@ -85,6 +85,8 @@ pub struct GeneratedMovieGridProps {
     >,
     /// The raw titles the user typed — parallel to movies.
     pub input_titles: Vec<String>,
+    /// Flags parallel to input_titles indicating whether to skip AI title correction.
+    pub skip_correction: Vec<bool>,
     /// Incremented by the parent to trigger a re-generate of unlocked cards.
     pub generate_trigger: ReadSignal<u32>,
     /// Model name to use for generation.
@@ -131,6 +133,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
     let model_auto = props
         .model
         .clone();
+    let skip_correction_auto = props.skip_correction.clone();
     let on_error_auto = props.on_error;
     let on_loading_auto = props.on_loading;
     use_effect(
@@ -203,6 +206,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                 let on_loading = on_loading_auto;
                 let on_toast = on_toast_auto;
                 let mut next_id = next_toast_id;
+                let skip_corr = skip_correction_auto.clone();
                 spawn(
                     async move {
                         on_loading.call(true);
@@ -214,9 +218,14 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                             .iter()
                             .map(|(i, _)| *i)
                             .collect();
+                        let skip_correction: Vec<bool> = resolved
+                            .iter()
+                            .map(|(i, _)| skip_corr.get(*i).copied().unwrap_or(false))
+                            .collect();
                         stream_generated_movies(
                             titles,
                             positions,
+                            skip_correction,
                             model,
                             move |movie, _| {
                                 let pos = movie.position;
@@ -255,6 +264,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
     let model = props
         .model
         .clone();
+    let skip_correction_regen = props.skip_correction.clone();
     let on_loading = props.on_loading;
     let on_error = props.on_error;
     let on_pending = props.on_pending;
@@ -364,6 +374,7 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
             on_loading.call(true);
 
             let model = model.clone();
+            let skip_corr = skip_correction_regen.clone();
             let on_error = on_error;
             let on_loading = on_loading;
             let on_toast_cb = on_toast_pending;
@@ -378,9 +389,14 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                         .iter()
                         .map(|(i, _)| *i)
                         .collect();
+                    let skip_correction: Vec<bool> = to_generate
+                        .iter()
+                        .map(|(i, _)| skip_corr.get(*i).copied().unwrap_or(false))
+                        .collect();
                     stream_generated_movies(
                         titles,
                         positions,
+                        skip_correction,
                         model,
                         move |movie, pending| {
                             let pos = movie.position;

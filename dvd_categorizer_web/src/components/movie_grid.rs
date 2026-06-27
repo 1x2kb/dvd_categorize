@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local, NaiveDateTime};
 use dioxus::prelude::*;
-use models::ScoredMovie;
+use models::{MovieId, ScoredMovie};
 use std::sync::Arc;
 
 use crate::components::location_editor::LocationEditor;
@@ -10,7 +10,7 @@ pub struct SingleMovieCardProps {
     pub scored_movie: ScoredMovie,
     pub search_mode: models::SearchMode,
     pub on_location_updated: EventHandler<(
-        i32,
+        MovieId,
         String,
     )>,
 }
@@ -20,7 +20,8 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
     let movie_id = props
         .scored_movie
         .movie
-        .id;
+        .id
+        .clone();
 
     rsx! {
         div {
@@ -174,7 +175,7 @@ pub struct MovieGridProps {
     pub movies: Arc<Vec<ScoredMovie>>,
     pub search_mode: models::SearchMode,
     pub on_location_updated: EventHandler<(
-        i32,
+        MovieId,
         String,
     )>,
 }
