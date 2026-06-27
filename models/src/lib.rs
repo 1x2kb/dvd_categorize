@@ -737,11 +737,8 @@ impl
 pub enum SearchMode {
     #[default]
     Text,
-    #[cfg(feature = "ai")]
     Vector,
-    #[cfg(feature = "ai")]
     Both,
-    #[cfg(feature = "ai")]
     Structured,
 }
 

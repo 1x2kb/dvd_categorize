@@ -1,6 +1,8 @@
 pub mod actor_chart;
 pub mod browse_bar;
+#[cfg(feature = "ai-backend")]
 pub mod generated_movie_card;
+#[cfg(feature = "ai-backend")]
 pub mod generated_movie_grid;
 pub mod genre_chart;
 pub mod location_editor;

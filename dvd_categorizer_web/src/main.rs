@@ -7,9 +7,12 @@ pub mod views;
 use dotenvy::dotenv;
 use log::error;
 pub use views::insert_media::InsertMedia;
+#[cfg(feature = "ai-backend")]
 pub use views::model_pull::ModelPull;
+#[cfg(feature = "ai-backend")]
 pub use views::movie_generator::MoviePrompt;
 pub use views::stats::Stats;
+#[cfg(feature = "ai-backend")]
 pub use views::{ai_chat::AiChat, ai_live_results::AiLiveResults};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -91,6 +94,52 @@ fn AiLiveRedirect() -> Element {
     rsx! { div {} }
 }
 
+// Stub components when ai-backend feature is disabled
+#[cfg(not(feature = "ai-backend"))]
+#[component]
+fn AiChat() -> Element {
+    rsx! {
+        div { class: "error-message",
+            h1 { "AI Features Not Available" }
+            p { "This application was compiled without AI backend support." }
+            p { "Please use a build with the 'ai-backend' feature enabled." }
+        }
+    }
+}
+
+#[cfg(not(feature = "ai-backend"))]
+#[component]
+fn AiLiveResults() -> Element {
+    rsx! {
+        div { class: "error-message",
+            h1 { "AI Features Not Available" }
+            p { "This application was compiled without AI backend support." }
+        }
+    }
+}
+
+#[cfg(not(feature = "ai-backend"))]
+#[component]
+fn ModelPull() -> Element {
+    rsx! {
+        div { class: "error-message",
+            h1 { "AI Features Not Available" }
+            p { "This application was compiled without AI backend support." }
+        }
+    }
+}
+
+#[cfg(not(feature = "ai-backend"))]
+#[component]
+fn MoviePrompt() -> Element {
+    rsx! {
+        div { class: "error-message",
+            h1 { "AI Features Not Available" }
+            p { "This application was compiled without AI backend support." }
+        }
+    }
+}
+
 /// Shared navbar component.
 #[component]
 fn Navbar() -> Element {
@@ -98,23 +147,10 @@ fn Navbar() -> Element {
         div {
             id: "navbar",
             Link {
-                to: Route::AiChat {},
-                "Chat"
+                to: Route::InsertMedia {}, "Insert"
             }
             Link {
-                to: Route::AiLiveResults {}, "Live"
-            }
-            Link {
-                    to: Route::InsertMedia {}, "Insert"
-            }
-            Link {
-                    to: Route::MoviePrompt {}, "Generator"
-            }
-            Link {
-                    to: Route::ModelPull {}, "Models"
-            }
-            Link {
-                    to: Route::Stats {}, "Stats"
+                to: Route::Stats {}, "Stats"
             }
         }
 

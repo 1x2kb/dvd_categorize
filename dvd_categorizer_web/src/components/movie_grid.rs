@@ -51,14 +51,9 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                         {
                             match props.search_mode {
                                 models::SearchMode::Text => format!("Text Score: {:.2}", props.scored_movie.vector_score),
-                                #[cfg(feature = "ai-backend")]
                                 models::SearchMode::Vector => format!("Vector Score: {:.4}", props.scored_movie.vector_score),
-                                #[cfg(feature = "ai-backend")]
                                 models::SearchMode::Both => format!("RRF Score: {:.4}", props.scored_movie.vector_score),
-                                #[cfg(feature = "ai-backend")]
                                 models::SearchMode::Structured => format!("Relevance: {:.4}", props.scored_movie.vector_score),
-                                #[cfg(not(feature = "ai-backend"))]
-                                _ => format!("Score: {:.2}", props.scored_movie.vector_score),
                             }
                         }
                     }

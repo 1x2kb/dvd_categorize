@@ -61,7 +61,7 @@ Both commands automatically commit any fixes applied by clippy.
 #### `dvd_categorizer_web`
 - `web` - Web/WASM target (default)
 - `desktop` - Desktop application target
-- `ai-backend` - Enable AI-powered search modes (Vector, Both, Structured)
+- `ai-backend` - Enable AI-powered UI pages (Chat, Live, Generator, Models) and search modes. When disabled, these routes show error messages and are hidden from the navbar.
 
 ## Why Two Scripts?
 
