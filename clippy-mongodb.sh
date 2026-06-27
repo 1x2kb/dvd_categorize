@@ -8,7 +8,7 @@ echo "Running clippy --fix for MongoDB backend..."
 echo ""
 
 cargo clippy --workspace --no-default-features \
-  --features database/mongodb,dvd_catalog_api/mongodb,ai_chat/internet,dvd_categorizer_web/web,csv_utils/vector-similarity \
+  --features database/mongodb,dvd_catalog_api/mongodb,dvd_catalog_api/ai,ai_chat/internet,dvd_categorizer_web/web,csv_utils/vector-similarity \
   --fix
 
 echo ""

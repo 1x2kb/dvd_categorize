@@ -733,10 +733,11 @@ impl
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]
 pub enum SearchMode {
-    Text,
-    Vector,
     #[default]
-    Both,
+    Text,
+    #[cfg(feature = "ai")]
+    Vector,
+    #[cfg(feature = "ai")]
     Structured,
 }
 
