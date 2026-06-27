@@ -18,6 +18,8 @@ enum Route {
     #[layout(Navbar)]
         #[route("/ai/chat")]
         AiChat {},
+        #[route("/ai/live")]
+        AiLiveRedirect {},
         #[redirect("/", || Route::AiLiveResults {})]
         #[route("/live")]
         AiLiveResults {},
@@ -78,6 +80,15 @@ fn App() -> Element {
         document::Link { rel: "stylesheet", href: STATS_CSS }
         Router::<Route> {}
     }
+}
+
+#[component]
+fn AiLiveRedirect() -> Element {
+    let nav = navigator();
+    use_effect(move || {
+        nav.replace(Route::AiLiveResults {});
+    });
+    rsx! { div {} }
 }
 
 /// Shared navbar component.
