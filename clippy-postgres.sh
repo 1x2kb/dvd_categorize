@@ -9,7 +9,7 @@ echo ""
 
 cargo clippy --workspace --no-default-features \
   --features database/postgres,dvd_catalog_api/postgres,csv_utils/postgres,ai_chat/internet,dvd_categorizer_web/web \
-  --all-targets --fix
+  --fix
 
 echo ""
 echo "✅ Clippy fixes applied!"
