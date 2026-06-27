@@ -11,7 +11,11 @@ COPY . .
 
 # Build the web application for production
 ARG FEATURES=postgres-api
-RUN dx build --release --package dvd_categorizer_web --features ${FEATURES}
+RUN echo "========================================" && \
+    echo "Building Web Frontend (PRODUCTION) with features:" && \
+    echo "  ${FEATURES}" && \
+    echo "========================================" && \
+    dx build --release --package dvd_categorizer_web --no-default-features --features ${FEATURES}
 
 # Runtime stage with nginx
 FROM nginx:alpine

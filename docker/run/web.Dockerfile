@@ -16,5 +16,11 @@ COPY . .
 ARG FEATURES=postgres-api
 ENV WEB_FEATURES=${FEATURES}
 
+# Echo features for debugging
+RUN echo "========================================" && \
+    echo "Building Web Frontend with features:" && \
+    echo "  ${FEATURES}" && \
+    echo "========================================"
+
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["sh", "-c", "dx serve -p dvd_categorizer_web --addr 0.0.0.0 --port 8080 --features ${WEB_FEATURES}"]
+CMD ["sh", "-c", "echo 'Starting dx serve with features: ${WEB_FEATURES}' && dx serve -p dvd_categorizer_web --addr 0.0.0.0 --port 8080 --no-default-features --features ${WEB_FEATURES}"]

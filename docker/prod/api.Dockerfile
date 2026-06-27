@@ -8,7 +8,11 @@ COPY . .
 
 # Build the API application
 ARG FEATURES=internet,ai,postgres
-RUN cargo build --release --package dvd_catalog_api --no-default-features --features ${FEATURES}
+RUN echo "========================================" && \
+    echo "Building API (PRODUCTION) with features:" && \
+    echo "  ${FEATURES}" && \
+    echo "========================================" && \
+    cargo build --release --package dvd_catalog_api --no-default-features --features ${FEATURES}
 
 # Runtime stage
 FROM debian:bookworm-slim

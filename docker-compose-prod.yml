@@ -173,7 +173,7 @@ services:
       context: .
       dockerfile: docker/prod/web.Dockerfile
       args:
-        FEATURES: postgres-api,ai-backend
+        FEATURES: web,postgres-api,ai-backend
     ports:
       - "0.0.0.0:8080:8080"  # Web UI port
     environment:
@@ -188,7 +188,7 @@ services:
       context: .
       dockerfile: docker/prod/web.Dockerfile
       args:
-        FEATURES: mongodb-api,ai-backend
+        FEATURES: web,mongodb-api,ai-backend
     ports:
       - "0.0.0.0:8080:8080"  # Web UI port
     environment:
