@@ -1,14 +1,14 @@
 # DVD Categorize
 
-A full-stack Rust application for cataloging, searching, and exploring a personal DVD/movie collection. Features AI-powered search with multiple search modes, a conversational AI chat assistant, vector embeddings for semantic search, and a modern dark-themed web UI — all fully containerized with Docker Compose.
+A full-stack Rust application for cataloging, searching, and exploring a personal DVD/movie collection. Features AI-powered search with multiple search modes, a conversational AI chat assistant, vector embeddings for semantic search, and a modern dark-themed web UI — all fully containerized with Docker Compose. Supports both PostgreSQL and MongoDB backends with Qdrant for vector search.
 
 ## Features
 
 - **Multi-Mode Search** — Four distinct search strategies:
   - **Text** — Keyword-based entity extraction matching against titles, actors, directors, and genres
-  - **Vector** — Semantic search using AI-generated vector embeddings (pgvector + `nomic-embed-text`)
+  - **Vector** — Semantic search using AI-generated vector embeddings (Qdrant + `nomic-embed-text`)
   - **Hybrid (Both)** — Combines text and vector results via Reciprocal Rank Fusion (RRF)
-  - **Structured** — AI parses natural language into structured criteria, then builds type-safe Diesel queries
+  - **Structured** — AI parses natural language into structured criteria, then builds database-specific queries (Diesel for PostgreSQL, MongoDB query operators for MongoDB)
 - **AI Chat** — Conversational assistant that answers questions about your movie collection using Ollama LLMs
 - **Query Enhancement** — Short queries are automatically expanded by AI for better semantic search results
 - **CSV Import/Export** — Import movies from CSV via the web UI, export your collection back to CSV
@@ -23,7 +23,8 @@ A full-stack Rust application for cataloging, searching, and exploring a persona
 ```mermaid
 flowchart TD
     Web["dvd_categorizer_web<br/>(Dioxus/WASM)<br/>:8080"] -->|HTTP| API["dvd_catalog_api<br/>(Axum REST API)<br/>:3000"]
-    API --> PG["PostgreSQL + pgvector<br/>:5432"]
+    API --> DB["PostgreSQL :5432<br/>OR<br/>MongoDB :27017"]
+    API --> Qdrant["Qdrant (Vector DB)<br/>:6333"]
     API --> Ollama["Ollama (LLMs)<br/>:11434"]
 ```
 
@@ -34,8 +35,8 @@ flowchart TD
 | `dvd_catalog_api` | Axum HTTP API server — routes, search orchestration, caching |
 | `dvd_categorizer_web` | Dioxus frontend UI compiled to WASM |
 | `ai_chat` | Ollama integration — chat, embeddings, query enhancement, structured query parsing |
-| `database` | Diesel async PostgreSQL layer — CRUD, vector search, structured search |
-| `models` | Shared domain types, Diesel schema, feature-gated traits (postgres, ai, vector-similarity, text-matching) |
+| `database` | Database abstraction layer with PostgreSQL (Diesel async) and MongoDB support — CRUD, vector search (via Qdrant), structured search |
+| `models` | Shared domain types, Diesel schema (PostgreSQL), feature-gated traits (postgres, mongodb, ai, vector-similarity, text-matching) |
 | `csv_utils` | CSV parsing and serialization for movie data |
 | `csv_reader` | *(deprecated)* CLI binary for bulk-loading CSV into the database — replaced by the Insert page |
 | `categorizer_utilities` | Miscellaneous utility functions |
@@ -44,10 +45,12 @@ flowchart TD
 
 | Service | Image / Build | Purpose |
 |---------|--------------|---------|
-| `postgres` | `pgvector/pgvector:pg17` | PostgreSQL 17 with pgvector extension for vector similarity search |
+| `postgres` | `postgres:17-alpine` | PostgreSQL 17 (when using PostgreSQL backend) |
+| `mongodb` | `mongo:latest` | MongoDB (when using MongoDB backend) |
+| `qdrant` | `qdrant/qdrant:latest` | Vector database for semantic search embeddings |
 | `ollama` | `ollama/ollama:rocm` | Local LLM inference (ROCm/AMD GPU accelerated) |
-| `redis` | `redis:alpine` | Caching layer | NOTE: Redis is not used currently, but will be used for caching user chat history.
-| `diesel_migrate` | Custom (Diesel CLI) | Runs database migrations on startup |
+| `redis` | `redis:alpine` | Caching layer (not currently used, reserved for future chat history caching) |
+| `diesel_migrate` | Custom (Diesel CLI) | Runs database migrations on startup (PostgreSQL only) |
 | `dvd_categorize_api` | Custom (Rust/Axum) | REST API server |
 | `dvd_categorize_web` | Custom (Dioxus/WASM) | Frontend web server |
 | `loki` | `grafana/loki:latest` | Log aggregation and storage |
@@ -129,7 +132,7 @@ docker compose up
 | **API** | http://localhost:3000 |
 | **Ollama** | http://localhost:11434 |
 | **Qdrant Dashboard** | http://localhost:6333/dashboard |
-| **Mongo Express** | http://localhost:8082 |
+| **Mongo Express** | http://localhost:8082 (MongoDB backend only) |
 
 ### Monitoring & Observability
 
@@ -182,13 +185,17 @@ docker compose up
 Pure keyword matching with entity extraction. Parses the query to identify titles, actors, directors, and genres from the existing collection, then scores movies by match quality. Best for exact name lookups.
 
 ### Vector
-Generates a vector embedding of the query using `nomic-embed-text`, then finds the closest movies by cosine similarity in pgvector. Short queries are enhanced by AI first. Best for thematic or conceptual searches (e.g., "movies about redemption").
+Generates a vector embedding of the query using `nomic-embed-text`, then finds the closest movies by cosine similarity in Qdrant vector database. Short queries are enhanced by AI first. Best for thematic or conceptual searches (e.g., "movies about redemption").
 
 ### Both (Hybrid)
 Runs Text and Vector searches in parallel, then fuses results using Reciprocal Rank Fusion (RRF). Exact title matches receive a score boost to ensure they rank first. Best general-purpose mode.
 
 ### Structured
-AI parses the natural language query into structured JSON (actors, directors, genres, title keywords, description keywords), then builds type-safe Diesel queries with proper table joins. No SQL is ever generated by the AI. Best for specific multi-criteria searches (e.g., "brad pitt action adventure movies").
+AI parses the natural language query into structured JSON (actors, directors, genres, title keywords, description keywords), then builds database-specific queries:
+- **PostgreSQL**: Type-safe Diesel queries with proper table joins
+- **MongoDB**: MongoDB query operators with `$regex`, `$and`, and `$or` filters
+
+No SQL or query strings are ever generated by the AI — only structured criteria that are safely translated to database queries. Best for specific multi-criteria searches (e.g., "brad pitt action adventure movies").
 
 See [STRUCTURED_SEARCH.md](Documentation/Explantion/STRUCTURED_SEARCH.md) for detailed documentation on the structured search mode.
 
@@ -223,10 +230,11 @@ Each workspace crate has its own README with detailed documentation:
 ## Tech Stack
 
 - **Language** — Rust (2021 edition, workspace with 8 crates)
-- **Backend** — Axum, Tokio, Diesel (async), Tower
+- **Backend** — Axum, Tokio, Diesel (async for PostgreSQL), MongoDB driver, Tower
 - **Frontend** — Dioxus 0.7 (compiled to WASM), TailwindCSS
-- **Database** — PostgreSQL 17 + pgvector
+- **Database** — PostgreSQL 17 OR MongoDB (feature-gated)
+- **Vector Database** — Qdrant (paired with mongo only) for semantic search embeddings
 - **AI/LLM** — Ollama (via ollama-rs), ROCm GPU acceleration
 - **Embeddings** — nomic-embed-text model
 - **Containerization** — Docker Compose with multi-stage builds
-- **Caching** — Redis, in-memory Arc<RwLock<>> for movie data
+- **Caching** — Redis (reserved for future use), in-memory Arc<RwLock<>> for movie data
