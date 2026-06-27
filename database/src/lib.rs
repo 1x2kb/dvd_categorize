@@ -81,7 +81,6 @@ pub mod structured_search {
     pub use crate::postgres::structured_search::*;
 }
 
-use std::env;
 use std::error::Error;
 use std::fmt::Display;
 

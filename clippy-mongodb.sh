@@ -1,6 +1,5 @@
 #!/bin/bash
 # Clippy fix for MongoDB backend
-# Automatically commits any fixes applied by clippy
 
 set -e
 
@@ -17,10 +16,7 @@ echo ""
 
 # Check if clippy made any changes
 if ! git diff --quiet; then
-    echo "📝 Clippy made changes. Committing..."
-    git add -u
-    git commit -m "Apply clippy fixes (MongoDB backend)"
-    echo "✅ Changes committed!"
+    echo "📝 Clippy made changes. Review them with 'git diff'"
 else
     echo "✨ No changes needed - code is already clean!"
 fi

@@ -876,9 +876,9 @@ pub mod inner {
             let mut new_docs = Vec::new();
             let mut embeddings_to_insert = Vec::new(); // (index, embedding) pairs
 
-            for (_idx, (movie, embedding)) in movies
+            for (movie, embedding) in movies
                 .into_iter()
-                .enumerate()
+                
             {
                 if existing_names.contains(&movie.name) {
                     debug!(
