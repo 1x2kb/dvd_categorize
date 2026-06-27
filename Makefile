@@ -1,4 +1,4 @@
-.PHONY: e2e e2e-install e2e-fast e2e-ai e2e-mock e2e-headed e2e-ui e2e-report
+.PHONY: e2e e2e-install e2e-fast e2e-ai e2e-mock e2e-headed e2e-ui e2e-report clippy-all clippy-quick
 
 E2E_DIR := e2e
 
@@ -25,3 +25,9 @@ e2e-ui: e2e-install
 
 e2e-report:
 	cd $(E2E_DIR) && npm run report
+
+clippy-all:
+	./clippy-all.sh
+
+clippy-quick:
+	./clippy-quick.sh
