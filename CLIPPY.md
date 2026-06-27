@@ -4,17 +4,21 @@ This workspace uses feature flags extensively, with mutually exclusive backends 
 
 ## Quick Start
 
-```bash
-# Fast check covering main feature combinations (recommended for CI/pre-commit)
-make clippy-quick
-# or
-./clippy-quick.sh
+Run clippy for each backend separately:
 
-# Comprehensive check of all feature combinations (slower but thorough)
-make clippy-all
+```bash
+# PostgreSQL backend (most common)
+make clippy-postgres
 # or
-./clippy-all.sh
+./clippy-postgres.sh
+
+# MongoDB backend
+make clippy-mongodb
+# or
+./clippy-mongodb.sh
 ```
+
+Both commands automatically commit any fixes applied by clippy.
 
 ## Feature Structure
 
@@ -60,39 +64,37 @@ make clippy-all
 
 ## Why Two Scripts?
 
-### `clippy-quick.sh` (Recommended)
-- Checks workspace with both `postgres` and `mongodb` backends
-- Covers most common feature combinations
-- Faster execution (~2-3 minutes)
-- Ideal for CI pipelines and pre-commit hooks
+The workspace has mutually exclusive backends:
 
-### `clippy-all.sh` (Comprehensive)
-- Checks every crate individually with all feature permutations
-- Ensures 100% code coverage across all feature gates
-- Slower execution (~5-10 minutes)
-- Use before major releases or when modifying feature-gated code
+### `clippy-postgres.sh`
+- Checks entire workspace with PostgreSQL backend enabled
+- Enables: `database/postgres`, `dvd_catalog_api/postgres`, `csv_utils/postgres`, `ai_chat/internet`, `dvd_categorizer_web/web`
+- Use for production code (PostgreSQL is the primary backend)
+
+### `clippy-mongodb.sh`
+- Checks entire workspace with MongoDB backend enabled
+- Enables: `database/mongodb`, `ai_chat/internet`, `dvd_categorizer_web/web`
+- Use when working on MongoDB backend features
+
+**Run both scripts** to ensure all code paths are checked, since the backends are mutually exclusive.
 
 ## CI Integration
 
-Add to your CI pipeline:
+Add to your CI pipeline to check both backends:
 
 ```yaml
-- name: Clippy (all features)
-  run: make clippy-quick
-```
+- name: Clippy (PostgreSQL)
+  run: make clippy-postgres
 
-For thorough checks on release branches:
-
-```yaml
-- name: Clippy (comprehensive)
-  run: make clippy-all
+- name: Clippy (MongoDB)
+  run: make clippy-mongodb
 ```
 
 ## Common Issues
 
 ### "Cannot find X in this scope"
 - Code is behind a feature flag that isn't enabled
-- Run `clippy-all.sh` to check all feature combinations
+- Run both `clippy-postgres.sh` and `clippy-mongodb.sh` to check all backend code paths
 
 ### "Unused import" warnings
 - Import may only be used in certain feature configurations
@@ -100,4 +102,4 @@ For thorough checks on release branches:
 
 ### Mutually exclusive features
 - Never enable both `postgres` and `mongodb` in the same build
-- The scripts handle this automatically
+- The scripts handle this automatically by running them separately
