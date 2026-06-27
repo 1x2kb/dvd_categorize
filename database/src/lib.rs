@@ -318,7 +318,7 @@ pub(crate) async fn load_actors_and_genres(
 /// or if the pool cannot be created.
 #[cfg(feature = "postgres")]
 pub async fn get_connection_pool() -> Result<Pool<AsyncPgConnection>, DatabaseError> {
-    let database_url = env::var("DATABASE_URL").map_err(
+    let database_url = std::env::var("DATABASE_URL").map_err(
         |_| {
             DatabaseError::ConnectionError(
                 diesel::ConnectionError::BadConnection(
