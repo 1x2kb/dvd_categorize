@@ -1,14 +1,9 @@
-volumes:
-  pgdata:
-  mongo_data:
-  qdrant_data:
-  ollama_data: # Note that this must be created manually. Prevents it from being deleted on docker compose down -v since models are very large files.
-    external: true
-
 services:
   postgres-prod:
     profiles: ["postgres"]
     image: pgvector/pgvector:pg17
+    networks:
+      - dvd-net-prod
     environment:
       POSTGRES_USER: app_user
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-strongpassword}
@@ -27,6 +22,8 @@ services:
   mongodb-prod:
     profiles: ["mongodb"]
     image: mongo:7
+    networks:
+      - dvd-net-prod
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-mongopassword}
@@ -42,22 +39,37 @@ services:
       retries: 5
     restart: unless-stopped
 
+  mongo-express-prod:
+    profiles: ["mongodb"]
+    image: mongo-express:latest
+    networks:
+      - dvd-net-prod
+    ports:
+      - "8083:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD:-mongopassword}
+      ME_CONFIG_MONGODB_URL: mongodb://admin:${MONGO_PASSWORD:-mongopassword}@mongodb-prod:27017/
+      ME_CONFIG_BASICAUTH: false
+    depends_on:
+      - mongodb-prod
+    restart: unless-stopped
+
   qdrant-prod:
     image: qdrant/qdrant:latest
+    networks:
+      - dvd-net-prod
     ports:
       - "6335:6333"  # HTTP API
       - "6336:6334"  # gRPC
     volumes:
       - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
     restart: unless-stopped
 
   ollama-prod:
     image: ollama/ollama:rocm
+    networks:
+      - dvd-net-prod
     ports:
       - "0.0.0.0:11435:11434"
     volumes:
@@ -83,6 +95,8 @@ services:
 
   diesel_migrate-prod:
     profiles: ["postgres"]
+    networks:
+      - dvd-net-prod
     build:
       context: .
       dockerfile: docker/prod/diesel.Dockerfile
@@ -95,9 +109,13 @@ services:
 
   dvd_categorize_api-prod:
     profiles: ["postgres"]
+    networks:
+      - dvd-net-prod
     build:
       context: .
       dockerfile: docker/prod/api.Dockerfile
+      args:
+        FEATURES: internet,ai,postgres
     ports:
       - "0.0.0.0:3000:3000"  # API port
     depends_on:
@@ -106,7 +124,7 @@ services:
       postgres-prod:
         condition: service_healthy
       qdrant-prod:
-        condition: service_healthy
+        condition: service_started
     environment:
       DATABASE_URL: postgres://app_user:${POSTGRES_PASSWORD:-strongpassword}@postgres-prod:5432/app_db
       QDRANT_URL: http://qdrant-prod:6334
@@ -121,6 +139,8 @@ services:
 
   dvd_categorize_api-prod-mongo:
     profiles: ["mongodb"]
+    networks:
+      - dvd-net-prod
     build:
       context: .
       dockerfile: docker/prod/api.Dockerfile
@@ -132,7 +152,7 @@ services:
       mongodb-prod:
         condition: service_healthy
       qdrant-prod:
-        condition: service_healthy
+        condition: service_started
     environment:
       MONGODB_URI: mongodb://admin:${MONGO_PASSWORD:-mongopassword}@mongodb-prod:27017/dvd_catalog?authSource=admin
       QDRANT_URL: http://qdrant-prod:6334
@@ -146,11 +166,42 @@ services:
     restart: unless-stopped
 
   dvd_categorize_web-prod:
+    profiles: ["postgres"]
+    networks:
+      - dvd-net-prod
     build:
       context: .
       dockerfile: docker/prod/web.Dockerfile
+      args:
+        FEATURES: postgres-api
     ports:
       - "0.0.0.0:8080:8080"  # Web UI port
     environment:
       VITE_API_BASE_URL: http://localhost:3000
     restart: unless-stopped
+
+  dvd_categorize_web-prod-mongo:
+    profiles: ["mongodb"]
+    networks:
+      - dvd-net-prod
+    build:
+      context: .
+      dockerfile: docker/prod/web.Dockerfile
+      args:
+        FEATURES: mongodb-api
+    ports:
+      - "0.0.0.0:8080:8080"  # Web UI port
+    environment:
+      VITE_API_BASE_URL: http://localhost:3000
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  mongo_data:
+  qdrant_data:
+  ollama_data:
+    external: true
+
+networks:
+  dvd-net-prod:
+    driver: bridge
