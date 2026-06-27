@@ -8,13 +8,6 @@ set -e
 echo "Running clippy --fix across all feature combinations..."
 echo ""
 
-# Check for uncommitted changes before starting
-if ! git diff-index --quiet HEAD --; then
-    echo "⚠️  Warning: You have uncommitted changes."
-    echo "Clippy fixes will be committed separately from your existing changes."
-    echo ""
-fi
-
 # Base clippy for crates without features
 echo "=== Fixing crates without features ==="
 cargo clippy -p categorizer_utilities --all-targets --fix

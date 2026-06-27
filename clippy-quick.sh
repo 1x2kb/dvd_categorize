@@ -8,13 +8,6 @@ set -e
 echo "Running quick clippy --fix on main feature combinations..."
 echo ""
 
-# Check for uncommitted changes before starting
-if ! git diff-index --quiet HEAD --; then
-    echo "⚠️  Warning: You have uncommitted changes."
-    echo "Clippy fixes will be committed separately from your existing changes."
-    echo ""
-fi
-
 # Fix workspace with postgres backend (most common)
 echo "=== Fixing workspace with postgres backend ==="
 cargo clippy --workspace --no-default-features \
