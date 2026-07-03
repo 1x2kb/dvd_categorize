@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { waitForAppReady } from '@utils/app';
 
 /**
- * Insert Media page (`/moives/new` — yes, the route has a typo).
+ * Insert Media page (`/movies/new`).
  *
  * Scope for M2: only verify the static UI renders and is interactive.
  * Actual CSV submission is deferred until we have a safe strategy
@@ -10,7 +10,7 @@ import { waitForAppReady } from '@utils/app';
  */
 test.describe('insert media', () => {
   test('page renders CSV form controls', async ({ page }) => {
-    await page.goto('/moives/new');
+    await page.goto('/movies/new');
     await waitForAppReady(page);
 
     // Instructions block.

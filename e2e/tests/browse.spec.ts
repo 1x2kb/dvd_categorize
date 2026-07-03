@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { LivePage } from '@pages/live.page';
 
 /**
- * Non-AI browse buttons on the /ai/live page.
+ * Non-AI browse buttons on the /live page.
  *
  * These buttons hit plain DB endpoints (random, recent, unknown-location)
  * and do not call Ollama. Safe to run in the `fast` project.

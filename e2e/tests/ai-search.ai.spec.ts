@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { LivePage } from '@pages/live.page';
+import { smallestOllamaModel } from '@utils/ollama';
 
 /**
  * AI live search — validates UI flows that depend on Ollama, without
@@ -33,7 +34,7 @@ test.describe('AI live search', () => {
     const live = new LivePage(page);
     await live.goto();
 
-    await live.selectMode('Both');
+    await live.selectMode('Hybrid');
     await live.runSearch('classic comedy');
     await live.waitForSearchComplete();
 
@@ -51,8 +52,8 @@ test.describe('AI live search', () => {
     const models = await live.availableModels();
     expect(models.length, 'at least one Ollama model must be pulled').toBeGreaterThan(0);
 
-    // Pilot the UI: pick the first available model (not the default sentinel).
-    const chosen = models[0];
+    // Pick the smallest pulled model to keep the test fast.
+    const chosen = await smallestOllamaModel();
     await live.modelSelect().selectOption(chosen);
     await expect(live.modelSelect()).toHaveValue(chosen);
 
