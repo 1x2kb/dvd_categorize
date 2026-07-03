@@ -22,7 +22,7 @@ npx playwright install chromium
 
 ## Running
 
-From the repo root:
+From the repo root (run `make e2e-install` first if you haven't already):
 
 ```bash
 make e2e           # run everything: fast + mock + ai
@@ -30,6 +30,7 @@ make e2e-fast      # non-AI tests only (parallel, quick)
 make e2e-ai        # tests that hit real Ollama (serial, slow)
 make e2e-mock      # tests that mock backend responses (parallel, quick)
 make e2e-headed    # run `fast` suite in a visible browser
+make e2e-ui        # Playwright interactive UI mode
 make e2e-report    # open the last HTML report
 ```
 
@@ -44,6 +45,19 @@ npm run test:ui       # Playwright UI mode (interactive)
 npm run codegen       # record a new test
 ```
 
+## Test inventory
+
+| File | Project | What it covers |
+|---|---|---|
+| `smoke.spec.ts` | fast | App shell loads, nav links present, API reachable |
+| `movies-list.spec.ts` | fast | `/live` route loads and renders the browse bar |
+| `browse.spec.ts` | fast | Recently Added / Recent Releases / Random / Unknown Location buttons load results |
+| `location.spec.ts` | fast | Location dropdown populates; Movies by Location completes without error |
+| `insert-media.spec.ts` | fast | `/movies/new` CSV form renders and accepts input |
+| `model-pull.mock.spec.ts` | mock | Pull Model UI: correct request body, success/error display, button disabled while in-flight |
+| `ai-chat.ai.spec.ts` | ai | Chat view renders; sending a message produces an AI reply bubble |
+| `ai-search.ai.spec.ts` | ai | Vector/Both mode searches complete; model dropdown change works |
+
 ## Project layout
 
 ```
@@ -53,8 +67,8 @@ e2e/
     *.spec.ts              # fast project (default)
     *.ai.spec.ts           # ai project (serial, real Ollama)
     *.mock.spec.ts         # mock project (page.route stubs)
-  utils/                   # shared helpers
-  pages/                   # page objects (added as suites grow)
+  pages/                   # page objects (LivePage, ChatPage)
+  utils/                   # shared helpers (waitForAppReady, expectNoConsoleErrors)
 ```
 
 ## Conventions

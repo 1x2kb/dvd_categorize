@@ -1,7 +1,7 @@
 import { Page, Locator, expect } from '@playwright/test';
 
 /**
- * Page object for the AI Live Results page (`/ai/live`).
+ * Page object for the Live Results page (`/live`).
  *
  * Exposes selectors for the non-AI browse bar, location dropdown, and
  * the shared movie grid. AI-specific selectors (model dropdown, search
@@ -15,7 +15,7 @@ export class LivePage {
   }
 
   async goto(): Promise<void> {
-    await this.page.goto('/ai/live');
+    await this.page.goto('/live');
     // Wait for the browse bar to render — it's the earliest stable anchor.
     await expect(this.browseLabel()).toBeVisible({ timeout: 30_000 });
   }
@@ -119,11 +119,11 @@ export class LivePage {
 
   // Search mode + model selector ----------------------------------------------
 
-  modeButton(name: 'Text' | 'Both' | 'Vector' | 'Structured'): Locator {
+  modeButton(name: 'Text' | 'Hybrid' | 'Vector' | 'Structured'): Locator {
     return this.page.locator('.mode-button', { hasText: new RegExp(`^${name}$`) });
   }
 
-  async selectMode(name: 'Text' | 'Both' | 'Vector' | 'Structured'): Promise<void> {
+  async selectMode(name: 'Text' | 'Hybrid' | 'Vector' | 'Structured'): Promise<void> {
     await this.modeButton(name).click();
   }
 

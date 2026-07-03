@@ -35,7 +35,7 @@ export class ChatPage {
   }
 
   loadingBubble(): Locator {
-    return this.page.locator('.message-bubble.loading');
+    return this.page.locator('.message-bubble.streaming');
   }
 
   async send(message: string): Promise<void> {
@@ -53,7 +53,7 @@ export class ChatPage {
 
     // At least one AI bubble exists with non-empty text.
     await expect(this.aiMessages()).toHaveCount(1, { timeout });
-    const content = this.aiMessages().first().locator('.message-content');
+    const content = this.aiMessages().first().locator('.markdown-content');
     await expect(content).not.toBeEmpty();
   }
 }
