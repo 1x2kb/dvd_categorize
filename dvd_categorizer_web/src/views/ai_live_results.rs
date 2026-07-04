@@ -4,7 +4,7 @@ use crate::components::search_bar::SearchBar;
 use crate::components::search_mode_selector::SearchModeSelector;
 use crate::components::{ActorChart, GenreChart, RandomOdds, YearChart};
 use dioxus::prelude::*;
-use models::{BarChartData, PieChartData, ScoredMovie, SearchRequest, StatsOverview};
+use models::{BarChartData, PieChartData, RandomSelectionOddsResponse, ScoredMovie, SearchRequest};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -242,10 +242,11 @@ pub fn LiveResults() -> Element {
             values: vec![],
         },
     );
-    let mut stats_overview = use_signal(|| StatsOverview {
+    let mut random_odds = use_signal(|| RandomSelectionOddsResponse {
         total_movies: 0,
-        total_directors: 0,
-        total_actors: 0,
+        random_count: 0,
+        genres: vec![],
+        actors: vec![],
     });
     let mut available_models = use_signal(Vec::<models::AvailableModel>::new);
     let mut available_locations = use_signal(Vec::<String>::new);
@@ -313,10 +314,11 @@ pub fn LiveResults() -> Element {
                         year_data.set(BarChartData { labels: vec![], values: vec![] });
                         genre_data.set(PieChartData { data: vec![] });
                         actor_data.set(BarChartData { labels: vec![], values: vec![] });
-                        stats_overview.set(StatsOverview {
+                        random_odds.set(RandomSelectionOddsResponse {
                             total_movies: 0,
-                            total_directors: 0,
-                            total_actors: 0,
+                            random_count: 0,
+                            genres: vec![],
+                            actors: vec![],
                         });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
@@ -347,10 +349,11 @@ pub fn LiveResults() -> Element {
                         year_data.set(BarChartData { labels: vec![], values: vec![] });
                         genre_data.set(PieChartData { data: vec![] });
                         actor_data.set(BarChartData { labels: vec![], values: vec![] });
-                        stats_overview.set(StatsOverview {
+                        random_odds.set(RandomSelectionOddsResponse {
                             total_movies: 0,
-                            total_directors: 0,
-                            total_actors: 0,
+                            random_count: 0,
+                            genres: vec![],
+                            actors: vec![],
                         });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
@@ -380,10 +383,11 @@ pub fn LiveResults() -> Element {
                         showing_recent_movies.set(true);
                         genre_data.set(PieChartData { data: vec![] });
                         actor_data.set(BarChartData { labels: vec![], values: vec![] });
-                        stats_overview.set(StatsOverview {
+                        random_odds.set(RandomSelectionOddsResponse {
                             total_movies: 0,
-                            total_directors: 0,
-                            total_actors: 0,
+                            random_count: 0,
+                            genres: vec![],
+                            actors: vec![],
                         });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
@@ -445,42 +449,39 @@ pub fn LiveResults() -> Element {
                             }
                         }
 
-                        // Fetch genre and actor stats
+                        // Fetch odds and stats for the random selection in one call
                         let window = web_sys::window().unwrap();
                         let location = window.location();
                         let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
                         let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
 
-                        match reqwest::get(format!("http://{hostname}:{server_port}/stats/genres")).await {
+                        match reqwest::get(format!("http://{hostname}:{server_port}/stats/random-odds?count=3")).await {
                             Ok(resp) => {
-                                if let Ok(data) = resp.json::<PieChartData>().await {
-                                    genre_data.set(data);
+                                if let Ok(odds) = resp.json::<RandomSelectionOddsResponse>().await {
+                                    genre_data.set(PieChartData {
+                                        data: odds
+                                            .genres
+                                            .iter()
+                                            .map(|item| (item.label.clone(), item.count as f64))
+                                            .collect(),
+                                    });
+                                    actor_data.set(BarChartData {
+                                        labels: odds.actors.iter().map(|item| item.label.clone()).collect(),
+                                        values: odds.actors.iter().map(|item| item.count as f64).collect(),
+                                    });
+                                    random_odds.set(odds);
                                 }
                             }
                             Err(err) => {
-                                log::error!("Failed to fetch genre stats: {:#?}", err);
-                            }
-                        }
-
-                        match reqwest::get(format!("http://{hostname}:{server_port}/stats/top-actors")).await {
-                            Ok(resp) => {
-                                if let Ok(data) = resp.json::<BarChartData>().await {
-                                    actor_data.set(data);
-                                }
-                            }
-                            Err(err) => {
-                                log::error!("Failed to fetch actor stats: {:#?}", err);
-                            }
-                        }
-
-                        match reqwest::get(format!("http://{hostname}:{server_port}/stats/overview")).await {
-                            Ok(resp) => {
-                                if let Ok(data) = resp.json::<StatsOverview>().await {
-                                    stats_overview.set(data);
-                                }
-                            }
-                            Err(err) => {
-                                log::error!("Failed to fetch stats overview: {:#?}", err);
+                                log::error!("Failed to fetch random odds: {:#?}", err);
+                                genre_data.set(PieChartData { data: vec![] });
+                                actor_data.set(BarChartData { labels: vec![], values: vec![] });
+                                random_odds.set(RandomSelectionOddsResponse {
+                                    total_movies: 0,
+                                    random_count: 0,
+                                    genres: vec![],
+                                    actors: vec![],
+                                });
                             }
                         }
 
@@ -499,10 +500,11 @@ pub fn LiveResults() -> Element {
                         year_data.set(BarChartData { labels: vec![], values: vec![] });
                         genre_data.set(PieChartData { data: vec![] });
                         actor_data.set(BarChartData { labels: vec![], values: vec![] });
-                        stats_overview.set(StatsOverview {
+                        random_odds.set(RandomSelectionOddsResponse {
                             total_movies: 0,
-                            total_directors: 0,
-                            total_actors: 0,
+                            random_count: 0,
+                            genres: vec![],
+                            actors: vec![],
                         });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
@@ -556,10 +558,11 @@ pub fn LiveResults() -> Element {
                             year_data.set(BarChartData { labels: vec![], values: vec![] });
                             genre_data.set(PieChartData { data: vec![] });
                             actor_data.set(BarChartData { labels: vec![], values: vec![] });
-                            stats_overview.set(StatsOverview {
+                            random_odds.set(RandomSelectionOddsResponse {
                                 total_movies: 0,
-                                total_directors: 0,
-                                total_actors: 0,
+                                random_count: 0,
+                                genres: vec![],
+                                actors: vec![],
                             });
                             movies.set(Arc::new(vec![]));
 
@@ -643,12 +646,13 @@ pub fn LiveResults() -> Element {
             if showing_random() {
                 div {
                     class: "random-movies-chart-wrapper",
-                    GenreChart { data: genre_data }
-                    ActorChart { data: actor_data }
+                    div {
+                        class: "random-movies-charts-row",
+                        GenreChart { data: genre_data }
+                        ActorChart { data: actor_data }
+                    }
                     RandomOdds {
-                        genre_data: genre_data,
-                        actor_data: actor_data,
-                        total_movies: stats_overview().total_movies,
+                        data: random_odds,
                     }
                 }
             }

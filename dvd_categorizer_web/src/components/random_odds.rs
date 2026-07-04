@@ -1,77 +1,67 @@
 use dioxus::prelude::*;
-use models::{BarChartData, PieChartData};
+use models::{RandomOddsItem, RandomSelectionOddsResponse};
 
 #[component]
-pub fn RandomOdds(
-    genre_data: ReadSignal<PieChartData>,
-    actor_data: ReadSignal<BarChartData>,
-    total_movies: usize,
-) -> Element {
-    let total = total_movies;
+pub fn RandomOdds(data: ReadSignal<RandomSelectionOddsResponse>) -> Element {
+    let odds = data();
 
-    let genres = genre_data().data;
-    let actors = actor_data();
-    let actor_entries: Vec<(String, f64)> = actors
-        .labels
-        .into_iter()
-        .zip(actors.values.into_iter())
-        .collect();
-
-    let format_pct = |count: f64| {
-        if total == 0 {
+    let format_pct = |probability: f64| {
+        if odds.total_movies == 0 {
             "0%".to_string()
         } else {
-            format!("{:.1}%", (count / total as f64) * 100.0)
+            format!("{:.1}%", probability * 100.0)
         }
     };
 
-    let format_one_in = |count: f64| {
-        if total == 0 || count <= 0.0 {
+    let format_one_in = |item: &RandomOddsItem| {
+        if odds.total_movies == 0 || item.count == 0 {
             "—".to_string()
         } else {
-            let odds = total as f64 / count;
-            if odds < 1.0 {
-                format!("1 in {:.2}", odds)
+            let per_movie_odds = item.per_movie_odds;
+            if per_movie_odds < 1.0 {
+                format!("1 in {:.2}", per_movie_odds)
             } else {
-                format!("1 in {:.0}", odds)
+                format!("1 in {:.0}", per_movie_odds)
             }
         }
     };
 
     rsx! {
-        div {
-            class: "random-odds-panel",
-            h3 { "Your odds for this random pick" }
-            p {
-                class: "random-odds-note",
-                "Total movies in catalog: {total}"
-            }
-
+        if odds.total_movies > 0 {
             div {
-                class: "random-odds-columns",
-                div {
-                    class: "random-odds-column",
-                    h4 { "Genres" }
-                    ul {
-                        for (genre , count) in genres {
-                            li {
-                                key: "{genre}",
-                                span { class: "random-odds-label", "{genre}" }
-                                span { class: "random-odds-value", "{format_pct(count)}" }
-                            }
-                        }
-                    }
+                class: "random-odds-panel",
+                h3 { "Your odds for this random pick" }
+                p {
+                    class: "random-odds-note",
+                    "Total movies in catalog: {odds.total_movies} (random sample of {odds.random_count})"
                 }
 
                 div {
-                    class: "random-odds-column",
-                    h4 { "Actors" }
-                    ul {
-                        for (label , count) in actor_entries {
-                            li {
-                                key: "{label}",
-                                span { class: "random-odds-label", "{label}" }
-                                span { class: "random-odds-value", "{format_one_in(count)}" }
+                    class: "random-odds-columns",
+                    div {
+                        class: "random-odds-column",
+                        h4 { "Genres" }
+                        ul {
+                            for item in odds.genres {
+                                li {
+                                    key: "{item.label}",
+                                    span { class: "random-odds-label", "{item.label}" }
+                                    span { class: "random-odds-value", "{format_pct(item.per_movie_probability)}" }
+                                }
+                            }
+                        }
+                    }
+
+                    div {
+                        class: "random-odds-column",
+                        h4 { "Actors" }
+                        ul {
+                            for item in odds.actors {
+                                li {
+                                    key: "{item.label}",
+                                    span { class: "random-odds-label", "{item.label}" }
+                                    span { class: "random-odds-value", "{format_one_in(&item)}" }
+                                }
                             }
                         }
                     }

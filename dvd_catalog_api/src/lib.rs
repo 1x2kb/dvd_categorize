@@ -15,9 +15,9 @@ use axum_macros::debug_handler;
 use database::{
     traits::{
         ChatSessions, GetAllMovies, GetGenreStats, GetMovieById, GetMoviesByReleaseYear,
-        GetMoviesByYearStats, GetRecentMovies, GetStatsOverview, GetTopActorsStats,
-        GetUniqueLocations, GetUnknownLocationMovies, InsertMovie, MoviesByLocation, RandomMovies,
-        Repository, UpdateMovieLocation,
+        GetMoviesByYearStats, GetRandomSelectionStats, GetRecentMovies, GetStatsOverview,
+        GetTopActorsStats, GetUniqueLocations, GetUnknownLocationMovies, InsertMovie,
+        MoviesByLocation, RandomMovies, Repository, UpdateMovieLocation,
     },
     FullMovie, MovieId, MovieRepo, SearchRequest,
 };
@@ -33,6 +33,7 @@ use models::{
 };
 use ollama_rs::error::OllamaError;
 use prompts::{db_msg_to_ollama, model_msg_to_ollama, DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
+use serde::Deserialize;
 use futures_util::StreamExt;
 
 use std::{sync::Arc, time::Instant};
@@ -2467,4 +2468,80 @@ where
         .collect();
 
     Json(models::BarChartData { labels, values })
+}
+
+/// Compute odds for a random selection of movies.
+/// Returns per-movie and "at least one in N" probabilities for top genres and actors.
+#[instrument(skip(state))]
+#[debug_handler]
+pub async fn stats_random_odds(
+    State(state): State<DbState>,
+    Query(params): Query<RandomOddsParams>,
+) -> Json<models::RandomSelectionOddsResponse>
+where
+    MovieRepo: database::GetRandomSelectionStats,
+{
+    info!("Getting random selection odds");
+
+    let random_count = params.count.unwrap_or(3).max(1) as usize;
+    let genre_limit = params.genre_limit.unwrap_or(10);
+    let actor_limit = params.actor_limit.unwrap_or(10);
+
+    let stats = match state
+        .movie_repo
+        .get_random_selection_stats(genre_limit, actor_limit)
+        .await
+    {
+        Ok(data) => data,
+        Err(e) => {
+            error!("Failed to get random selection stats: {}", e);
+            return Json(models::RandomSelectionOddsResponse {
+                total_movies: 0,
+                random_count,
+                genres: vec![],
+                actors: vec![],
+            });
+        }
+    };
+
+    Json(compute_random_odds(stats, random_count))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RandomOddsParams {
+    pub count: Option<u32>,
+    pub genre_limit: Option<i64>,
+    pub actor_limit: Option<i64>,
+}
+
+fn compute_random_odds(
+    stats: models::RandomSelectionStats,
+    random_count: usize,
+) -> models::RandomSelectionOddsResponse {
+    let total = stats.total_movies as f64;
+
+    let compute_item = |stat: models::RandomSelectionStat| {
+        let count = stat.count as f64;
+        let per_movie = if total > 0.0 { count / total } else { 0.0 };
+        let per_movie_odds = if count > 0.0 { total / count } else { 0.0 };
+        let at_least_one = if total > 0.0 {
+            1.0 - (1.0 - per_movie).powi(random_count as i32)
+        } else {
+            0.0
+        };
+        models::RandomOddsItem {
+            label: stat.label,
+            count: stat.count,
+            per_movie_probability: per_movie,
+            per_movie_odds,
+            at_least_one_probability: at_least_one,
+        }
+    };
+
+    models::RandomSelectionOddsResponse {
+        total_movies: stats.total_movies,
+        random_count,
+        genres: stats.genres.into_iter().map(compute_item).collect(),
+        actors: stats.actors.into_iter().map(compute_item).collect(),
+    }
 }
