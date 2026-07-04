@@ -66,7 +66,7 @@ pub struct BarGraphProps {
     pub responsive: bool,
     #[props(default = None)]
     pub mobile_max_items: Option<usize>,
-    #[props(default = None)]
+    #[props(default = Some(8))]
     pub page_size: Option<usize>,
 }
 
@@ -125,8 +125,10 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
 
     let global_min = props.data.iter().map(|(_, v)| *v).fold(f64::INFINITY, f64::min).min(0.0);
     let global_max = props.data.iter().map(|(_, v)| *v).fold(f64::NEG_INFINITY, f64::max);
-    let total_pages = total_pages(&props.data, page_size);
     let mut current_page = use_signal(|| 0usize);
+    let mut current_page_size = use_signal(|| page_size.unwrap_or(8));
+
+    let total_pages_count = total_pages(&props.data, Some(current_page_size()));
 
     let (canvas_width, canvas_height) = if props.responsive {
         let (w, h) = container_size();
@@ -143,6 +145,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
         let _ = data_for_effect.clone();
         let _ = hovered_index();
         let _ = current_page();
+        let _ = current_page_size();
         let (current_w, current_h) = container_size();
         let _ = canvas_ref();
         if let Some(canvas) = canvas_ref() {
@@ -151,11 +154,13 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
             } else {
                 (width, height)
             };
+            let page_size_value = current_page_size();
+            let total_pages = total_pages(&data_for_effect, Some(page_size_value));
             let mut page = current_page();
             if page >= total_pages {
                 page = 0;
             }
-            let paged_data = paginate_data(&data_for_effect, page_size, page);
+            let paged_data = paginate_data(&data_for_effect, Some(page_size_value), page);
             let display_data = truncate_data_for_mobile(&paged_data, w, mobile_max_items);
             let props = BarGraphProps {
                 data: display_data,
@@ -190,7 +195,8 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
         };
     }
 
-    let paged_data_move = paginate_data(&data_for_handlers, page_size, current_page());
+    let page_size_value = current_page_size();
+    let paged_data_move = paginate_data(&data_for_handlers, Some(page_size_value), current_page());
     let data_move = truncate_data_for_mobile(&paged_data_move, canvas_width, mobile_max_items);
 
     let container_style = if props.responsive {
@@ -229,30 +235,52 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                     }
                 }
             }
-            if page_size.is_some() && total_pages > 1 {
+            if page_size.is_some() {
                 div {
                     class: "bar-graph-pagination",
-                    button {
-                        disabled: current_page() == 0,
-                        onclick: move |_| {
-                            if current_page() > 0 {
-                                current_page.set(current_page() - 1);
-                            }
-                        },
-                        "Previous"
+                    label {
+                        class: "bar-graph-page-size",
+                        "Items per page: "
+                        select {
+                            value: "{current_page_size()}",
+                            onchange: move |e: Event<FormData>| {
+                                if let Ok(size) = e.value().parse::<usize>() {
+                                    if size > 0 {
+                                        current_page_size.set(size);
+                                    }
+                                }
+                            },
+                            option { value: "2", "2" }
+                            option { value: "5", "5" }
+                            option { value: "8", "8" }
+                            option { value: "10", "10" }
+                            option { value: "15", "15" }
+                            option { value: "20", "20" }
+                        }
                     }
-                    span {
-                        style: "color: #9ca3af; font-size: 12px;",
-                        "Page {current_page() + 1} of {total_pages}"
-                    }
-                    button {
-                        disabled: current_page() + 1 >= total_pages,
-                        onclick: move |_| {
-                            if current_page() + 1 < total_pages {
-                                current_page.set(current_page() + 1);
-                            }
-                        },
-                        "Next"
+                    if total_pages_count > 1 {
+                        button {
+                            disabled: current_page() == 0,
+                            onclick: move |_| {
+                                if current_page() > 0 {
+                                    current_page.set(current_page() - 1);
+                                }
+                            },
+                            "Previous"
+                        }
+                        span {
+                            style: "color: #9ca3af; font-size: 12px;",
+                            "Page {current_page() + 1} of {total_pages_count}"
+                        }
+                        button {
+                            disabled: current_page() + 1 >= total_pages_count,
+                            onclick: move |_| {
+                                if current_page() + 1 < total_pages_count {
+                                    current_page.set(current_page() + 1);
+                                }
+                            },
+                            "Next"
+                        }
                     }
                 }
             }
