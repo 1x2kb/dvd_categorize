@@ -201,29 +201,32 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
 
     rsx! {
         div {
-            class: "bar-graph-container",
-            style: "{container_style}",
-            onmounted: move |e: Event<MountedData>| {
-                let element = e.as_web_event().dyn_into::<HtmlElement>().ok();
-                container_ref.set(element);
-            },
+            class: "bar-graph-wrapper",
             div {
-                class: "bar-graph-canvas-wrapper",
-                canvas {
-                    width: "{canvas_width}",
-                    height: "{canvas_height}",
-                    onmounted: move |e: Event<MountedData>| {
-                        let element = e.as_web_event().dyn_into::<HtmlCanvasElement>().ok();
-                        canvas_ref.set(element);
-                    },
-                    onmousemove: move |e: Event<MouseData>| {
-                        if let Some(canvas) = canvas_ref() {
-                            update_bar_hover(&canvas, &e.as_web_event(), &data_move, hovered_index);
-                        }
-                    },
-                    onmouseleave: move |_| {
-                        hovered_index.set(None);
-                    },
+                class: "bar-graph-container",
+                style: "{container_style}",
+                onmounted: move |e: Event<MountedData>| {
+                    let element = e.as_web_event().dyn_into::<HtmlElement>().ok();
+                    container_ref.set(element);
+                },
+                div {
+                    class: "bar-graph-canvas-wrapper",
+                    canvas {
+                        width: "{canvas_width}",
+                        height: "{canvas_height}",
+                        onmounted: move |e: Event<MountedData>| {
+                            let element = e.as_web_event().dyn_into::<HtmlCanvasElement>().ok();
+                            canvas_ref.set(element);
+                        },
+                        onmousemove: move |e: Event<MouseData>| {
+                            if let Some(canvas) = canvas_ref() {
+                                update_bar_hover(&canvas, &e.as_web_event(), &data_move, hovered_index);
+                            }
+                        },
+                        onmouseleave: move |_| {
+                            hovered_index.set(None);
+                        },
+                    }
                 }
             }
             if page_size.is_some() && total_pages > 1 {
