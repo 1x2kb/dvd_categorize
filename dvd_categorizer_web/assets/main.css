@@ -1337,10 +1337,15 @@ body {
     padding-bottom: 0.5rem;
 }
 
-.recent-movies-chart-wrapper {
+.recent-movies-chart-wrapper,
+.random-movies-chart-wrapper {
     max-width: 60vw;
     min-width: 0;
     margin: 16px auto;
+}
+
+.random-movies-chart-wrapper > * + * {
+    margin-top: 1.5rem;
 }
 
 .bar-graph-wrapper {
@@ -1444,7 +1449,8 @@ body {
         font-size: 1.25rem;
     }
 
-    .recent-movies-chart-wrapper {
+    .recent-movies-chart-wrapper,
+    .random-movies-chart-wrapper {
         max-width: 95vw;
         margin: 8px auto;
     }

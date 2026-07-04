@@ -2,9 +2,9 @@ use crate::components::browse_bar::BrowseBar;
 use crate::components::movie_grid::MovieGrid;
 use crate::components::search_bar::SearchBar;
 use crate::components::search_mode_selector::SearchModeSelector;
-use crate::components::YearChart;
+use crate::components::{ActorChart, GenreChart, YearChart};
 use dioxus::prelude::*;
-use models::{BarChartData, ScoredMovie, SearchRequest};
+use models::{BarChartData, PieChartData, ScoredMovie, SearchRequest};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -235,6 +235,13 @@ pub fn LiveResults() -> Element {
             values: vec![],
         },
     );
+    let mut genre_data = use_signal(|| PieChartData { data: vec![] });
+    let mut actor_data = use_signal(
+        || BarChartData {
+            labels: vec![],
+            values: vec![],
+        },
+    );
     let mut available_models = use_signal(Vec::<models::AvailableModel>::new);
     let mut available_locations = use_signal(Vec::<String>::new);
 
@@ -299,6 +306,8 @@ pub fn LiveResults() -> Element {
                         showing_random.set(false);
                         showing_recent_movies.set(false);
                         year_data.set(BarChartData { labels: vec![], values: vec![] });
+                        genre_data.set(PieChartData { data: vec![] });
+                        actor_data.set(BarChartData { labels: vec![], values: vec![] });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -326,6 +335,8 @@ pub fn LiveResults() -> Element {
                         showing_random.set(false);
                         showing_recent_movies.set(false);
                         year_data.set(BarChartData { labels: vec![], values: vec![] });
+                        genre_data.set(PieChartData { data: vec![] });
+                        actor_data.set(BarChartData { labels: vec![], values: vec![] });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -352,6 +363,8 @@ pub fn LiveResults() -> Element {
                         is_loading.set(true);
                         showing_random.set(false);
                         showing_recent_movies.set(true);
+                        genre_data.set(PieChartData { data: vec![] });
+                        actor_data.set(BarChartData { labels: vec![], values: vec![] });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -411,6 +424,35 @@ pub fn LiveResults() -> Element {
                                 movies.set(Arc::new(vec![]));
                             }
                         }
+
+                        // Fetch genre and actor stats
+                        let window = web_sys::window().unwrap();
+                        let location = window.location();
+                        let hostname = location.hostname().unwrap_or_else(|_| "127.0.0.1".to_string());
+                        let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+
+                        match reqwest::get(format!("http://{hostname}:{server_port}/stats/genres")).await {
+                            Ok(resp) => {
+                                if let Ok(data) = resp.json::<PieChartData>().await {
+                                    genre_data.set(data);
+                                }
+                            }
+                            Err(err) => {
+                                log::error!("Failed to fetch genre stats: {:#?}", err);
+                            }
+                        }
+
+                        match reqwest::get(format!("http://{hostname}:{server_port}/stats/top-actors")).await {
+                            Ok(resp) => {
+                                if let Ok(data) = resp.json::<BarChartData>().await {
+                                    actor_data.set(data);
+                                }
+                            }
+                            Err(err) => {
+                                log::error!("Failed to fetch actor stats: {:#?}", err);
+                            }
+                        }
+
                         is_loading.set(false);
                     });
                 },
@@ -424,6 +466,8 @@ pub fn LiveResults() -> Element {
                         showing_random.set(false);
                         showing_recent_movies.set(false);
                         year_data.set(BarChartData { labels: vec![], values: vec![] });
+                        genre_data.set(PieChartData { data: vec![] });
+                        actor_data.set(BarChartData { labels: vec![], values: vec![] });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -474,6 +518,8 @@ pub fn LiveResults() -> Element {
                             showing_random.set(false);
                             showing_recent_movies.set(false);
                             year_data.set(BarChartData { labels: vec![], values: vec![] });
+                            genre_data.set(PieChartData { data: vec![] });
+                            actor_data.set(BarChartData { labels: vec![], values: vec![] });
                             movies.set(Arc::new(vec![]));
 
                             let result = send_search_request(query, disable_enh, mode, model).await;
@@ -549,6 +595,15 @@ pub fn LiveResults() -> Element {
                     let count = updated_movies.len();
                     movies.set(Arc::new(updated_movies));
                     log::info!("Movies signal updated, new count: {}", count);
+                },
+            }
+
+            // Genre and actor charts for random movies
+            if showing_random() {
+                div {
+                    class: "random-movies-chart-wrapper",
+                    GenreChart { data: genre_data }
+                    ActorChart { data: actor_data }
                 }
             }
         }
