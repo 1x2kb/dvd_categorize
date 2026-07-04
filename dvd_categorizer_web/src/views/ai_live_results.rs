@@ -2,9 +2,9 @@ use crate::components::browse_bar::BrowseBar;
 use crate::components::movie_grid::MovieGrid;
 use crate::components::search_bar::SearchBar;
 use crate::components::search_mode_selector::SearchModeSelector;
-use crate::components::{ActorChart, GenreChart, YearChart};
+use crate::components::{ActorChart, GenreChart, RandomOdds, YearChart};
 use dioxus::prelude::*;
-use models::{BarChartData, PieChartData, ScoredMovie, SearchRequest};
+use models::{BarChartData, PieChartData, ScoredMovie, SearchRequest, StatsOverview};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -242,6 +242,11 @@ pub fn LiveResults() -> Element {
             values: vec![],
         },
     );
+    let mut stats_overview = use_signal(|| StatsOverview {
+        total_movies: 0,
+        total_directors: 0,
+        total_actors: 0,
+    });
     let mut available_models = use_signal(Vec::<models::AvailableModel>::new);
     let mut available_locations = use_signal(Vec::<String>::new);
 
@@ -308,6 +313,11 @@ pub fn LiveResults() -> Element {
                         year_data.set(BarChartData { labels: vec![], values: vec![] });
                         genre_data.set(PieChartData { data: vec![] });
                         actor_data.set(BarChartData { labels: vec![], values: vec![] });
+                        stats_overview.set(StatsOverview {
+                            total_movies: 0,
+                            total_directors: 0,
+                            total_actors: 0,
+                        });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -337,6 +347,11 @@ pub fn LiveResults() -> Element {
                         year_data.set(BarChartData { labels: vec![], values: vec![] });
                         genre_data.set(PieChartData { data: vec![] });
                         actor_data.set(BarChartData { labels: vec![], values: vec![] });
+                        stats_overview.set(StatsOverview {
+                            total_movies: 0,
+                            total_directors: 0,
+                            total_actors: 0,
+                        });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -365,6 +380,11 @@ pub fn LiveResults() -> Element {
                         showing_recent_movies.set(true);
                         genre_data.set(PieChartData { data: vec![] });
                         actor_data.set(BarChartData { labels: vec![], values: vec![] });
+                        stats_overview.set(StatsOverview {
+                            total_movies: 0,
+                            total_directors: 0,
+                            total_actors: 0,
+                        });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -453,6 +473,17 @@ pub fn LiveResults() -> Element {
                             }
                         }
 
+                        match reqwest::get(format!("http://{hostname}:{server_port}/stats/overview")).await {
+                            Ok(resp) => {
+                                if let Ok(data) = resp.json::<StatsOverview>().await {
+                                    stats_overview.set(data);
+                                }
+                            }
+                            Err(err) => {
+                                log::error!("Failed to fetch stats overview: {:#?}", err);
+                            }
+                        }
+
                         is_loading.set(false);
                     });
                 },
@@ -468,6 +499,11 @@ pub fn LiveResults() -> Element {
                         year_data.set(BarChartData { labels: vec![], values: vec![] });
                         genre_data.set(PieChartData { data: vec![] });
                         actor_data.set(BarChartData { labels: vec![], values: vec![] });
+                        stats_overview.set(StatsOverview {
+                            total_movies: 0,
+                            total_directors: 0,
+                            total_actors: 0,
+                        });
                         movies.set(Arc::new(vec![]));
                         enhanced_query.set(String::new());
                         original_query.set(String::new());
@@ -520,6 +556,11 @@ pub fn LiveResults() -> Element {
                             year_data.set(BarChartData { labels: vec![], values: vec![] });
                             genre_data.set(PieChartData { data: vec![] });
                             actor_data.set(BarChartData { labels: vec![], values: vec![] });
+                            stats_overview.set(StatsOverview {
+                                total_movies: 0,
+                                total_directors: 0,
+                                total_actors: 0,
+                            });
                             movies.set(Arc::new(vec![]));
 
                             let result = send_search_request(query, disable_enh, mode, model).await;
@@ -604,6 +645,11 @@ pub fn LiveResults() -> Element {
                     class: "random-movies-chart-wrapper",
                     GenreChart { data: genre_data }
                     ActorChart { data: actor_data }
+                    RandomOdds {
+                        genre_data: genre_data,
+                        actor_data: actor_data,
+                        total_movies: stats_overview().total_movies,
+                    }
                 }
             }
         }

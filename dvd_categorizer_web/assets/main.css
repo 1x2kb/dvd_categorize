@@ -1348,6 +1348,76 @@ body {
     margin-top: 1.5rem;
 }
 
+.random-odds-panel {
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 0.5rem;
+    padding: 1rem 1.25rem;
+}
+
+.random-odds-panel h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #f3f4f6;
+    margin-bottom: 0.25rem;
+}
+
+.random-odds-note {
+    font-size: 0.8125rem;
+    color: #9ca3af;
+    margin-bottom: 1rem;
+}
+
+.random-odds-columns {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+
+.random-odds-column h4 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #e5e7eb;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid #374151;
+    padding-bottom: 0.25rem;
+}
+
+.random-odds-column ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.random-odds-column li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0;
+    font-size: 0.8125rem;
+    border-bottom: 1px solid #1f2937;
+}
+
+.random-odds-column li:last-child {
+    border-bottom: none;
+}
+
+.random-odds-label {
+    color: #9ca3af;
+}
+
+.random-odds-value {
+    color: #0891b2;
+    font-weight: 600;
+}
+
+@media (max-width: 768px) {
+    .random-odds-columns {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+}
+
 .bar-graph-wrapper {
     width: 100%;
     height: 100%;

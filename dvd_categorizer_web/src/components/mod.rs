@@ -9,6 +9,7 @@ pub mod location_editor;
 pub mod markdown;
 pub mod movie_card;
 pub mod movie_grid;
+pub mod random_odds;
 pub mod search_bar;
 pub mod search_mode_selector;
 pub mod stats_overview;
@@ -17,6 +18,7 @@ pub mod year_chart;
 
 pub use actor_chart::ActorChart;
 pub use genre_chart::GenreChart;
+pub use random_odds::RandomOdds;
 pub use markdown::Markdown;
 pub use stats_overview::StatsOverviewCard;
 pub use year_chart::YearChart;
