@@ -4,12 +4,12 @@ Graph component library for Dioxus WASM apps.
 
 ## Features
 
-- SVG line graphs
-- SVG bar graphs with axis labels
-- SVG pie charts with hover tooltips + legend
+- Canvas line graphs with device-pixel-ratio scaling
+- Canvas bar graphs with axis labels and hover tooltips
+- Canvas pie charts with hover tooltips + DOM legend
 - Auto-scaling axes
 - Customizable colors + stroke width
-- Zero external deps (pure Dioxus)
+- HiDPI / Retina / 4K crisp rendering
 
 ## Usage
 
@@ -95,6 +95,7 @@ dx serve --example pie_demo --platform web
 - `height: f64` - Graph height (default: 400)
 - `stroke_color: String` - Line color (default: "#3b82f6")
 - `stroke_width: f64` - Line thickness (default: 2.0)
+- `responsive: bool` - Fill parent container size (default: true)
 
 ## BarGraph Props
 
@@ -104,6 +105,7 @@ dx serve --example pie_demo --platform web
 - `bar_color: String` - Bar color (default: "#3b82f6")
 - `x_label: String` - X-axis label (default: "X Axis")
 - `y_label: String` - Y-axis label (default: "Y Axis")
+- `responsive: bool` - Fill parent container size and auto-skip X labels (default: true)
 
 ## PieChart Props
 
@@ -111,3 +113,4 @@ dx serve --example pie_demo --platform web
 - `size: f64` - Chart size (default: 400)
 - `colors: Vec<String>` - Slice colors (default: 8 color palette)
 - `show_legend: bool` - Show legend (default: true)
+- `responsive: bool` - Fill parent container size (default: true)

@@ -69,6 +69,8 @@
     border-radius: 12px;
     padding: 2rem;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    min-width: 0;
+    overflow: hidden;
 }
 
 .chart-section h2 {
@@ -85,14 +87,20 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    padding: 1rem;
     width: 100%;
-    overflow-x: auto;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
 }
 
-.chart-section svg {
-    max-width: 100%;
-    height: auto;
+.bar-graph-container canvas,
+.pie-chart-container canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
 }
 
 @media (max-width: 768px) {
@@ -118,16 +126,5 @@
 
     .chart-section h2 {
         font-size: 1.25rem;
-    }
-
-    /* Bar charts scroll horizontally on mobile */
-    .year-chart-responsive svg,
-    .actor-chart-responsive svg {
-        min-width: 800px;
-    }
-
-    /* Pie chart scales down on mobile */
-    .genre-chart-responsive {
-        max-width: 100% !important;
     }
 }
