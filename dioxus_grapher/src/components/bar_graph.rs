@@ -329,12 +329,6 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
         XAxisMode::Explicit(opts) => opts.skip_labels,
     };
 
-    // Auto-skip labels when bars become too narrow for the text to fit.
-    // A label needs roughly 60 CSS pixels (narrower fonts on mobile).
-    let label_space = if is_narrow { 40.0 } else { 60.0 };
-    let auto_skip = (label_space / bar_width).ceil().max(1.0) as usize;
-    let desired_skip = base_skip.max(auto_skip).min(props.data.len().max(1));
-
     let x_font = if is_narrow { "10px sans-serif" } else { "12px sans-serif" };
     ctx.set_font(x_font);
     ctx.set_text_align("center");
@@ -386,29 +380,27 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
         ctx.stroke();
         ctx.set_global_alpha(1.0);
 
-        // Value label: hide when bars are too narrow to avoid overlap.
-        if bar_width >= 25.0 {
-            ctx.set_font("bold 11px sans-serif");
-            ctx.set_global_alpha(1.0);
-            ctx.set_text_align("center");
-            let value_text = format!("{:.0}", value);
-            let label_y = if bar_height > 20.0 {
-                // Draw inside the bar so it never clips the canvas edge.
-                ctx.set_fill_style_str("#ffffff");
-                ctx.set_text_baseline("middle");
-                y_pos + 12.0
-            } else {
-                // Short bar: draw above the bar.
-                ctx.set_fill_style_str("#9ca3af");
-                ctx.set_text_baseline("bottom");
-                y_pos - 8.0
-            };
-            ctx.fill_text(&value_text, x_pos + bar_width / 2.0, label_y)
-                .ok();
-        }
+        // Value label
+        ctx.set_font("bold 11px sans-serif");
+        ctx.set_global_alpha(1.0);
+        ctx.set_text_align("center");
+        let value_text = format!("{:.0}", value);
+        let label_y = if bar_height > 20.0 {
+            // Draw inside the bar so it never clips the canvas edge.
+            ctx.set_fill_style_str("#ffffff");
+            ctx.set_text_baseline("middle");
+            y_pos + 12.0
+        } else {
+            // Short bar: draw above the bar.
+            ctx.set_fill_style_str("#9ca3af");
+            ctx.set_text_baseline("bottom");
+            y_pos - 8.0
+        };
+        ctx.fill_text(&value_text, x_pos + bar_width / 2.0, label_y)
+            .ok();
 
-        // X-axis label
-        if idx % desired_skip == 0 {
+        // X-axis label: always show labels; the caller controls skip via x_mode.
+        if idx % base_skip == 0 {
             ctx.set_fill_style_str("#9ca3af");
             ctx.set_font(x_font);
             ctx.set_text_baseline("top");
