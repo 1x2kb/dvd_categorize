@@ -64,6 +64,45 @@ pub struct BarGraphProps {
     pub y_max: Option<f64>,
     #[props(default = true)]
     pub responsive: bool,
+    #[props(default = None)]
+    pub mobile_max_items: Option<usize>,
+    #[props(default = None)]
+    pub page_size: Option<usize>,
+}
+
+fn truncate_data_for_mobile(
+    data: &[(String, f64)],
+    width: f64,
+    mobile_max_items: Option<usize>,
+) -> Vec<(String, f64)> {
+    if width < 500.0 {
+        if let Some(max) = mobile_max_items {
+            return data.iter().take(max).cloned().collect();
+        }
+    }
+    data.to_vec()
+}
+
+fn paginate_data(
+    data: &[(String, f64)],
+    page_size: Option<usize>,
+    current_page: usize,
+) -> Vec<(String, f64)> {
+    match page_size {
+        Some(size) => {
+            let start = current_page * size;
+            let end = (start + size).min(data.len());
+            data[start..end].to_vec()
+        }
+        None => data.to_vec(),
+    }
+}
+
+fn total_pages(data: &[(String, f64)], page_size: Option<usize>) -> usize {
+    match page_size {
+        Some(size) if size > 0 => (data.len() + size - 1) / size,
+        _ => 1,
+    }
 }
 
 #[component]
@@ -81,6 +120,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
     let x_mode = props.x_mode.clone();
     let y_min = props.y_min;
     let y_max = props.y_max;
+    let mobile_max_items = props.mobile_max_items;
     let data_for_effect = props.data.clone();
     let data_for_handlers = props.data.clone();
 
@@ -106,8 +146,9 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
             } else {
                 (width, height)
             };
+            let display_data = truncate_data_for_mobile(&data_for_effect, w, mobile_max_items);
             let props = BarGraphProps {
-                data: data_for_effect.clone(),
+                data: display_data,
                 width: w,
                 height: h,
                 bar_color: bar_color.clone(),
@@ -117,6 +158,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                 y_min,
                 y_max,
                 responsive: false,
+                mobile_max_items: None,
             };
             draw_bar_graph(&canvas, &props, hovered_index());
         }
@@ -137,7 +179,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
         };
     }
 
-    let data_move = data_for_handlers.clone();
+    let data_move = truncate_data_for_mobile(&data_for_handlers, canvas_width, mobile_max_items);
 
     let container_style = if props.responsive {
         "width: 100%; height: 100%;"
@@ -178,7 +220,8 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
         return;
     };
 
-    let padding = 60.0;
+    let is_narrow = props.width < 500.0;
+    let padding = if is_narrow { 30.0 } else { 60.0 };
     let graph_width = props.width - 2.0 * padding;
     let graph_height = props.height - 2.0 * padding;
 
@@ -217,7 +260,8 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
     ctx.stroke();
 
     // Y-axis ticks and labels
-    ctx.set_font("12px sans-serif");
+    let tick_font = if is_narrow { "10px sans-serif" } else { "12px sans-serif" };
+    ctx.set_font(tick_font);
     ctx.set_fill_style_str("#9ca3af");
     ctx.set_text_align("right");
     ctx.set_text_baseline("middle");
@@ -244,12 +288,13 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
     };
 
     // Auto-skip labels when bars become too narrow for the text to fit.
-    // A label needs roughly 60 CSS pixels. Skip so we don't show more than
-    // one label per 60px of bar width.
-    let auto_skip = (60.0 / bar_width).ceil().max(1.0) as usize;
+    // A label needs roughly 60 CSS pixels (narrower fonts on mobile).
+    let label_space = if is_narrow { 40.0 } else { 60.0 };
+    let auto_skip = (label_space / bar_width).ceil().max(1.0) as usize;
     let desired_skip = base_skip.max(auto_skip).min(props.data.len().max(1));
 
-    ctx.set_font("12px sans-serif");
+    let x_font = if is_narrow { "10px sans-serif" } else { "12px sans-serif" };
+    ctx.set_font(x_font);
     ctx.set_text_align("center");
     ctx.set_text_baseline("top");
 
@@ -299,29 +344,31 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
         ctx.stroke();
         ctx.set_global_alpha(1.0);
 
-        // Value label
-        ctx.set_font("bold 11px sans-serif");
-        ctx.set_global_alpha(1.0);
-        ctx.set_text_align("center");
-        let value_text = format!("{:.0}", value);
-        let label_y = if bar_height > 20.0 {
-            // Draw inside the bar so it never clips the canvas edge.
-            ctx.set_fill_style_str("#ffffff");
-            ctx.set_text_baseline("middle");
-            y_pos + 12.0
-        } else {
-            // Short bar: draw above the bar.
-            ctx.set_fill_style_str("#9ca3af");
-            ctx.set_text_baseline("bottom");
-            y_pos - 8.0
-        };
-        ctx.fill_text(&value_text, x_pos + bar_width / 2.0, label_y)
-            .ok();
+        // Value label: hide when bars are too narrow to avoid overlap.
+        if bar_width >= 25.0 {
+            ctx.set_font("bold 11px sans-serif");
+            ctx.set_global_alpha(1.0);
+            ctx.set_text_align("center");
+            let value_text = format!("{:.0}", value);
+            let label_y = if bar_height > 20.0 {
+                // Draw inside the bar so it never clips the canvas edge.
+                ctx.set_fill_style_str("#ffffff");
+                ctx.set_text_baseline("middle");
+                y_pos + 12.0
+            } else {
+                // Short bar: draw above the bar.
+                ctx.set_fill_style_str("#9ca3af");
+                ctx.set_text_baseline("bottom");
+                y_pos - 8.0
+            };
+            ctx.fill_text(&value_text, x_pos + bar_width / 2.0, label_y)
+                .ok();
+        }
 
         // X-axis label
         if idx % desired_skip == 0 {
             ctx.set_fill_style_str("#9ca3af");
-            ctx.set_font("12px sans-serif");
+            ctx.set_font(x_font);
             ctx.set_text_baseline("top");
             ctx.fill_text(&display_label, x_pos + bar_width / 2.0, props.height - padding + 20.0)
                 .ok();
@@ -329,15 +376,16 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
     }
 
     // Axis labels
+    let axis_font = if is_narrow { "bold 11px sans-serif" } else { "bold 14px sans-serif" };
     ctx.set_fill_style_str("#374151");
-    ctx.set_font("bold 14px sans-serif");
+    ctx.set_font(axis_font);
     ctx.set_text_align("center");
     ctx.set_text_baseline("alphabetic");
-    ctx.fill_text(&props.x_label, props.width / 2.0, props.height - 10.0)
+    ctx.fill_text(&props.x_label, props.width / 2.0, props.height - 6.0)
         .ok();
 
     ctx.save();
-    ctx.translate(15.0, props.height / 2.0).ok();
+    ctx.translate(padding - 20.0, props.height / 2.0).ok();
     ctx.rotate(-std::f64::consts::PI / 2.0).ok();
     ctx.fill_text(&props.y_label, 0.0, 0.0).ok();
     ctx.restore();
@@ -415,8 +463,9 @@ fn update_bar_hover(
     data: &[(String, f64)],
     mut hovered_index: Signal<Option<usize>>,
 ) {
-    let padding = 60.0;
     let width = canvas.width() as f64 / crate::canvas_utils::device_pixel_ratio();
+    let is_narrow = width < 500.0;
+    let padding = if is_narrow { 30.0 } else { 60.0 };
     let graph_width = width - 2.0 * padding;
     let bar_count = data.len() as f64;
     let bar_spacing = graph_width / bar_count;

@@ -3,7 +3,10 @@ use dioxus_grapher::{AutoOptions, BarGraph, XAxisMode};
 use models::BarChartData;
 
 #[component]
-pub fn YearChart(data: ReadSignal<BarChartData>) -> Element {
+pub fn YearChart(
+    data: ReadSignal<BarChartData>,
+    #[props(default = 8)] mobile_max_items: usize,
+) -> Element {
     let data_value = data();
     let chart_data: Vec<(
         String,
@@ -34,6 +37,7 @@ pub fn YearChart(data: ReadSignal<BarChartData>) -> Element {
                     y_label: "Movies".to_string(),
                     x_mode: XAxisMode::Auto(AutoOptions { skip_labels: 1 }),
                     responsive: true,
+                    mobile_max_items: Some(mobile_max_items),
                 }
             }
         }

@@ -515,7 +515,7 @@ pub fn LiveResults() -> Element {
             // Year chart for recent movies
             if showing_recent_movies() {
                 div {
-                    style: "margin: 16px 0;",
+                    class: "recent-movies-chart-wrapper",
                     YearChart {
                         data: year_data,
                     }
