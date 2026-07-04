@@ -4,11 +4,11 @@ End-to-end browser tests for the DVD categorizer, using [Playwright](https://pla
 
 ## Prerequisites
 
-1. **Stack running**: `docker compose up -d` at the repo root. Web UI on `:8080`, API on `:3000`.
+1. **Stack running**: `docker compose --profile postgres up -d` (or `--profile mongodb`) at the repo root. Web UI on `:8080`, API on `:3000`.
 2. **Node.js 18+** and **npm** on the test-runner machine.
 3. **Ollama models pulled** (only for the `ai` project). Use the in-app `/ai/models` page or run:
    ```bash
-   docker compose exec ollama ollama pull phi3.5
+   docker compose exec ollama ollama pull qwen2.5:7b
    docker compose exec ollama ollama pull nomic-embed-text
    ```
 

@@ -37,27 +37,30 @@ flowchart TD
 
 ## Vector Search
 
-Semantic search using AI embeddings. Short queries are enhanced first.
+Semantic search using AI embeddings. Short queries are enhanced first. The actual vector store depends on the active backend:
+
+- **PostgreSQL** — `pgvector` column with cosine distance.
+- **MongoDB** — Qdrant vector database with cosine similarity.
 
 ```mermaid
 sequenceDiagram
     participant Client
     participant API as dvd_catalog_api
     participant Ollama
-    participant PG as PostgreSQL + pgvector
+    participant VectorStore as Vector Store (pgvector or Qdrant)
 
     Client->>API: Search query
     
     alt Enhancement enabled & query is short
-        API->>Ollama: Enhance query (phi3.5)
+        API->>Ollama: Enhance query (qwen2.5:7b)
         Ollama-->>API: Expanded descriptive query
     end
 
     API->>Ollama: Generate embedding (nomic-embed-text)
     Ollama-->>API: Vector embedding
 
-    API->>PG: Cosine similarity search
-    PG-->>API: Nearest movies by embedding distance
+    API->>VectorStore: Cosine similarity search
+    VectorStore-->>API: Nearest movies by embedding distance
 
     API-->>Client: Scored results
 ```
@@ -75,7 +78,7 @@ flowchart TD
 
     Branch1 --> KW["Keyword Search<br/>(DB via get_all)"]
     Branch2 --> Embed["Generate Embedding<br/>(Ollama)"]
-    Embed --> VS["Vector Search<br/>(pgvector)"]
+    Embed --> VS["Vector Search<br/>(pgvector or Qdrant)"]
 
     KW --> RRF["Reciprocal Rank Fusion"]
     VS --> RRF
@@ -109,7 +112,7 @@ sequenceDiagram
 
     Client->>API: "brad pitt action adventure movies"
 
-    API->>Ollama: Parse to structured JSON (phi3.5)
+    API->>Ollama: Parse to structured JSON (qwen2.5:7b)
     Ollama-->>API: {"actors": ["brad pitt"], "genres": ["action", "adventure"]}
 
     API->>PG: Dynamic Diesel query with JOINs

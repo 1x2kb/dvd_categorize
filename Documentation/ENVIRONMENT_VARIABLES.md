@@ -5,11 +5,32 @@ This document lists all environment variables used by the DVD Categorizer applic
 ## Database Configuration
 
 ### `DATABASE_URL`
-- **Required**: Yes
+- **Required**: Yes (PostgreSQL backend)
 - **Default**: None
 - **Description**: PostgreSQL connection string for the database
 - **Format**: `postgresql://user:password@host:port/database`
 - **Example**: `postgresql://dvd_user:password@postgres:5432/dvd_catalog`
+- **Used by**: `database`, `dvd_catalog_api`
+
+### `MONGODB_URI`
+- **Required**: Yes (MongoDB backend)
+- **Default**: None
+- **Description**: MongoDB connection string for the database
+- **Format**: `mongodb://user:password@host:port/database?authSource=admin`
+- **Example**: `mongodb://admin:mongopassword@mongodb:27017/dvd_catalog?authSource=admin`
+- **Used by**: `database`, `dvd_catalog_api`
+
+### `QDRANT_URL`
+- **Required**: Yes (MongoDB backend)
+- **Default**: None
+- **Description**: Qdrant gRPC URL for vector search
+- **Example**: `http://qdrant:6334`
+- **Used by**: `database`, `dvd_catalog_api`
+
+### `QDRANT_COLLECTION`
+- **Required**: Yes (MongoDB backend)
+- **Default**: `movies`
+- **Description**: Name of the Qdrant collection that stores movie embeddings
 - **Used by**: `database`, `dvd_catalog_api`
 
 ## Ollama Configuration
@@ -69,17 +90,29 @@ These variables are used during Docker container builds and are typically set in
 - **Purpose**: Creates a user inside the container matching the host user
 
 ### `POSTGRES_PASSWORD`
-- **Required**: Yes
-- **Default**: None (must be set)
+- **Required**: No
+- **Default**: `strongpassword`
 - **Description**: Password for the PostgreSQL database
 - **Used by**: `postgres` service in Docker Compose
+
+### `MONGO_PASSWORD`
+- **Required**: No
+- **Default**: `mongopassword`
+- **Description**: Password for the MongoDB root user
+- **Used by**: `mongodb` service in Docker Compose
 
 ## Example .env File
 
 ```bash
-# Database
+# PostgreSQL backend
 DATABASE_URL=postgresql://dvd_user:secretpassword@postgres:5432/dvd_catalog
 POSTGRES_PASSWORD=secretpassword
+
+# MongoDB backend
+MONGODB_URI=mongodb://admin:secretpassword@mongodb:27017/dvd_catalog?authSource=admin
+MONGO_PASSWORD=secretpassword
+QDRANT_URL=http://qdrant:6334
+QDRANT_COLLECTION=movies
 
 # Ollama
 OLLAMA_HOST=ollama

@@ -9,7 +9,7 @@ Movie actor lists are often in arbitrary order. This tool leverages Ollama's kno
 ## Requirements
 
 - Ollama running locally or accessible via network
-- A compatible model (default: `phi3.5`)
+- A compatible model (default: `qwen2.5:14b`)
 
 ## Usage
 
@@ -33,7 +33,7 @@ cargo run --bin actor_reorder -- "movies (2).csv" "movies_corrected.csv"
 
 - `OLLAMA_HOST` - Ollama server host (default: `localhost`)
 - `OLLAMA_PORT` - Ollama server port (default: `11434`)
-- `OLLAMA_MODEL` - Model to use for reordering (default: `phi3.5`)
+- `OLLAMA_MODEL` - Model to use for reordering (default: `qwen2.5:14b`)
 - `RUST_LOG` - Set logging level (e.g., `info`, `debug`)
 
 ### Example with Environment Variables
