@@ -1,15 +1,28 @@
 # DVD Categorize
 
-A full-stack Rust application for cataloging, searching, and exploring a personal DVD/movie collection. Features AI-powered search with multiple search modes, a conversational AI chat assistant, vector embeddings for semantic search, and a modern dark-themed web UI — all fully containerized with Docker Compose. Supports both PostgreSQL and MongoDB backends with Qdrant for vector search.
+DVD Categorize is a full-stack web application for cataloging, searching, and exploring your personal DVD or movie collection. It combines traditional database search with local AI models to help you find movies, ask questions about your collection, and even generate new movie records from a list of titles.
+
+Everything runs in Docker Compose: a dark-themed web UI, a Rust/Axum API, a vector database for semantic search, and local LLM inference via Ollama.
+
+## What You Can Do
+
+- **Find movies** using four search modes, from exact keyword matching to AI-powered natural language search.
+- **Browse** recently added, recent releases, random picks, or movies without a known location.
+- **Ask questions** about your collection with a conversational AI assistant.
+- **Generate movie records** from titles using AI, then review, edit, and save them.
+- **Import and export** your catalog via CSV.
+- **Track physical locations** and see collection statistics.
+- **Pull new AI models** directly from the web UI.
 
 ## Features
 
 - **Multi-Mode Search** — Four distinct search strategies:
   - **Text** — Keyword-based entity extraction matching against titles, actors, directors, and genres
-  - **Vector** — Semantic search using AI-generated vector embeddings (Qdrant + `nomic-embed-text`)
+  - **Vector** — Semantic search using AI-generated vector embeddings (`pgvector` for PostgreSQL, Qdrant for MongoDB)
   - **Hybrid (Both)** — Combines text and vector results via Reciprocal Rank Fusion (RRF)
   - **Structured** — AI parses natural language into structured criteria, then builds database-specific queries (Diesel for PostgreSQL, MongoDB query operators for MongoDB)
 - **AI Chat** — Conversational assistant that answers questions about your movie collection using Ollama LLMs
+- **Movie Generator** — Generate movie records from titles, review and edit the results, lock cards you want to keep, and save them to the catalog
 - **Query Enhancement** — Short queries are automatically expanded by AI for better semantic search results
 - **CSV Import/Export** — Import movies from CSV via the web UI, export your collection back to CSV
 - **Movie Management** — Add movies, update locations, view recent additions
@@ -18,15 +31,53 @@ A full-stack Rust application for cataloging, searching, and exploring a persona
 - **Vector Embeddings** — Movie descriptions are embedded at import time for semantic similarity search
 - **In-Memory Cache** — Movies are cached in an `Arc<RwLock<>>` on the API server for fast reads
 
+## Web UI Tour
+
+### Live — `/live`
+
+The main page for finding movies. Use the browse toolbar to quickly view recently added, recently released, random, or unknown-location movies, or to filter by a physical location. Type a query and choose one of four search modes:
+
+- **Text** — keyword matching for exact names
+- **Vector** — semantic search using AI embeddings
+- **Hybrid** — combines text and vector results
+- **Structured** — AI parses natural language into safe database filters
+
+You can also pick an AI model and toggle AI query enhancement.
+
+### Generator — `/generator`
+
+Enter one or more movie titles (use `|` to add multiple at once) and click **Generate**. The AI streams movie cards one by one, filling in title, year, description, cast, director, and genres. Lock cards you want to keep, then re-generate the rest. Save or edit cards before adding them to the catalog. Duplicate titles are detected automatically.
+
+### Insert — `/movies/new`
+
+Paste CSV data to preview and import movies. The required header is `Title,Year,Description,Actors,Genres,Director,AddedOn,Location`. You can also export the entire catalog as CSV.
+
+### Chat — `/ai/chat`
+
+> Chat is still very experimental.
+
+Ask natural-language questions about your collection. Choose between streaming **RAG** mode (matches are injected into the prompt) and non-streaming **Tool** mode (the LLM uses tools to query the API). Edit system prompts, switch models, and resume previous sessions from the history panel.
+
+### Stats — `/stats`
+
+View collection statistics: total movies, directors, and actors, plus bar/pie charts for years, genres, and top actors.
+
+### Models — `/ai/models`
+
+Pull new Ollama models directly from the web UI. The available models are shared across search, chat, and generator model selectors.
+
 ## Architecture
 
 ```mermaid
 flowchart TD
     Web["dvd_categorizer_web<br/>(Dioxus/WASM)<br/>:8080"] -->|HTTP| API["dvd_catalog_api<br/>(Axum REST API)<br/>:3000"]
-    API --> DB["PostgreSQL :5432<br/>OR<br/>MongoDB :27017"]
-    API --> Qdrant["Qdrant (Vector DB)<br/>:6333"]
+    API --> Postgres["PostgreSQL :5432"]
+    API --> MongoDB["MongoDB :27017"]
+    MongoDB --> Qdrant["Qdrant (Vector DB)<br/>:6333"]
     API --> Ollama["Ollama (LLMs)<br/>:11434"]
 ```
+
+Qdrant is used only when the MongoDB backend is enabled. The PostgreSQL backend relies on text and structured search.
 
 ### Workspace Crates
 
@@ -45,11 +96,10 @@ flowchart TD
 
 | Service | Image / Build | Purpose |
 |---------|--------------|---------|
-| `postgres` | `postgres:17-alpine` | PostgreSQL 17 (when using PostgreSQL backend) |
+| `postgres` | `pgvector/pgvector:pg17` | PostgreSQL 17 with pgvector extension (when using PostgreSQL backend) |
 | `mongodb` | `mongo:latest` | MongoDB (when using MongoDB backend) |
 | `qdrant` | `qdrant/qdrant:latest` | Vector database for semantic search embeddings |
 | `ollama` | `ollama/ollama:rocm` | Local LLM inference (ROCm/AMD GPU accelerated) |
-| `redis` | `redis:alpine` | Caching layer (not currently used, reserved for future chat history caching) |
 | `diesel_migrate` | Custom (Diesel CLI) | Runs database migrations on startup (PostgreSQL only) |
 | `dvd_categorize_api` | Custom (Rust/Axum) | REST API server |
 | `dvd_categorize_web` | Custom (Dioxus/WASM) | Frontend web server |
@@ -96,13 +146,13 @@ Models can be browsed at https://ollama.com/search. The application uses these b
 
 | Model | Purpose |
 |-------|---------|
-| `phi3.5` | Chat, query enhancement, and structured query parsing |
+| `qwen2.5:7b` | Chat, query enhancement, and structured query parsing |
 | `nomic-embed-text` | Vector embedding generation |
 
 You can pull models either from the **Models** page in the web UI once the app is running, or via the Ollama container directly:
 
 ```bash
-docker compose exec ollama ollama pull phi3.5
+docker compose exec ollama ollama pull qwen2.5:7b
 docker compose exec ollama ollama pull nomic-embed-text
 ```
 
@@ -110,18 +160,22 @@ docker compose exec ollama ollama pull nomic-embed-text
 
 ### Production
 
-Builds are compiled with `--release` and may take a while on first build:
+Builds are compiled with `--release` and may take a while on first build. You must select a backend profile, either `postgres` or `mongodb`:
 
 ```bash
-docker compose -f docker-compose-prod.yml up
+docker compose -f docker-compose-prod.yml --profile postgres up
+# or
+docker compose -f docker-compose-prod.yml --profile mongodb up
 ```
 
 ### Local Development
 
-Development containers bind-mount the local source directory so you can iterate without rebuilding images:
+Development containers bind-mount the local source directory so you can iterate without rebuilding images. Select a backend profile:
 
 ```bash
-docker compose up
+docker compose --profile postgres up
+# or
+docker compose --profile mongodb up
 ```
 
 ### Accessing the Application
@@ -155,12 +209,14 @@ docker compose up
 
 ## Web UI Pages
 
-- **Home** — Landing page with navigation
-- **List** — Browse all movies in the collection
-- **Live** — AI-powered search with mode selector (Text / Vector / Both / Structured), query enhancement toggle, and model selection
-- **Chat** — Conversational AI assistant for asking questions about your movie collection
-- **Insert** — Paste CSV data to preview and import movies directly from the browser
-- **Models** — View installed Ollama models and pull new ones
+- **Live** — `/live` — AI-powered search and browse interface
+- **Generator** — `/generator` — AI-assisted movie record generation
+- **Insert** — `/movies/new` — CSV import and export
+- **Chat** — `/ai/chat` — Conversational AI assistant
+- **Stats** — `/stats` — Collection statistics and charts
+- **Models** — `/ai/models` — Ollama model management
+
+The Chat, Generator, and Models pages require the application to be built with AI backend support.
 
 ## API Endpoints
 
@@ -171,13 +227,25 @@ docker compose up
 | `GET` | `/dvd/{id}` | Get a single movie by ID |
 | `POST` | `/ai/dvd-match` | Search movies (supports all four search modes) |
 | `POST` | `/ai/chat` | Conversational AI chat about the collection |
+| `POST` | `/ai/chat/stream` | Streaming AI chat with RAG |
+| `GET` | `/ai/chat/sessions` | List saved chat sessions |
 | `GET` | `/ai/recent` | Get recently added movies |
+| `GET` | `/dvd/random` | Get random movies |
+| `GET` | `/dvd/recent-releases` | Get movies from a recent release window |
+| `GET` | `/dvd/unknown-location` | Get movies with no location set |
+| `GET` | `/location/{location}` | Get movies at a specific location |
+| `POST` | `/ai/generate-movies-stream` | Stream AI-generated movie cards from a list of titles |
+| `POST` | `/saveMovie` | Save a generated movie card to the catalog |
 | `GET` | `/ai/models` | List available Ollama models |
 | `POST` | `/ai/pull-model` | Pull a new Ollama model |
 | `POST` | `/movie/location` | Update a movie's physical location |
 | `POST` | `/csv/parse` | Import movies from CSV data |
 | `POST` | `/csv/preview` | Preview parsed CSV without saving |
 | `GET` | `/csv/export` | Export all movies as a CSV download |
+| `GET` | `/stats/overview` | Get collection overview statistics |
+| `GET` | `/stats/movies-by-year` | Get movies grouped by release year |
+| `GET` | `/stats/genres` | Get genre distribution |
+| `GET` | `/stats/top-actors` | Get most frequent actors |
 
 ## Search Modes
 
@@ -185,10 +253,10 @@ docker compose up
 Pure keyword matching with entity extraction. Parses the query to identify titles, actors, directors, and genres from the existing collection, then scores movies by match quality. Best for exact name lookups.
 
 ### Vector
-Generates a vector embedding of the query using `nomic-embed-text`, then finds the closest movies by cosine similarity in Qdrant vector database. Short queries are enhanced by AI first. Best for thematic or conceptual searches (e.g., "movies about redemption").
+Generates a vector embedding of the query using `nomic-embed-text`, then finds the closest movies by cosine similarity. With PostgreSQL this uses the `pgvector` extension; with MongoDB it uses Qdrant. Short queries are enhanced by AI first. Best for thematic or conceptual searches (e.g., "movies about redemption").
 
 ### Both (Hybrid)
-Runs Text and Vector searches in parallel, then fuses results using Reciprocal Rank Fusion (RRF). Exact title matches receive a score boost to ensure they rank first. Best general-purpose mode.
+Runs Text and Vector searches in parallel, then fuses results using Reciprocal Rank Fusion (RRF). Exact title matches receive a score boost to ensure they rank first. Best general-purpose mode. The vector half uses `pgvector` or Qdrant depending on the active backend.
 
 ### Structured
 AI parses the natural language query into structured JSON (actors, directors, genres, title keywords, description keywords), then builds database-specific queries:
@@ -233,8 +301,8 @@ Each workspace crate has its own README with detailed documentation:
 - **Backend** — Axum, Tokio, Diesel (async for PostgreSQL), MongoDB driver, Tower
 - **Frontend** — Dioxus 0.7 (compiled to WASM), TailwindCSS
 - **Database** — PostgreSQL 17 OR MongoDB (feature-gated)
-- **Vector Database** — Qdrant (paired with mongo only) for semantic search embeddings
+- **Vector Search** — PostgreSQL `pgvector` extension or Qdrant, depending on the active backend (Qdrant is used only with MongoDB)
 - **AI/LLM** — Ollama (via ollama-rs), ROCm GPU acceleration
 - **Embeddings** — nomic-embed-text model
 - **Containerization** — Docker Compose with multi-stage builds
-- **Caching** — Redis (reserved for future use), in-memory Arc<RwLock<>> for movie data
+- **Caching** — In-memory `Arc<RwLock<>>` for movie data

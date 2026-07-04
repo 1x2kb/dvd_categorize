@@ -59,7 +59,7 @@ Environment variables:
 
 ## Models Used
 
-- **phi3.5**: Default model for chat, query enhancement, and structured parsing
+- **qwen2.5:7b**: Default model for chat, query enhancement, and structured parsing
 - **nomic-embed-text**: Embedding generation (768-dimensional vectors)
 
 ## Testing
