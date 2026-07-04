@@ -6,6 +6,7 @@ use models::BarChartData;
 pub fn YearChart(
     data: ReadSignal<BarChartData>,
     #[props(default = 8)] mobile_max_items: usize,
+    #[props(default = 8)] page_size: usize,
 ) -> Element {
     let data_value = data();
     let chart_data: Vec<(
@@ -38,6 +39,7 @@ pub fn YearChart(
                     x_mode: XAxisMode::Auto(AutoOptions { skip_labels: 1 }),
                     responsive: true,
                     mobile_max_items: Some(mobile_max_items),
+                    page_size: Some(page_size),
                 }
             }
         }

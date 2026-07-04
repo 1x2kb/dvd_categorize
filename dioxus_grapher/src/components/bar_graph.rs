@@ -118,11 +118,15 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
     let x_label = props.x_label.clone();
     let y_label = props.y_label.clone();
     let x_mode = props.x_mode.clone();
-    let y_min = props.y_min;
-    let y_max = props.y_max;
     let mobile_max_items = props.mobile_max_items;
+    let page_size = props.page_size;
     let data_for_effect = props.data.clone();
     let data_for_handlers = props.data.clone();
+
+    let global_min = props.data.iter().map(|(_, v)| *v).fold(f64::INFINITY, f64::min).min(0.0);
+    let global_max = props.data.iter().map(|(_, v)| *v).fold(f64::NEG_INFINITY, f64::max);
+    let total_pages = total_pages(&props.data, page_size);
+    let mut current_page = use_signal(|| 0usize);
 
     let (canvas_width, canvas_height) = if props.responsive {
         let (w, h) = container_size();
@@ -138,6 +142,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
     use_effect(move || {
         let _ = data_for_effect.clone();
         let _ = hovered_index();
+        let _ = current_page();
         let (current_w, current_h) = container_size();
         let _ = canvas_ref();
         if let Some(canvas) = canvas_ref() {
@@ -146,7 +151,12 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
             } else {
                 (width, height)
             };
-            let display_data = truncate_data_for_mobile(&data_for_effect, w, mobile_max_items);
+            let mut page = current_page();
+            if page >= total_pages {
+                page = 0;
+            }
+            let paged_data = paginate_data(&data_for_effect, page_size, page);
+            let display_data = truncate_data_for_mobile(&paged_data, w, mobile_max_items);
             let props = BarGraphProps {
                 data: display_data,
                 width: w,
@@ -155,10 +165,11 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                 x_label: x_label.clone(),
                 y_label: y_label.clone(),
                 x_mode: x_mode.clone(),
-                y_min,
-                y_max,
+                y_min: Some(global_min),
+                y_max: Some(global_max),
                 responsive: false,
                 mobile_max_items: None,
+                page_size: None,
             };
             draw_bar_graph(&canvas, &props, hovered_index());
         }
@@ -179,7 +190,8 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
         };
     }
 
-    let data_move = truncate_data_for_mobile(&data_for_handlers, canvas_width, mobile_max_items);
+    let paged_data_move = paginate_data(&data_for_handlers, page_size, current_page());
+    let data_move = truncate_data_for_mobile(&paged_data_move, canvas_width, mobile_max_items);
 
     let container_style = if props.responsive {
         "width: 100%; height: 100%;"
@@ -195,21 +207,51 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                 let element = e.as_web_event().dyn_into::<HtmlElement>().ok();
                 container_ref.set(element);
             },
-            canvas {
-                width: "{canvas_width}",
-                height: "{canvas_height}",
-                onmounted: move |e: Event<MountedData>| {
-                    let element = e.as_web_event().dyn_into::<HtmlCanvasElement>().ok();
-                    canvas_ref.set(element);
-                },
-                onmousemove: move |e: Event<MouseData>| {
-                    if let Some(canvas) = canvas_ref() {
-                        update_bar_hover(&canvas, &e.as_web_event(), &data_move, hovered_index);
+            div {
+                class: "bar-graph-canvas-wrapper",
+                canvas {
+                    width: "{canvas_width}",
+                    height: "{canvas_height}",
+                    onmounted: move |e: Event<MountedData>| {
+                        let element = e.as_web_event().dyn_into::<HtmlCanvasElement>().ok();
+                        canvas_ref.set(element);
+                    },
+                    onmousemove: move |e: Event<MouseData>| {
+                        if let Some(canvas) = canvas_ref() {
+                            update_bar_hover(&canvas, &e.as_web_event(), &data_move, hovered_index);
+                        }
+                    },
+                    onmouseleave: move |_| {
+                        hovered_index.set(None);
+                    },
+                }
+            }
+            if page_size.is_some() && total_pages > 1 {
+                div {
+                    class: "bar-graph-pagination",
+                    button {
+                        disabled: current_page() == 0,
+                        onclick: move |_| {
+                            if current_page() > 0 {
+                                current_page.set(current_page() - 1);
+                            }
+                        },
+                        "Previous"
                     }
-                },
-                onmouseleave: move |_| {
-                    hovered_index.set(None);
-                },
+                    span {
+                        style: "color: #9ca3af; font-size: 12px;",
+                        "Page {current_page() + 1} of {total_pages}"
+                    }
+                    button {
+                        disabled: current_page() + 1 >= total_pages,
+                        onclick: move |_| {
+                            if current_page() + 1 < total_pages {
+                                current_page.set(current_page() + 1);
+                            }
+                        },
+                        "Next"
+                    }
+                }
             }
         }
     }
