@@ -64,7 +64,7 @@ fn App() -> Element {
             p { "Hover over slices or legend items to see details" }
 
             div {
-                style: "margin: 30px 0;",
+                style: "margin: 30px 0; height: 400px;",
                 h2 { "Browser Market Share" }
                 PieChart {
                     data: market_share,
@@ -74,7 +74,7 @@ fn App() -> Element {
             }
 
             div {
-                style: "margin: 30px 0;",
+                style: "margin: 30px 0; height: 450px;",
                 h2 { "Monthly Expenses" }
                 PieChart {
                     data: expenses,

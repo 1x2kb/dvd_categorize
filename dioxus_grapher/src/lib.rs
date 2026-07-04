@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+pub mod canvas_utils;
 pub mod components;
 
 pub use components::{AutoOptions, BarGraph, ExplicitOptions, Graph, PieChart, XAxisMode};

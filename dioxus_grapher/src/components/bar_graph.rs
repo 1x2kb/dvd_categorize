@@ -1,4 +1,9 @@
 use dioxus::prelude::*;
+use dioxus::web::WebEventExt;
+use wasm_bindgen::JsCast;
+use web_sys::{HtmlCanvasElement, HtmlElement};
+
+use crate::canvas_utils::{setup_canvas, use_container_size, with_alpha};
 
 #[derive(Clone, PartialEq)]
 pub struct AutoOptions {
@@ -40,10 +45,7 @@ impl Default for XAxisMode {
 
 #[derive(Clone, PartialEq, Props)]
 pub struct BarGraphProps {
-    pub data: Vec<(
-        String,
-        f64,
-    )>,
+    pub data: Vec<(String, f64)>,
     #[props(default = 600.0)]
     pub width: f64,
     #[props(default = 400.0)]
@@ -60,61 +62,248 @@ pub struct BarGraphProps {
     pub y_min: Option<f64>,
     #[props(default = None)]
     pub y_max: Option<f64>,
+    #[props(default = true)]
+    pub responsive: bool,
+    #[props(default = None)]
+    pub mobile_max_items: Option<usize>,
+    #[props(default = Some(8))]
+    pub page_size: Option<usize>,
+}
+
+fn truncate_data_for_mobile(
+    data: &[(String, f64)],
+    width: f64,
+    mobile_max_items: Option<usize>,
+) -> Vec<(String, f64)> {
+    if width < 500.0 {
+        if let Some(max) = mobile_max_items {
+            return data.iter().take(max).cloned().collect();
+        }
+    }
+    data.to_vec()
+}
+
+fn paginate_data(
+    data: &[(String, f64)],
+    page_size: Option<usize>,
+    current_page: usize,
+) -> Vec<(String, f64)> {
+    match page_size {
+        Some(size) => {
+            let start = current_page * size;
+            let end = (start + size).min(data.len());
+            data[start..end].to_vec()
+        }
+        None => data.to_vec(),
+    }
+}
+
+fn total_pages(data: &[(String, f64)], page_size: Option<usize>) -> usize {
+    match page_size {
+        Some(size) if size > 0 => (data.len() + size - 1) / size,
+        _ => 1,
+    }
 }
 
 #[component]
 pub fn BarGraph(props: BarGraphProps) -> Element {
+    let mut canvas_ref = use_signal(|| None::<HtmlCanvasElement>);
+    let mut container_ref = use_signal(|| None::<HtmlElement>);
     let mut hovered_index = use_signal(|| None::<usize>);
+    let container_size = use_container_size(container_ref);
 
-    if props
-        .data
-        .is_empty()
-    {
+    let width = props.width;
+    let height = props.height;
+    let bar_color = props.bar_color.clone();
+    let x_label = props.x_label.clone();
+    let y_label = props.y_label.clone();
+    let x_mode = props.x_mode.clone();
+    let mobile_max_items = props.mobile_max_items;
+    let page_size = props.page_size;
+    let data_for_effect = props.data.clone();
+    let data_for_handlers = props.data.clone();
+
+    let global_min = props.data.iter().map(|(_, v)| *v).fold(f64::INFINITY, f64::min).min(0.0);
+    let global_max = props.data.iter().map(|(_, v)| *v).fold(f64::NEG_INFINITY, f64::max);
+    let mut current_page = use_signal(|| 0usize);
+    let mut current_page_size = use_signal(|| page_size.unwrap_or(8));
+
+    let total_pages_count = total_pages(&props.data, Some(current_page_size()));
+
+    let (canvas_width, canvas_height) = if props.responsive {
+        let (w, h) = container_size();
+        if w > 0.0 && h > 0.0 {
+            (w, h)
+        } else {
+            (width, height)
+        }
+    } else {
+        (width, height)
+    };
+
+    use_effect(move || {
+        let _ = data_for_effect.clone();
+        let _ = hovered_index();
+        let _ = current_page();
+        let _ = current_page_size();
+        let (current_w, current_h) = container_size();
+        let _ = canvas_ref();
+        if let Some(canvas) = canvas_ref() {
+            let (w, h) = if props.responsive && current_w > 0.0 && current_h > 0.0 {
+                (current_w, current_h)
+            } else {
+                (width, height)
+            };
+            let page_size_value = current_page_size();
+            let total_pages = total_pages(&data_for_effect, Some(page_size_value));
+            let mut page = current_page();
+            if page >= total_pages {
+                page = 0;
+            }
+            let paged_data = paginate_data(&data_for_effect, Some(page_size_value), page);
+            let display_data = truncate_data_for_mobile(&paged_data, w, mobile_max_items);
+            let props = BarGraphProps {
+                data: display_data,
+                width: w,
+                height: h,
+                bar_color: bar_color.clone(),
+                x_label: x_label.clone(),
+                y_label: y_label.clone(),
+                x_mode: x_mode.clone(),
+                y_min: Some(global_min),
+                y_max: Some(global_max),
+                responsive: false,
+                mobile_max_items: None,
+                page_size: None,
+            };
+            draw_bar_graph(&canvas, &props, hovered_index());
+        }
+    });
+
+    if props.data.is_empty() {
+        let style = if props.responsive {
+            "width: 100%; height: 100%; border: 1px solid #ccc;"
+        } else {
+            &format!("width: {}px; height: {}px; border: 1px solid #ccc;", width, height)
+        };
         return rsx! {
             div {
                 class: "bar-graph-container",
-                style: "width: {props.width}px; height: {props.height}px; border: 1px solid #ccc;",
+                style: "{style}",
                 "No data"
             }
         };
     }
 
-    let padding = 60.0;
+    let page_size_value = current_page_size();
+    let paged_data_move = paginate_data(&data_for_handlers, Some(page_size_value), current_page());
+    let data_move = truncate_data_for_mobile(&paged_data_move, canvas_width, mobile_max_items);
+
+    let container_style = if props.responsive {
+        "width: 100%; height: 100%;"
+    } else {
+        &format!("width: {}px; height: {}px;", width, height)
+    };
+
+    rsx! {
+        div {
+            class: "bar-graph-wrapper",
+            div {
+                class: "bar-graph-container",
+                style: "{container_style}",
+                onmounted: move |e: Event<MountedData>| {
+                    let element = e.as_web_event().dyn_into::<HtmlElement>().ok();
+                    container_ref.set(element);
+                },
+                div {
+                    class: "bar-graph-canvas-wrapper",
+                    canvas {
+                        width: "{canvas_width}",
+                        height: "{canvas_height}",
+                        onmounted: move |e: Event<MountedData>| {
+                            let element = e.as_web_event().dyn_into::<HtmlCanvasElement>().ok();
+                            canvas_ref.set(element);
+                        },
+                        onmousemove: move |e: Event<MouseData>| {
+                            if let Some(canvas) = canvas_ref() {
+                                update_bar_hover(&canvas, &e.as_web_event(), &data_move, hovered_index);
+                            }
+                        },
+                        onmouseleave: move |_| {
+                            hovered_index.set(None);
+                        },
+                    }
+                }
+            }
+            if page_size.is_some() {
+                div {
+                    class: "bar-graph-pagination",
+                    label {
+                        class: "bar-graph-page-size",
+                        "Items per page: "
+                        select {
+                            value: "{current_page_size()}",
+                            onchange: move |e: Event<FormData>| {
+                                if let Ok(size) = e.value().parse::<usize>() {
+                                    if size > 0 {
+                                        current_page_size.set(size);
+                                    }
+                                }
+                            },
+                            option { value: "2", "2" }
+                            option { value: "5", "5" }
+                            option { value: "8", "8" }
+                            option { value: "10", "10" }
+                            option { value: "15", "15" }
+                            option { value: "20", "20" }
+                        }
+                    }
+                    if total_pages_count > 1 {
+                        button {
+                            disabled: current_page() == 0,
+                            onclick: move |_| {
+                                if current_page() > 0 {
+                                    current_page.set(current_page() - 1);
+                                }
+                            },
+                            "Previous"
+                        }
+                        span {
+                            style: "color: #9ca3af; font-size: 12px;",
+                            "Page {current_page() + 1} of {total_pages_count}"
+                        }
+                        button {
+                            disabled: current_page() + 1 >= total_pages_count,
+                            onclick: move |_| {
+                                if current_page() + 1 < total_pages_count {
+                                    current_page.set(current_page() + 1);
+                                }
+                            },
+                            "Next"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_index: Option<usize>) {
+    let Some(ctx) = setup_canvas(canvas, props.width, props.height) else {
+        return;
+    };
+
+    let is_narrow = props.width < 500.0;
+    let padding = if is_narrow { 30.0 } else { 60.0 };
     let graph_width = props.width - 2.0 * padding;
     let graph_height = props.height - 2.0 * padding;
 
-    // Use custom y_max or auto-calculate
-    let max_value = props
-        .y_max
-        .unwrap_or_else(
-            || {
-                props
-                    .data
-                    .iter()
-                    .map(|(_, v)| *v)
-                    .fold(
-                        f64::NEG_INFINITY,
-                        f64::max,
-                    )
-            },
-        );
-
-    // Use custom y_min or auto-calculate
-    let min_value = props
-        .y_min
-        .unwrap_or_else(
-            || {
-                props
-                    .data
-                    .iter()
-                    .map(|(_, v)| *v)
-                    .fold(
-                        f64::INFINITY,
-                        f64::min,
-                    )
-                    .min(0.0)
-            },
-        );
+    let max_value = props.y_max.unwrap_or_else(|| {
+        props.data.iter().map(|(_, v)| *v).fold(f64::NEG_INFINITY, f64::max)
+    });
+    let min_value = props.y_min.unwrap_or_else(|| {
+        props.data.iter().map(|(_, v)| *v).fold(f64::INFINITY, f64::min).min(0.0)
+    });
 
     let value_range = max_value - min_value;
     let scale_y = if value_range > 0.0 {
@@ -123,260 +312,242 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
         1.0
     };
 
-    let bar_width = graph_width
-        / props
-            .data
-            .len() as f64
-        * 0.8;
-    let bar_spacing = graph_width
-        / props
-            .data
-            .len() as f64;
-
+    let bar_count = props.data.len() as f64;
+    let bar_spacing = graph_width / bar_count;
+    let bar_width = bar_spacing * 0.8;
     let y_ticks = 5;
     let tick_step = value_range / y_ticks as f64;
 
-    rsx! {
-        svg {
-            width: "{props.width}",
-            height: "{props.height}",
-            style: "font-family: sans-serif;",
+    // Background
+    ctx.set_fill_style_str("transparent");
+    ctx.fill_rect(0.0, 0.0, props.width, props.height);
 
-            defs {
-                linearGradient {
-                    id: "barGradient",
-                    x1: "0%",
-                    y1: "0%",
-                    x2: "0%",
-                    y2: "100%",
-                    stop {
-                        offset: "0%",
-                        stop_color: "{props.bar_color}",
-                        stop_opacity: "1",
-                    }
-                    stop {
-                        offset: "100%",
-                        stop_color: "{props.bar_color}",
-                        stop_opacity: "0.8",
-                    }
-                }
-            }
+    // Axes
+    ctx.set_stroke_style_str("#374151");
+    ctx.set_line_width(2.0);
+    ctx.begin_path();
+    ctx.move_to(padding, padding);
+    ctx.line_to(padding, props.height - padding);
+    ctx.move_to(padding, props.height - padding);
+    ctx.line_to(props.width - padding, props.height - padding);
+    ctx.stroke();
 
-            // Y-axis line
-            line {
-                x1: "{padding}",
-                y1: "{padding}",
-                x2: "{padding}",
-                y2: "{props.height - padding}",
-                stroke: "#374151",
-                stroke_width: "2",
-            }
+    // Y-axis ticks and labels
+    let tick_font = if is_narrow { "10px sans-serif" } else { "12px sans-serif" };
+    ctx.set_font(tick_font);
+    ctx.set_fill_style_str("#9ca3af");
+    ctx.set_text_align("right");
+    ctx.set_text_baseline("middle");
+    for i in 0..=y_ticks {
+        let value = min_value + (i as f64 * tick_step);
+        let y_pos = props.height - padding - ((value - min_value) * scale_y);
+        ctx.begin_path();
+        ctx.move_to(padding - 5.0, y_pos);
+        ctx.line_to(padding, y_pos);
+        ctx.stroke();
+        ctx.fill_text(&format!("{:.0}", value), padding - 10.0, y_pos + 4.0)
+            .ok();
+    }
 
-            // X-axis line
-            line {
-                x1: "{padding}",
-                y1: "{props.height - padding}",
-                x2: "{props.width - padding}",
-                y2: "{props.height - padding}",
-                stroke: "#374151",
-                stroke_width: "2",
-            }
+    // Bar gradient
+    let bar_gradient = ctx.create_linear_gradient(0.0, padding, 0.0, props.height - padding);
+    bar_gradient.add_color_stop(0.0, &props.bar_color).ok();
+    bar_gradient.add_color_stop(1.0, &with_alpha(&props.bar_color, 0.8)).ok();
 
-            // Y-axis ticks and labels
-            for i in 0..=y_ticks {
-                {
-                    let value = min_value + (i as f64 * tick_step);
-                    let y_pos = props.height - padding - ((value - min_value) * scale_y);
-                    rsx! {
-                        line {
-                            x1: "{padding - 5.0}",
-                            y1: "{y_pos}",
-                            x2: "{padding}",
-                            y2: "{y_pos}",
-                            stroke: "#374151",
-                            stroke_width: "1",
-                        }
-                        text {
-                            x: "{padding - 10.0}",
-                            y: "{y_pos + 4.0}",
-                            text_anchor: "end",
-                            font_size: "12",
-                            fill: "#9ca3af",
-                            "{value:.0}"
-                        }
-                    }
-                }
-            }
+    // Bars and X-axis labels
+    let base_skip = match &props.x_mode {
+        XAxisMode::Auto(opts) => opts.skip_labels,
+        XAxisMode::Explicit(opts) => opts.skip_labels,
+    };
 
-            // Bars and X-axis labels
-            for (idx, (label, value)) in props.data.iter().enumerate() {
-                {
-                    let x_pos = padding + (idx as f64 * bar_spacing) + (bar_spacing - bar_width) / 2.0;
-                    let bar_height = (value - min_value) * scale_y;
-                    let y_pos = props.height - padding - bar_height;
+    let x_font = if is_narrow { "10px sans-serif" } else { "12px sans-serif" };
+    ctx.set_font(x_font);
+    ctx.set_text_align("center");
+    ctx.set_text_baseline("top");
 
-                    // Get label based on x_mode
-                    let display_label = match &props.x_mode {
-                        XAxisMode::Explicit(opts) => {
-                            opts.labels.get(idx).cloned().unwrap_or_else(|| label.clone())
-                        }
-                        XAxisMode::Auto(_) => label.clone(),
-                    };
+    let mut bar_regions: Vec<(usize, f64, f64, f64, f64)> = Vec::new();
 
-                    let is_hovered = hovered_index() == Some(idx);
-                    let bar_fill = if is_hovered { "#06b6d4" } else { "url(#barGradient)" };
+    for (idx, (label, value)) in props.data.iter().enumerate() {
+        let x_pos = padding + (idx as f64 * bar_spacing) + (bar_spacing - bar_width) / 2.0;
+        let bar_height = (value - min_value) * scale_y;
+        let y_pos = props.height - padding - bar_height;
 
-                    rsx! {
-                        g {
-                            onmouseenter: move |_| hovered_index.set(Some(idx)),
-                            onmouseleave: move |_| hovered_index.set(None),
+        bar_regions.push((idx, x_pos, y_pos, bar_width, bar_height));
 
-                            // Vertical line to x-axis when hovered
-                            if is_hovered {
-                                line {
-                                    x1: "{x_pos + bar_width / 2.0}",
-                                    y1: "{y_pos}",
-                                    x2: "{x_pos + bar_width / 2.0}",
-                                    y2: "{props.height - padding}",
-                                    stroke: "#06b6d4",
-                                    stroke_width: "2",
-                                    stroke_dasharray: "4,4",
-                                    opacity: "0.6",
-                                }
-                            }
+        let display_label = match &props.x_mode {
+            XAxisMode::Explicit(opts) => opts.labels.get(idx).cloned().unwrap_or_else(|| label.clone()),
+            XAxisMode::Auto(_) => label.clone(),
+        };
 
-                            rect {
-                                x: "{x_pos}",
-                                y: "{y_pos}",
-                                width: "{bar_width}",
-                                height: "{bar_height}",
-                                fill: "{bar_fill}",
-                                rx: "6",
-                                ry: "6",
-                                style: "cursor: pointer; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));",
-                            }
-                            rect {
-                                x: "{x_pos}",
-                                y: "{y_pos}",
-                                width: "{bar_width}",
-                                height: "{bar_height.max(8.0)}",
-                                fill: "none",
-                                stroke: if is_hovered { "#06b6d4" } else { "{props.bar_color}" },
-                                stroke_width: if is_hovered { "3" } else { "2" },
-                                rx: "6",
-                                ry: "6",
-                                opacity: if is_hovered { "0.8" } else { "0.3" },
-                            }
-                        }
+        let is_hovered = hovered_index == Some(idx);
+        let fill_color = if is_hovered { "#06b6d4" } else { "" };
 
-                        {
-                            let skip = match &props.x_mode {
-                                XAxisMode::Auto(opts) => opts.skip_labels,
-                                XAxisMode::Explicit(opts) => opts.skip_labels,
-                            };
+        // Hover guide line
+        if is_hovered {
+            ctx.set_stroke_style_str("#06b6d4");
+            ctx.set_line_width(2.0);
+            ctx.set_line_dash(&wasm_bindgen::JsValue::from_str("4,4")).ok();
+            ctx.begin_path();
+            ctx.move_to(x_pos + bar_width / 2.0, y_pos);
+            ctx.line_to(x_pos + bar_width / 2.0, props.height - padding);
+            ctx.stroke();
+            ctx.set_line_dash(&wasm_bindgen::JsValue::from_str("")).ok();
+        }
 
-                            if idx % skip == 0 {
-                                rsx! {
-                                    text {
-                                        x: "{x_pos + bar_width / 2.0}",
-                                        y: "{props.height - padding + 20.0}",
-                                        text_anchor: "middle",
-                                        font_size: "12",
-                                        fill: "#9ca3af",
-                                        "{display_label}"
-                                    }
-                                }
-                            } else {
-                                rsx! {}
-                            }
-                        }
+        // Bar fill
+        if is_hovered {
+            ctx.set_fill_style_str(&fill_color);
+        } else {
+            ctx.set_fill_style_canvas_gradient(&bar_gradient);
+        }
+        round_rect(&ctx, x_pos, y_pos, bar_width, bar_height.max(0.0), 6.0);
+        ctx.fill();
 
-                        text {
-                            x: "{x_pos + bar_width / 2.0}",
-                            y: "{y_pos - 5.0}",
-                            text_anchor: "middle",
-                            font_size: "11",
-                            fill: "#9ca3af",
-                            font_weight: "bold",
-                            pointer_events: "none",
-                            "{value:.0}"
-                        }
-                    }
-                }
-            }
+        // Bar border
+        ctx.set_stroke_style_str(if is_hovered { "#06b6d4" } else { &props.bar_color });
+        ctx.set_line_width(if is_hovered { 3.0 } else { 2.0 });
+        ctx.set_global_alpha(if is_hovered { 0.8 } else { 0.3 });
+        round_rect(&ctx, x_pos, y_pos, bar_width, bar_height.max(8.0), 6.0);
+        ctx.stroke();
+        ctx.set_global_alpha(1.0);
 
-            // X-axis label
-            text {
-                x: "{props.width / 2.0}",
-                y: "{props.height - 10.0}",
-                text_anchor: "middle",
-                font_size: "14",
-                fill: "#374151",
-                font_weight: "bold",
-                "{props.x_label}"
-            }
+        // Value label
+        ctx.set_font("bold 11px sans-serif");
+        ctx.set_global_alpha(1.0);
+        ctx.set_text_align("center");
+        let value_text = format!("{:.0}", value);
+        let label_y = if bar_height > 20.0 {
+            // Draw inside the bar so it never clips the canvas edge.
+            ctx.set_fill_style_str("#ffffff");
+            ctx.set_text_baseline("middle");
+            y_pos + 12.0
+        } else {
+            // Short bar: draw above the bar.
+            ctx.set_fill_style_str("#9ca3af");
+            ctx.set_text_baseline("bottom");
+            y_pos - 8.0
+        };
+        ctx.fill_text(&value_text, x_pos + bar_width / 2.0, label_y)
+            .ok();
 
-            // Y-axis label (rotated)
-            text {
-                x: "{15.0}",
-                y: "{props.height / 2.0}",
-                text_anchor: "middle",
-                font_size: "14",
-                fill: "#374151",
-                font_weight: "bold",
-                transform: "rotate(-90, 15, {props.height / 2.0})",
-                "{props.y_label}"
-            }
-
-            // Tooltip on hover
-            if let Some(idx) = hovered_index() {
-                if let Some((label, value)) = props.data.get(idx) {
-                    {
-                        let display_label = match &props.x_mode {
-                            XAxisMode::Explicit(opts) => {
-                                opts.labels.get(idx).cloned().unwrap_or_else(|| label.clone())
-                            }
-                            XAxisMode::Auto(_) => label.clone(),
-                        };
-
-                        let tooltip_x = props.width / 2.0;
-                        let tooltip_y = 30.0;
-
-                        rsx! {
-                            g {
-                                rect {
-                                    x: "{tooltip_x - 100.0}",
-                                    y: "{tooltip_y - 25.0}",
-                                    width: "200",
-                                    height: "40",
-                                    fill: "#1f2937",
-                                    rx: "8",
-                                    stroke: "{props.bar_color}",
-                                    stroke_width: "2",
-                                    style: "filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3));",
-                                }
-                                text {
-                                    x: "{tooltip_x}",
-                                    y: "{tooltip_y - 5.0}",
-                                    text_anchor: "middle",
-                                    font_size: "14",
-                                    font_weight: "bold",
-                                    fill: "#ffffff",
-                                    "{display_label}"
-                                }
-                                text {
-                                    x: "{tooltip_x}",
-                                    y: "{tooltip_y + 10.0}",
-                                    text_anchor: "middle",
-                                    font_size: "12",
-                                    fill: "#d1d5db",
-                                    "Value: {value:.0}"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        // X-axis label: always show labels; the caller controls skip via x_mode.
+        if idx % base_skip == 0 {
+            ctx.set_fill_style_str("#9ca3af");
+            ctx.set_font(x_font);
+            ctx.set_text_baseline("top");
+            ctx.fill_text(&display_label, x_pos + bar_width / 2.0, props.height - padding + 20.0)
+                .ok();
         }
     }
+
+    // Axis labels
+    let axis_font = if is_narrow { "bold 11px sans-serif" } else { "bold 14px sans-serif" };
+    ctx.set_fill_style_str("#374151");
+    ctx.set_font(axis_font);
+    ctx.set_text_align("center");
+    ctx.set_text_baseline("alphabetic");
+    ctx.fill_text(&props.x_label, props.width / 2.0, props.height - 6.0)
+        .ok();
+
+    ctx.save();
+    ctx.translate(padding - 20.0, props.height / 2.0).ok();
+    ctx.rotate(-std::f64::consts::PI / 2.0).ok();
+    ctx.fill_text(&props.y_label, 0.0, 0.0).ok();
+    ctx.restore();
+
+    // Tooltip
+    if let Some(idx) = hovered_index {
+        if let Some((label, value)) = props.data.get(idx) {
+            let display_label = match &props.x_mode {
+                XAxisMode::Explicit(opts) => opts.labels.get(idx).cloned().unwrap_or_else(|| label.clone()),
+                XAxisMode::Auto(_) => label.clone(),
+            };
+            draw_tooltip(&ctx, props.width / 2.0, 30.0, &display_label, &format!("Value: {:.0}", value), &props.bar_color);
+        }
+    }
+}
+
+fn round_rect(ctx: &web_sys::CanvasRenderingContext2d, x: f64, y: f64, width: f64, height: f64, radius: f64) {
+    let r = radius.min(width / 2.0).min(height / 2.0);
+    ctx.begin_path();
+    ctx.move_to(x + r, y);
+    ctx.line_to(x + width - r, y);
+    ctx.quadratic_curve_to(x + width, y, x + width, y + r);
+    ctx.line_to(x + width, y + height - r);
+    ctx.quadratic_curve_to(x + width, y + height, x + width - r, y + height);
+    ctx.line_to(x + r, y + height);
+    ctx.quadratic_curve_to(x, y + height, x, y + height - r);
+    ctx.line_to(x, y + r);
+    ctx.quadratic_curve_to(x, y, x + r, y);
+    ctx.close_path();
+}
+
+fn draw_tooltip(
+    ctx: &web_sys::CanvasRenderingContext2d,
+    x: f64,
+    y: f64,
+    label: &str,
+    value: &str,
+    stroke_color: &str,
+) {
+    ctx.set_font("bold 14px sans-serif");
+    let label_metrics = ctx.measure_text(label).ok();
+    ctx.set_font("12px sans-serif");
+    let value_metrics = ctx.measure_text(value).ok();
+
+    let label_width = label_metrics.map(|m| m.width()).unwrap_or(0.0);
+    let value_width = value_metrics.map(|m| m.width()).unwrap_or(0.0);
+    let content_width = label_width.max(value_width);
+    let width = content_width + 40.0;
+    let height = 40.0;
+
+    let rx = 8.0;
+    ctx.set_fill_style_str("#1f2937");
+    round_rect(ctx, x - width / 2.0, y - height / 2.0, width, height, rx);
+    ctx.fill();
+
+    ctx.set_stroke_style_str(stroke_color);
+    ctx.set_line_width(2.0);
+    round_rect(ctx, x - width / 2.0, y - height / 2.0, width, height, rx);
+    ctx.stroke();
+
+    ctx.set_fill_style_str("#ffffff");
+    ctx.set_font("bold 14px sans-serif");
+    ctx.set_text_align("center");
+    ctx.set_text_baseline("middle");
+    ctx.fill_text(label, x, y - 5.0).ok();
+
+    ctx.set_fill_style_str("#d1d5db");
+    ctx.set_font("12px sans-serif");
+    ctx.fill_text(value, x, y + 10.0).ok();
+}
+
+fn update_bar_hover(
+    canvas: &HtmlCanvasElement,
+    event: &web_sys::MouseEvent,
+    data: &[(String, f64)],
+    mut hovered_index: Signal<Option<usize>>,
+) {
+    let width = canvas.width() as f64 / crate::canvas_utils::device_pixel_ratio();
+    let is_narrow = width < 500.0;
+    let padding = if is_narrow { 30.0 } else { 60.0 };
+    let graph_width = width - 2.0 * padding;
+    let bar_count = data.len() as f64;
+    let bar_spacing = graph_width / bar_count;
+    let bar_width = bar_spacing * 0.8;
+
+    let rect = canvas.get_bounding_client_rect();
+    let x = (event.client_x() as f64 - rect.left()) * (canvas.width() as f64 / rect.width())
+        / crate::canvas_utils::device_pixel_ratio();
+
+    let mut found = None;
+    for (idx, _) in data.iter().enumerate() {
+        let x_pos = padding + (idx as f64 * bar_spacing) + (bar_spacing - bar_width) / 2.0;
+        if x >= x_pos && x <= x_pos + bar_width {
+            found = Some(idx);
+            break;
+        }
+    }
+
+    hovered_index.set(found);
 }

@@ -34,7 +34,7 @@ fn App() -> Element {
             h1 { "Dioxus Grapher Example" }
 
             div {
-                style: "margin: 20px 0;",
+                style: "margin: 20px 0; height: 400px;",
                 h2 { "Simple Line Graph" }
                 Graph {
                     points: points.clone(),
@@ -46,7 +46,7 @@ fn App() -> Element {
             }
 
             div {
-                style: "margin: 20px 0;",
+                style: "margin: 20px 0; height: 300px;",
                 h2 { "Custom Styled Graph" }
                 Graph {
                     points: vec![

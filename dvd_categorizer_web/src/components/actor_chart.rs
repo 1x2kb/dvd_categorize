@@ -23,14 +23,13 @@ pub fn ActorChart(data: ReadSignal<BarChartData>) -> Element {
             style: "width: 100%;",
             h2 { "Top 10 Actors" }
             div {
-                style: "width: 100%; overflow-x: auto;",
+                style: "width: 100%; height: 400px;",
                 BarGraph {
                     data: chart_data,
-                    width: 1200.0,
-                    height: 400.0,
                     bar_color: "#0891b2".to_string(),
                     x_label: "Actor".to_string(),
                     y_label: "Movies".to_string(),
+                    responsive: true,
                 }
             }
         }

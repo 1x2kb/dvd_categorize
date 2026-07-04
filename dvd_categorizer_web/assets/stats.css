@@ -63,38 +63,6 @@
     gap: 2rem;
 }
 
-.chart-section {
-    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
-    border: 1px solid #374151;
-    border-radius: 12px;
-    padding: 2rem;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
-
-.chart-section h2 {
-    font-size: 1.5rem;
-    font-weight: 600;
-    margin-bottom: 1.5rem;
-    color: #f3f4f6;
-    border-bottom: 2px solid #0891b2;
-    padding-bottom: 0.5rem;
-}
-
-.bar-graph-container,
-.pie-chart-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 1rem;
-    width: 100%;
-    overflow-x: auto;
-}
-
-.chart-section svg {
-    max-width: 100%;
-    height: auto;
-}
-
 @media (max-width: 768px) {
     .stats-container {
         padding: 1rem;
@@ -110,24 +78,5 @@
 
     .stat-value {
         font-size: 2rem;
-    }
-
-    .chart-section {
-        padding: 1rem;
-    }
-
-    .chart-section h2 {
-        font-size: 1.25rem;
-    }
-
-    /* Bar charts scroll horizontally on mobile */
-    .year-chart-responsive svg,
-    .actor-chart-responsive svg {
-        min-width: 800px;
-    }
-
-    /* Pie chart scales down on mobile */
-    .genre-chart-responsive {
-        max-width: 100% !important;
     }
 }

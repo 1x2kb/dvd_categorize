@@ -63,7 +63,7 @@ fn App() -> Element {
             h1 { "Bar Graph Examples" }
 
             div {
-                style: "margin: 30px 0;",
+                style: "margin: 30px 0; height: 450px;",
                 h2 { "Monthly Sales" }
                 BarGraph {
                     data: sales_data,
@@ -76,7 +76,7 @@ fn App() -> Element {
             }
 
             div {
-                style: "margin: 30px 0;",
+                style: "margin: 30px 0; height: 400px;",
                 h2 { "Weekly Temperature" }
                 BarGraph {
                     data: temperature_data,
