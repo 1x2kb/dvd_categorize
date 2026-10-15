@@ -2299,6 +2299,106 @@ pub mod inner {
         }
     }
 
+    #[async_trait]
+    impl GetRandomSelectionStats for MongoMovieRepository {
+        async fn get_random_selection_stats(
+            &self,
+            genre_limit: i64,
+            actor_limit: i64,
+        ) -> DbResult<models::RandomSelectionStats> {
+            use mongodb::bson::doc;
+
+            // Total movies
+            let total_movies = self
+                .movies
+                .count_documents(doc! {})
+                .await
+                .map_err(|e| DatabaseError::QueryError(format!("MongoDB count movies error: {}", e)))?;
+
+            // Top genres
+            let genre_pipeline = vec![
+                doc! { "$unwind": "$genres" },
+                doc! { "$group": {
+                    "_id": "$genres",
+                    "count": { "$sum": 1 }
+                }},
+                doc! { "$sort": { "count": -1 } },
+                doc! { "$limit": genre_limit },
+            ];
+            let mut genre_cursor = self
+                .movies
+                .aggregate(genre_pipeline)
+                .await
+                .map_err(|e| DatabaseError::QueryError(format!("MongoDB genre aggregation error: {}", e)))?;
+
+            let mut genres = Vec::new();
+            while genre_cursor
+                .advance()
+                .await
+                .map_err(|e| DatabaseError::QueryError(format!("MongoDB cursor error: {}", e)))?
+            {
+                let doc: mongodb::bson::Document = genre_cursor
+                    .deserialize_current()
+                    .map_err(|e| DatabaseError::QueryError(format!("MongoDB deserialize error: {}", e)))?;
+                if let Ok(genre) = doc.get_str("_id") {
+                    let count = doc
+                        .get_i32("count")
+                        .map(|v| v as i64)
+                        .unwrap_or_else(|_| doc.get_i64("count").unwrap_or(0));
+                    genres.push(models::RandomSelectionStat {
+                        label: genre.to_string(),
+                        count: count as usize,
+                    });
+                }
+            }
+
+            // Top actors
+            let actor_pipeline = vec![
+                doc! { "$unwind": "$actors" },
+                doc! { "$group": {
+                    "_id": "$actors.name",
+                    "count": { "$sum": 1 }
+                }},
+                doc! { "$sort": { "count": -1 } },
+                doc! { "$limit": actor_limit },
+            ];
+            let mut actor_cursor = self
+                .movies
+                .aggregate(actor_pipeline)
+                .await
+                .map_err(|e| DatabaseError::QueryError(format!("MongoDB actor aggregation error: {}", e)))?;
+
+            let mut actors = Vec::new();
+            while actor_cursor
+                .advance()
+                .await
+                .map_err(|e| DatabaseError::QueryError(format!("MongoDB cursor error: {}", e)))?
+            {
+                let doc: mongodb::bson::Document = actor_cursor
+                    .deserialize_current()
+                    .map_err(|e| DatabaseError::QueryError(format!("MongoDB deserialize error: {}", e)))?;
+                if let Ok(actor) = doc.get_str("_id") {
+                    let count = doc
+                        .get_i32("count")
+                        .map(|v| v as i64)
+                        .unwrap_or_else(|_| doc.get_i64("count").unwrap_or(0));
+                    actors.push(models::RandomSelectionStat {
+                        label: actor.to_string(),
+                        count: count as usize,
+                    });
+                }
+            }
+
+            Ok(models::RandomSelectionStats {
+                total_movies: total_movies as usize,
+                genre_count: genres.len(),
+                actor_count: actors.len(),
+                genres,
+                actors,
+            })
+        }
+    }
+
     // Implement the StatsProvider supertrait
     impl StatsProvider for MongoMovieRepository {}
 }

@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_grapher::PieChart;
+use dioxus_grapher::{AutoOptions, BarGraph, XAxisMode};
 use models::PieChartData;
 
 #[component]
@@ -14,11 +14,15 @@ pub fn GenreChart(data: ReadSignal<PieChartData>) -> Element {
                 "Note: Movies can have multiple genres"
             }
             div {
-                style: "width: 100%; height: 500px; display: flex; justify-content: center;",
-                PieChart {
+                style: "width: 100%; height: 400px;",
+                BarGraph {
                     data: data().data,
-                    size: 500.0,
+                    bar_color: "#0891b2".to_string(),
+                    x_label: "Genre".to_string(),
+                    y_label: "Movies".to_string(),
+                    x_mode: XAxisMode::Auto(AutoOptions { skip_labels: 1 }),
                     responsive: true,
+                    mobile_max_items: Some(8),
                 }
             }
         }

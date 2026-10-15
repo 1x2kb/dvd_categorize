@@ -277,10 +277,22 @@ pub trait GetTopActorsStats: Repository {
     async fn get_top_actors(&self, limit: i64) -> Result<Vec<(String, i64)>, DatabaseError>;
 }
 
+/// Get all stats needed to show odds for a random movie selection
+/// (total movies, top genres, top actors) in a single backend call.
+#[async_trait]
+pub trait GetRandomSelectionStats: Repository {
+    async fn get_random_selection_stats(
+        &self,
+        genre_limit: i64,
+        actor_limit: i64,
+    ) -> Result<models::RandomSelectionStats, DatabaseError>;
+}
+
 /// Super trait that combines all stats functionality
 pub trait StatsProvider:
     GetStatsOverview
     + GetMoviesByYearStats
     + GetGenreStats
     + GetTopActorsStats
+    + GetRandomSelectionStats
 {}

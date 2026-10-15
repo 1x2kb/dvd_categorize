@@ -192,6 +192,10 @@ fn init_router(db_pool: MovieRepo) -> Router {
         .route(
             "/stats/top-actors",
             get(stats_top_actors),
+        )
+        .route(
+            "/stats/random-odds",
+            get(stats_random_odds),
         );
     
     // Conditionally add postgres-only routes

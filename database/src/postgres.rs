@@ -2227,6 +2227,65 @@ mod inner {
             Ok(results)
         }
     }
+
+    #[async_trait]
+    impl GetRandomSelectionStats for PostgresMovieRepository {
+        async fn get_random_selection_stats(
+            &self,
+            genre_limit: i64,
+            actor_limit: i64,
+        ) -> Result<models::RandomSelectionStats, DatabaseError> {
+            let mut conn = self.get_conn().await?;
+
+            let total_movies: i64 = schema::movie::table
+                .count()
+                .get_result(&mut conn)
+                .await?;
+
+            let genre_results: Vec<(String, i64)> = schema::movie_genre::table
+                .group_by(schema::movie_genre::genre)
+                .select((
+                    schema::movie_genre::genre,
+                    diesel::dsl::count(schema::movie_genre::movie_id),
+                ))
+                .order_by(diesel::dsl::count(schema::movie_genre::movie_id).desc())
+                .limit(genre_limit)
+                .load(&mut conn)
+                .await?;
+
+            let actor_results: Vec<(String, i64)> = schema::movie_actor::table
+                .inner_join(schema::actor::table)
+                .group_by(schema::actor::name)
+                .select((
+                    schema::actor::name,
+                    diesel::dsl::count(schema::movie_actor::movie_id),
+                ))
+                .order_by(diesel::dsl::count(schema::movie_actor::movie_id).desc())
+                .limit(actor_limit)
+                .load(&mut conn)
+                .await?;
+
+            Ok(models::RandomSelectionStats {
+                total_movies: total_movies as usize,
+                genre_count: genre_results.len(),
+                actor_count: actor_results.len(),
+                genres: genre_results
+                    .into_iter()
+                    .map(|(label, count)| models::RandomSelectionStat {
+                        label,
+                        count: count as usize,
+                    })
+                    .collect(),
+                actors: actor_results
+                    .into_iter()
+                    .map(|(label, count)| models::RandomSelectionStat {
+                        label,
+                        count: count as usize,
+                    })
+                    .collect(),
+            })
+        }
+    }
 } // End of inner module
 
 // Re-export all postgres-specific types for backwards compatibility
