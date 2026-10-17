@@ -433,6 +433,9 @@ impl AiMovieData {
                 .clone(),
             #[cfg(any(feature = "postgres", feature = "vector-similarity"))]
             embedding: None,
+            #[cfg(feature = "mongodb")]
+            added_on: Some(chrono::Utc::now().to_rfc3339()),
+            #[cfg(not(feature = "mongodb"))]
             added_on: None,
             location: Some("Unknown".to_string()),
             release_year: self.year,
