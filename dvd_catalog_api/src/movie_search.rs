@@ -11,8 +11,9 @@ use database::{
     FullMovie, MovieId, MovieRepo,
 };
 #[cfg(feature = "ai")]
-use database::traits::SearchMoviesByEmbedding;
-use database::traits::SearchMoviesStructured;
+use database::traits::{
+    SearchMoviesByEmbedding, SearchMoviesStructured
+};
 use log::{error, info};
 use tracing::instrument;
 
@@ -794,6 +795,7 @@ async fn hybrid_both_search(
 }
 
 /// Performs structured query search using AI to parse the query and database-specific queries
+#[cfg(feature = "ai")]
 #[instrument(skip(repo))]
 async fn structured_query_search(
     query: &str,
@@ -949,10 +951,18 @@ pub async fn hybrid_search(
             }
         }
         models::SearchMode::Structured => {
-            structured_query_search(
-                query, repo, limit, model,
-            )
-            .await
+            #[cfg(feature = "ai")]
+            {
+                structured_query_search(
+                    query, repo, limit, model,
+                )
+                .await
+            }
+            #[cfg(not(feature = "ai"))]
+            {
+                error!("Structured search requires ai feature but it was not enabled");
+                (Vec::new(), query.to_string())
+            }
         }
     }
 }

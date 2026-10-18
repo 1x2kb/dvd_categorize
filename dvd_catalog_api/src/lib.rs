@@ -17,7 +17,7 @@ use database::{
         ChatSessions, GetAllMovies, GetGenreStats, GetMovieById, GetMoviesByReleaseYear,
         GetMoviesByYearStats, GetRandomSelectionStats, GetRecentMovies, GetStatsOverview,
         GetTopActorsStats, GetUniqueLocations, GetUnknownLocationMovies, InsertMovie,
-        MoviesByLocation, RandomMovies, Repository, UpdateMovieLocation,
+        MoviesByLocation, RandomMovies, Repository, UpdateMovieLocation, DeleteMovieById,
     },
     FullMovie, MovieId, MovieRepo, SearchRequest,
 };
@@ -2468,6 +2468,40 @@ where
         .collect();
 
     Json(models::BarChartData { labels, values })
+}
+
+/// Delete a movie by ID
+#[instrument(skip(state))]
+#[debug_handler]
+pub async fn delete_movie(
+    State(state): State<DbState>,
+    Path(id): Path<<MovieRepo as Repository>::Id>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    info!("Deleting movie with ID: {}", id);
+
+    // Delete the movie using the repository backend
+    state
+        .movie_repo
+        .delete_by_id(id)
+        .await
+        .map_err(
+            |e| {
+                error!(
+                    "Failed to delete movie: {}",
+                    e
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!(
+                        "Failed to delete movie: {}",
+                        e
+                    ),
+                )
+            },
+        )?;
+
+    info!("Successfully deleted movie");
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Compute odds for a random selection of movies.

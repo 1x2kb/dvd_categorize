@@ -113,6 +113,11 @@ pub trait GetUniqueLocations: Send + Sync {
 }
 
 #[async_trait]
+pub trait DeleteMovieById: Repository {
+    async fn delete_by_id(&self, id: Self::Id) -> Result<(), DatabaseError>;
+}
+
+#[async_trait]
 pub trait MoviesByLocation: Send + Sync {
     async fn movies_by_location(
         &self,
@@ -241,6 +246,7 @@ pub trait MovieRepository:
     + MoviesByLocation
     + SearchMoviesStructured
     + ChatSessions
+    + DeleteMovieById
     + Clone
     + Send
     + Sync

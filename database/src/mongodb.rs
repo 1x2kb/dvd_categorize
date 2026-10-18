@@ -19,7 +19,9 @@ pub mod inner {
 
     use crate::traits::*;
     use crate::{DatabaseError, DbResult};
-    use models::{Actor, ChatMessage, ChatSession, Director, FullMovie, NewChatMessage, NewMovie, ScoredMovie};
+    use models::{
+        Actor, ChatMessage, ChatSession, Director, FullMovie, NewChatMessage, NewMovie, ScoredMovie,
+    };
 
     /// Serde helper that stores the document `_id` as a BSON `ObjectId` while
     /// keeping it as an `Option<String>` (hex) in Rust. `None` is skipped on
@@ -492,7 +494,16 @@ pub mod inner {
         }
 
         /// Search Qdrant for similar vectors and return movie IDs with scores
-        async fn search_qdrant(&self, embedding: Vec<f32>, limit: i64) -> DbResult<Vec<(String, f32)>> {
+        async fn search_qdrant(
+            &self,
+            embedding: Vec<f32>,
+            limit: i64,
+        ) -> DbResult<
+            Vec<(
+                String,
+                f32,
+            )>,
+        > {
             use log::{debug, info, warn};
             use qdrant_client::qdrant::SearchPointsBuilder;
 
@@ -501,7 +512,13 @@ pub mod inner {
                 self.qdrant_collection,
                 embedding.len()
             );
-            info!("Search embedding (first 10): {:?}", &embedding.iter().take(10).collect::<Vec<_>>());
+            info!(
+                "Search embedding (first 10): {:?}",
+                &embedding
+                    .iter()
+                    .take(10)
+                    .collect::<Vec<_>>()
+            );
 
             let search_request = SearchPointsBuilder::new(
                 &self.qdrant_collection,
@@ -571,10 +588,12 @@ pub mod inner {
                         if let Some(id) = movie_id {
                             debug!(
                                 "Extracted movie_id: {} with score: {}",
-                                id,
-                                point.score
+                                id, point.score
                             );
-                            results.push((id, point.score));
+                            results.push((
+                                id,
+                                point.score,
+                            ));
                         }
                     }
                     None => {
@@ -850,20 +869,33 @@ pub mod inner {
                 .movies
                 .find(existing_filter)
                 .await
-                .map_err(|e| {
-                    DatabaseError::QueryError(format!(
-                        "MongoDB find error checking duplicates: {}",
-                        e
-                    ))
-                })?
+                .map_err(
+                    |e| {
+                        DatabaseError::QueryError(
+                            format!(
+                                "MongoDB find error checking duplicates: {}",
+                                e
+                            ),
+                        )
+                    },
+                )?
                 .try_collect()
                 .await
-                .map_err(|e| {
-                    DatabaseError::QueryError(format!("MongoDB cursor error: {}", e))
-                })?;
+                .map_err(
+                    |e| {
+                        DatabaseError::QueryError(
+                            format!(
+                                "MongoDB cursor error: {}",
+                                e
+                            ),
+                        )
+                    },
+                )?;
 
-            let existing_names: std::collections::HashSet<String> =
-                existing_docs.into_iter().map(|doc| doc.name).collect();
+            let existing_names: std::collections::HashSet<String> = existing_docs
+                .into_iter()
+                .map(|doc| doc.name)
+                .collect();
 
             if !existing_names.is_empty() {
                 info!(
@@ -876,10 +908,7 @@ pub mod inner {
             let mut new_docs = Vec::new();
             let mut embeddings_to_insert = Vec::new(); // (index, embedding) pairs
 
-            for (movie, embedding) in movies
-                .into_iter()
-                
-            {
+            for (movie, embedding) in movies.into_iter() {
                 if existing_names.contains(&movie.name) {
                     debug!(
                         "Skipping duplicate movie: {}",
@@ -1380,9 +1409,7 @@ pub mod inner {
                             )
                         },
                     )?;
-                if let Ok(loc) = doc
-                    .get_str("_id")
-                {
+                if let Ok(loc) = doc.get_str("_id") {
                     locations.push(loc.to_string());
                 }
             }
@@ -1446,6 +1473,41 @@ pub mod inner {
     }
 
     #[async_trait]
+    impl DeleteMovieById for MongoMovieRepository {
+        async fn delete_by_id(&self, id: String) -> DbResult<()> {
+            use mongodb::bson::oid::ObjectId;
+
+            let oid = ObjectId::parse_str(&id).map_err(
+                |e| {
+                    DatabaseError::QueryError(
+                        format!(
+                            "Invalid movie id '{}': {}",
+                            id, e
+                        ),
+                    )
+                },
+            )?;
+            let filter = doc! { "_id": oid };
+
+            self.movies
+                .delete_one(filter)
+                .await
+                .map_err(
+                    |e| {
+                        DatabaseError::QueryError(
+                            format!(
+                                "MongoDB delete error: {}",
+                                e
+                            ),
+                        )
+                    },
+                )?;
+
+            Ok(())
+        }
+    }
+
+    #[async_trait]
     impl SearchMoviesByEmbedding for MongoMovieRepository {
         async fn search_by_embedding(
             &self,
@@ -1454,7 +1516,7 @@ pub mod inner {
         ) -> DbResult<Vec<ScoredMovie>> {
             use log::info;
             use std::collections::HashMap;
-            
+
             // Search Qdrant for similar vectors with scores
             let results = self
                 .search_qdrant(
@@ -1468,40 +1530,60 @@ pub mod inner {
 
             // Log the scores for debugging
             for (id, score) in &results {
-                info!("Qdrant result: movie_id={}, score={}", id, score);
+                info!(
+                    "Qdrant result: movie_id={}, score={}",
+                    id, score
+                );
             }
 
             // Create a map of movie_id -> score
-            let score_map: HashMap<String, f32> = results.iter().cloned().collect();
+            let score_map: HashMap<String, f32> = results
+                .iter()
+                .cloned()
+                .collect();
 
             // Extract just the IDs for MongoDB lookup
-            let ids: Vec<String> = results.iter().map(|(id, _score)| id.clone()).collect();
+            let ids: Vec<String> = results
+                .iter()
+                .map(|(id, _score)| id.clone())
+                .collect();
 
             // Fetch full documents from MongoDB
-            let movies = self.get_by_ids(ids).await?;
+            let movies = self
+                .get_by_ids(ids)
+                .await?;
 
             // Wrap each movie with its Qdrant score
             let mut scored_movies: Vec<ScoredMovie> = movies
                 .into_iter()
-                .filter_map(|movie| {
-                    score_map.get(&movie.id).map(|&vector_score| ScoredMovie {
-                        movie,
-                        vector_score,
-                    })
-                })
+                .filter_map(
+                    |movie| {
+                        score_map
+                            .get(&movie.id)
+                            .map(
+                                |&vector_score| ScoredMovie {
+                                    movie,
+                                    vector_score,
+                                },
+                            )
+                    },
+                )
                 .collect();
 
             // Sort by vector score descending (highest similarity first)
-            scored_movies.sort_by(|a, b| {
-                b.vector_score
-                    .partial_cmp(&a.vector_score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
+            scored_movies.sort_by(
+                |a, b| {
+                    b.vector_score
+                        .partial_cmp(&a.vector_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                },
+            );
 
             Ok(scored_movies)
         }
     }
 
+    #[cfg(all(feature = "ai", feature = "mongodb"))]
     #[async_trait]
     impl SearchMoviesStructured for MongoMovieRepository {
         async fn search_structured(
@@ -1518,59 +1600,94 @@ pub mod inner {
             let mut filters = Vec::new();
 
             // Actor filters (AND logic - all must match)
-            if !query.actors.is_empty() {
-                info!("Filtering by actors: {:?}", query.actors);
+            if !query
+                .actors
+                .is_empty()
+            {
+                info!(
+                    "Filtering by actors: {:?}",
+                    query.actors
+                );
                 for actor_name in &query.actors {
-                    filters.push(doc! {
-                        "actors.name": {
-                            "$regex": actor_name,
-                            "$options": "i"
-                        }
-                    });
+                    filters.push(
+                        doc! {
+                            "actors.name": {
+                                "$regex": actor_name,
+                                "$options": "i"
+                            }
+                        },
+                    );
                 }
             }
 
             // Director filters (AND logic - all must match)
-            if !query.directors.is_empty() {
-                info!("Filtering by directors: {:?}", query.directors);
+            if !query
+                .directors
+                .is_empty()
+            {
+                info!(
+                    "Filtering by directors: {:?}",
+                    query.directors
+                );
                 for director_name in &query.directors {
-                    filters.push(doc! {
-                        "director.name": {
-                            "$regex": director_name,
-                            "$options": "i"
-                        }
-                    });
+                    filters.push(
+                        doc! {
+                            "director.name": {
+                                "$regex": director_name,
+                                "$options": "i"
+                            }
+                        },
+                    );
                 }
             }
 
             // Genre filters (AND logic - all must match)
-            if !query.genres.is_empty() {
-                info!("Filtering by genres: {:?}", query.genres);
+            if !query
+                .genres
+                .is_empty()
+            {
+                info!(
+                    "Filtering by genres: {:?}",
+                    query.genres
+                );
                 for genre in &query.genres {
-                    filters.push(doc! {
-                        "genres": {
-                            "$regex": genre,
-                            "$options": "i"
-                        }
-                    });
+                    filters.push(
+                        doc! {
+                            "genres": {
+                                "$regex": genre,
+                                "$options": "i"
+                            }
+                        },
+                    );
                 }
             }
 
             // Title keyword filters (AND logic - all must match)
-            if !query.title_keywords.is_empty() {
-                info!("Filtering by title keywords: {:?}", query.title_keywords);
+            if !query
+                .title_keywords
+                .is_empty()
+            {
+                info!(
+                    "Filtering by title keywords: {:?}",
+                    query.title_keywords
+                );
                 for keyword in &query.title_keywords {
-                    filters.push(doc! {
-                        "name": {
-                            "$regex": keyword,
-                            "$options": "i"
-                        }
-                    });
+                    filters.push(
+                        doc! {
+                            "name": {
+                                "$regex": keyword,
+                                "$options": "i"
+                            }
+                        },
+                    );
                 }
             }
 
             // Description keyword filters (OR logic - any must match)
-            if !query.description_keywords.is_empty() {
+            if !query
+                .description_keywords
+                .is_empty()
+            {
                 info!(
                     "Filtering by description keywords (OR): {:?}",
                     query.description_keywords
@@ -1578,14 +1695,16 @@ pub mod inner {
                 let desc_filters: Vec<mongodb::bson::Document> = query
                     .description_keywords
                     .iter()
-                    .map(|keyword| {
-                        doc! {
-                            "description": {
-                                "$regex": keyword,
-                                "$options": "i"
+                    .map(
+                        |keyword| {
+                            doc! {
+                                "description": {
+                                    "$regex": keyword,
+                                    "$options": "i"
+                                }
                             }
-                        }
-                    })
+                        },
+                    )
                     .collect();
 
                 if !desc_filters.is_empty() {
@@ -1597,42 +1716,69 @@ pub mod inner {
             let filter = if filters.is_empty() {
                 doc! {}
             } else if filters.len() == 1 {
-                filters.into_iter().next().unwrap()
+                filters
+                    .into_iter()
+                    .next()
+                    .unwrap()
             } else {
                 doc! { "$and": filters }
             };
 
-            info!("MongoDB filter: {:?}", filter);
+            info!(
+                "MongoDB filter: {:?}",
+                filter
+            );
 
             // Execute query
             let mut cursor = self
                 .movies
                 .find(filter)
                 .await
-                .map_err(|e| {
-                    DatabaseError::QueryError(format!("MongoDB find error: {}", e))
-                })?;
+                .map_err(
+                    |e| {
+                        DatabaseError::QueryError(
+                            format!(
+                                "MongoDB find error: {}",
+                                e
+                            ),
+                        )
+                    },
+                )?;
 
             let mut movies = Vec::new();
             while cursor
                 .advance()
                 .await
-                .map_err(|e| {
-                    DatabaseError::QueryError(format!("MongoDB cursor error: {}", e))
-                })?
+                .map_err(
+                    |e| {
+                        DatabaseError::QueryError(
+                            format!(
+                                "MongoDB cursor error: {}",
+                                e
+                            ),
+                        )
+                    },
+                )?
             {
                 let doc = cursor
                     .deserialize_current()
-                    .map_err(|e| {
-                        DatabaseError::QueryError(format!(
-                            "MongoDB deserialize error: {}",
-                            e
-                        ))
-                    })?;
+                    .map_err(
+                        |e| {
+                            DatabaseError::QueryError(
+                                format!(
+                                    "MongoDB deserialize error: {}",
+                                    e
+                                ),
+                            )
+                        },
+                    )?;
                 movies.push(doc.into());
             }
 
-            info!("MongoDB structured search returned {} movies", movies.len());
+            info!(
+                "MongoDB structured search returned {} movies",
+                movies.len()
+            );
             Ok(movies)
         }
     }
@@ -2115,7 +2261,12 @@ pub mod inner {
                 let count = doc
                     .get_i32("count")
                     .map(|v| v as i64)
-                    .unwrap_or_else(|_| doc.get_i64("count").unwrap_or(0));
+                    .unwrap_or_else(
+                        |_| {
+                            doc.get_i64("count")
+                                .unwrap_or(0)
+                        },
+                    );
                 results.push((
                     year, count,
                 ));
@@ -2192,25 +2343,37 @@ pub mod inner {
                             )
                         },
                     )?;
-                if let Ok(genre) = doc
-                    .get_str("_id")
-                {
+                if let Ok(genre) = doc.get_str("_id") {
                     // MongoDB $sum returns i32, fallback to i64 for edge cases
                     let count = doc
                         .get_i32("count")
                         .map(|v| v as i64)
-                        .unwrap_or_else(|_| doc.get_i64("count").unwrap_or(0));
-                    info!("Genre: {}, Count: {}", genre, count);
+                        .unwrap_or_else(
+                            |_| {
+                                doc.get_i64("count")
+                                    .unwrap_or(0)
+                            },
+                        );
+                    info!(
+                        "Genre: {}, Count: {}",
+                        genre, count
+                    );
                     results.push((
                         genre.to_string(),
                         count,
                     ));
                 } else {
-                    info!("Genre aggregation doc missing _id: {:?}", doc);
+                    info!(
+                        "Genre aggregation doc missing _id: {:?}",
+                        doc
+                    );
                 }
             }
 
-            info!("Genre stats returning {} results", results.len());
+            info!(
+                "Genre stats returning {} results",
+                results.len()
+            );
             Ok(results)
         }
     }
@@ -2280,14 +2443,17 @@ pub mod inner {
                             )
                         },
                     )?;
-                if let Ok(actor) = doc
-                    .get_str("_id")
-                {
+                if let Ok(actor) = doc.get_str("_id") {
                     // MongoDB $sum returns i32, fallback to i64 for edge cases
                     let count = doc
                         .get_i32("count")
                         .map(|v| v as i64)
-                        .unwrap_or_else(|_| doc.get_i64("count").unwrap_or(0));
+                        .unwrap_or_else(
+                            |_| {
+                                doc.get_i64("count")
+                                    .unwrap_or(0)
+                            },
+                        );
                     results.push((
                         actor.to_string(),
                         count,
@@ -2313,7 +2479,16 @@ pub mod inner {
                 .movies
                 .count_documents(doc! {})
                 .await
-                .map_err(|e| DatabaseError::QueryError(format!("MongoDB count movies error: {}", e)))?;
+                .map_err(
+                    |e| {
+                        DatabaseError::QueryError(
+                            format!(
+                                "MongoDB count movies error: {}",
+                                e
+                            ),
+                        )
+                    },
+                )?;
 
             // Top genres
             let genre_pipeline = vec![
@@ -2329,26 +2504,60 @@ pub mod inner {
                 .movies
                 .aggregate(genre_pipeline)
                 .await
-                .map_err(|e| DatabaseError::QueryError(format!("MongoDB genre aggregation error: {}", e)))?;
+                .map_err(
+                    |e| {
+                        DatabaseError::QueryError(
+                            format!(
+                                "MongoDB genre aggregation error: {}",
+                                e
+                            ),
+                        )
+                    },
+                )?;
 
             let mut genres = Vec::new();
             while genre_cursor
                 .advance()
                 .await
-                .map_err(|e| DatabaseError::QueryError(format!("MongoDB cursor error: {}", e)))?
+                .map_err(
+                    |e| {
+                        DatabaseError::QueryError(
+                            format!(
+                                "MongoDB cursor error: {}",
+                                e
+                            ),
+                        )
+                    },
+                )?
             {
                 let doc: mongodb::bson::Document = genre_cursor
                     .deserialize_current()
-                    .map_err(|e| DatabaseError::QueryError(format!("MongoDB deserialize error: {}", e)))?;
+                    .map_err(
+                        |e| {
+                            DatabaseError::QueryError(
+                                format!(
+                                    "MongoDB deserialize error: {}",
+                                    e
+                                ),
+                            )
+                        },
+                    )?;
                 if let Ok(genre) = doc.get_str("_id") {
                     let count = doc
                         .get_i32("count")
                         .map(|v| v as i64)
-                        .unwrap_or_else(|_| doc.get_i64("count").unwrap_or(0));
-                    genres.push(models::RandomSelectionStat {
-                        label: genre.to_string(),
-                        count: count as usize,
-                    });
+                        .unwrap_or_else(
+                            |_| {
+                                doc.get_i64("count")
+                                    .unwrap_or(0)
+                            },
+                        );
+                    genres.push(
+                        models::RandomSelectionStat {
+                            label: genre.to_string(),
+                            count: count as usize,
+                        },
+                    );
                 }
             }
 
@@ -2366,36 +2575,72 @@ pub mod inner {
                 .movies
                 .aggregate(actor_pipeline)
                 .await
-                .map_err(|e| DatabaseError::QueryError(format!("MongoDB actor aggregation error: {}", e)))?;
+                .map_err(
+                    |e| {
+                        DatabaseError::QueryError(
+                            format!(
+                                "MongoDB actor aggregation error: {}",
+                                e
+                            ),
+                        )
+                    },
+                )?;
 
             let mut actors = Vec::new();
             while actor_cursor
                 .advance()
                 .await
-                .map_err(|e| DatabaseError::QueryError(format!("MongoDB cursor error: {}", e)))?
+                .map_err(
+                    |e| {
+                        DatabaseError::QueryError(
+                            format!(
+                                "MongoDB cursor error: {}",
+                                e
+                            ),
+                        )
+                    },
+                )?
             {
                 let doc: mongodb::bson::Document = actor_cursor
                     .deserialize_current()
-                    .map_err(|e| DatabaseError::QueryError(format!("MongoDB deserialize error: {}", e)))?;
+                    .map_err(
+                        |e| {
+                            DatabaseError::QueryError(
+                                format!(
+                                    "MongoDB deserialize error: {}",
+                                    e
+                                ),
+                            )
+                        },
+                    )?;
                 if let Ok(actor) = doc.get_str("_id") {
                     let count = doc
                         .get_i32("count")
                         .map(|v| v as i64)
-                        .unwrap_or_else(|_| doc.get_i64("count").unwrap_or(0));
-                    actors.push(models::RandomSelectionStat {
-                        label: actor.to_string(),
-                        count: count as usize,
-                    });
+                        .unwrap_or_else(
+                            |_| {
+                                doc.get_i64("count")
+                                    .unwrap_or(0)
+                            },
+                        );
+                    actors.push(
+                        models::RandomSelectionStat {
+                            label: actor.to_string(),
+                            count: count as usize,
+                        },
+                    );
                 }
             }
 
-            Ok(models::RandomSelectionStats {
-                total_movies: total_movies as usize,
-                genre_count: genres.len(),
-                actor_count: actors.len(),
-                genres,
-                actors,
-            })
+            Ok(
+                models::RandomSelectionStats {
+                    total_movies: total_movies as usize,
+                    genre_count: genres.len(),
+                    actor_count: actors.len(),
+                    genres,
+                    actors,
+                },
+            )
         }
     }
 

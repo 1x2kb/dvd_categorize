@@ -894,6 +894,22 @@ mod inner {
     }
 
     #[async_trait]
+    impl DeleteMovieById for PostgresMovieRepository {
+        async fn delete_by_id(&self, id: i32) -> Result<(), DatabaseError> {
+            let mut conn = self
+                .get_conn()
+                .await?;
+
+            diesel::delete(schema::movie::table.find(id))
+                .execute(&mut conn)
+                .await
+                .map_err(DatabaseError::from)?;
+
+            Ok(())
+        }
+    }
+
+    #[async_trait]
     impl crate::traits::ChatSessions for PostgresMovieRepository {
         async fn create_chat_session(&self) -> Result<uuid::Uuid, DatabaseError> {
             use models::{schema::chat_sessions, NewChatSession};

@@ -243,6 +243,10 @@ pub fn InsertMedia() -> Element {
                                             })
                                             .collect();
                                         dvd_data.set(Arc::new(updated_dvds));
+                                    },
+                                    on_delete: |movie_id| {
+                                        // This is a preview section, so no actual deletion needed
+                                        log::info!("Delete requested for movie {}, but preview section does not support deletion", movie_id);
                                     }
                                 }
                             }

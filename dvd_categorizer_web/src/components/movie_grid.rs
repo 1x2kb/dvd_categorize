@@ -13,6 +13,7 @@ pub struct SingleMovieCardProps {
         MovieId,
         String,
     )>,
+    pub on_delete: EventHandler<MovieId>,
 }
 
 #[component]
@@ -160,10 +161,19 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                 if let Some(ref location) = props.scored_movie.movie.location {
                     LocationEditor {
                         key: "{movie_id}-{location}",
-                        movie_id: movie_id,
+                        movie_id: movie_id.clone(),
                         initial_location: location.clone(),
                         on_location_updated: props.on_location_updated
                     }
+                }
+                
+                // Delete button
+                button {
+                    class: "delete-button",
+                    onclick: move |_| {
+                        (props.on_delete)(movie_id.clone())
+                    },
+                    "Delete"
                 }
             }
         }
@@ -178,6 +188,7 @@ pub struct MovieGridProps {
         MovieId,
         String,
     )>,
+    pub on_delete: EventHandler<MovieId>,
 }
 
 #[component]
@@ -194,7 +205,8 @@ pub fn MovieGrid(props: MovieGridProps) -> Element {
                     key: "{scored_movie.movie.key_hash}",
                     scored_movie: scored_movie.clone(),
                     search_mode: props.search_mode,
-                    on_location_updated: props.on_location_updated
+                    on_location_updated: props.on_location_updated,
+                    on_delete: props.on_delete
                 }
             }
         }

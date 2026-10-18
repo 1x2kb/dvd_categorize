@@ -95,7 +95,7 @@ fn init_router(db_pool: MovieRepo) -> Router {
         )
         .route(
             "/dvd/{id}",
-            get(get_dvd),
+            get(get_dvd).delete(delete_movie),
         )
         .route(
             "/saveMovie",

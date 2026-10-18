@@ -640,6 +640,50 @@ pub fn LiveResults() -> Element {
                     movies.set(Arc::new(updated_movies));
                     log::info!("Movies signal updated, new count: {}", count);
                 },
+                on_delete: move |movie_id: models::MovieId| {
+                    log::info!("Delete callback called for movie: {}", movie_id);
+                    
+                    // Remove the movie from the list
+                    let current_movies = movies();
+                    let updated_movies: Vec<ScoredMovie> = current_movies
+                        .iter()
+                        .filter(|scored_movie| scored_movie.movie.id != movie_id)
+                        .cloned()
+                        .collect();
+                    let count = updated_movies.len();
+                    movies.set(Arc::new(updated_movies));
+                    log::info!("Movies signal updated after delete, new count: {}", count);
+                    
+                    // Make the API call to delete from backend
+                    let window = web_sys::window().unwrap();
+                    let location = window.location();
+                    let hostname = location
+                        .hostname()
+                        .unwrap_or_else(|_| "127.0.0.1".to_string());
+                    
+                    let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
+                    
+                    wasm_bindgen_futures::spawn_local(async move {
+                        let client = reqwest::Client::new();
+                        let response = client
+                            .delete(format!("http://{hostname}:{server_port}/dvd/{movie_id}"))
+                            .send()
+                            .await;
+                        
+                        match response {
+                            Ok(resp) => {
+                                if resp.status().is_success() {
+                                    log::info!("Successfully deleted movie: {}", movie_id);
+                                } else {
+                                    log::error!("Failed to delete movie {}: {}", movie_id, resp.status());
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Error deleting movie {}: {}", movie_id, e);
+                            }
+                        }
+                    });
+                },
             }
 
             // Genre and actor charts for random movies
