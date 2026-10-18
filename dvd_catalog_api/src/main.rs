@@ -1,9 +1,7 @@
 use std::env;
 
 use axum::{
-    http::{self, Method},
-    routing::{get, post},
-    Router,
+    Router, http::{self, Method}, routing::{delete, get, post},
 };
 use database::MovieRepo;
 use dotenvy::dotenv;
@@ -95,7 +93,11 @@ fn init_router(db_pool: MovieRepo) -> Router {
         )
         .route(
             "/dvd/{id}",
-            get(get_dvd).delete(delete_movie),
+            get(get_dvd)
+        )
+        .route(
+            "/dvd/{id}",
+            delete(delete_movie),
         )
         .route(
             "/saveMovie",
@@ -212,6 +214,6 @@ fn init_router(db_pool: MovieRepo) -> Router {
             CorsLayer::new()
                 .allow_origin(Any)
                 .allow_headers([http::header::CONTENT_TYPE])
-                .allow_methods([Method::GET, Method::POST]),
+                .allow_methods([Method::GET, Method::POST, Method::DELETE]),
         )
 }

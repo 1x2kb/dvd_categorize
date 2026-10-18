@@ -643,18 +643,7 @@ pub fn LiveResults() -> Element {
                 on_delete: move |movie_id: models::MovieId| {
                     log::info!("Delete callback called for movie: {}", movie_id);
                     
-                    // Remove the movie from the list
-                    let current_movies = movies();
-                    let updated_movies: Vec<ScoredMovie> = current_movies
-                        .iter()
-                        .filter(|scored_movie| scored_movie.movie.id != movie_id)
-                        .cloned()
-                        .collect();
-                    let count = updated_movies.len();
-                    movies.set(Arc::new(updated_movies));
-                    log::info!("Movies signal updated after delete, new count: {}", count);
-                    
-                    // Make the API call to delete from backend
+                    // Make the API call to delete from backend first
                     let window = web_sys::window().unwrap();
                     let location = window.location();
                     let hostname = location
@@ -674,6 +663,16 @@ pub fn LiveResults() -> Element {
                             Ok(resp) => {
                                 if resp.status().is_success() {
                                     log::info!("Successfully deleted movie: {}", movie_id);
+                                    // Only remove from UI after successful backend deletion
+                                    let current_movies = movies();
+                                    let updated_movies: Vec<ScoredMovie> = current_movies
+                                        .iter()
+                                        .filter(|scored_movie| scored_movie.movie.id != movie_id)
+                                        .cloned()
+                                        .collect();
+                                    let count = updated_movies.len();
+                                    movies.set(Arc::new(updated_movies));
+                                    log::info!("Movies signal updated, new count: {}", count);
                                 } else {
                                     log::error!("Failed to delete movie {}: {}", movie_id, resp.status());
                                 }
