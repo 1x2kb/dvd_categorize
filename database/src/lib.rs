@@ -149,6 +149,13 @@ impl From<diesel::result::Error> for DatabaseError {
     }
 }
 
+#[cfg(feature = "mongodb")]
+impl From<mongodb::mongodb_driver::error::Error> for DatabaseError {
+    fn from(value: mongodb::mongodb_driver::error::Error) -> Self {
+        DatabaseError::QueryError(value.to_string())
+    }
+}
+
 impl Error for DatabaseError {}
 
 impl Display for DatabaseError {

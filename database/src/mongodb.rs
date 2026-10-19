@@ -5,6 +5,9 @@
 //! Vector search is handled by Qdrant (separate vector database).
 
 #[cfg(feature = "mongodb")]
+pub use mongodb as mongodb_driver;
+
+#[cfg(feature = "mongodb")]
 pub mod inner {
     use std::env;
     use std::sync::Arc;
@@ -171,6 +174,7 @@ pub mod inner {
 
             let db = client.database(&db_name);
             let movies = db.collection::<MovieDocument>("movies");
+            let movies_clone = movies.clone(); // Clone for index creation
 
             // Initialize Qdrant client
             let qdrant = Qdrant::from_url(&qdrant_url)
@@ -196,6 +200,15 @@ pub mod inner {
             // Ensure Qdrant collection exists
             repo.ensure_qdrant_collection()
                 .await?;
+
+            // Create compound unique index on name and release_year fields
+            let index_model = mongodb::IndexModel::builder()
+                .keys(doc! { "name": 1, "release_year": 1 })
+                .build();
+            if let Err(e) = movies_clone.create_index(index_model).await {
+                // Log the error but don't fail the initialization
+                eprintln!("Failed to create MongoDB index: {}", e);
+            }
 
             Ok(repo)
         }
