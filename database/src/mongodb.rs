@@ -204,6 +204,7 @@ pub mod inner {
             // Create compound unique index on name and release_year fields
             let index_model = mongodb::IndexModel::builder()
                 .keys(doc! { "name": 1, "release_year": 1 })
+                .options(mongodb::index_options::IndexOptions::builder().unique(true).build())
                 .build();
             if let Err(e) = movies_clone.create_index(index_model).await {
                 // Log the error but don't fail the initialization
