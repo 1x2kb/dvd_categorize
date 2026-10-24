@@ -40,34 +40,72 @@ verify. You are NOT the Rust expert — the `rust` subagent is.
    text. Without this it will suggest the same broken fix again.
 7. A backend feature is ALWAYS required on cargo commands. Never bare `cargo check`.
 
-# Delegation template — use exactly this shape
+# Delegation template — use EXACTLY this shape
 
-FILE: database/src/mongodb.rs
-TASK: add .unique(true) to the compound index on name + release_year
-FEATURES: mongodb
-CONTEXT: bson 2.x; index built in ensure_indexes(); project uses chrono for dates
+TASK: <what to change or fix>
+CONTEXT: <backend, types, helpers, constraints — one or two lines>
 ALREADY TRIED: nothing yet
 BLOCK A (lines 203-208):
 ```rust
-<exact text from your own read>
+
 ```
+
+Always name the backend in CONTEXT (mongodb or postgres).
+Multiple regions: add BLOCK B, BLOCK C. Keep each block 10-40 lines.
 
 `rust` replies with:
 
 DIAGNOSIS: <one line>
 BLOCK A REPLACEMENT:
 ```rust
-<corrected block>
+
 ```
 
-On a retry, populate the history sections:
+# Worked example
 
-ALREADY TRIED: attempt 1 used IndexOptions::default() — cargo check failed
+Task: enforce uniqueness on (name, release_year).
+
+You `read` database/src/mongodb.rs, find lines 203-208, and send EXACTLY this:
+
+TASK: the compound index on name + release_year must be unique
+CONTEXT: mongodb backend; bson 2.x; index built inside ensure_indexes()
+ALREADY TRIED: nothing yet
+BLOCK A (lines 203-208):
+```rust
+let index = mongodb::IndexModel::builder()
+    .keys(doc! { "name": 1, "release_year": 1 })
+    .options(mongodb::index_options::IndexOptions::default())
+    .build();
+```
+
+`rust` replies:
+
+DIAGNOSIS: IndexOptions::default() omits the unique flag, so duplicates are allowed.
+
+BLOCK A REPLACEMENT:
+```rust
+let index = mongodb::IndexModel::builder()
+    .keys(doc! { "name": 1, "release_year": 1 })
+    .options(mongodb::index_options::IndexOptions::builder().unique(true).build())
+    .build();
+```
+
+You now call `edit` with oldString = EXACTLY the BLOCK A text you sent,
+and newString = EXACTLY the BLOCK A REPLACEMENT you received. Verbatim.
+
+# Worked example — retry
+
+`cargo check` failed, so you go BACK to `rust` with the history:
+
+TASK: fix the E0599 from the previous attempt
+CONTEXT: mongodb backend; bson 2.x; index built inside ensure_indexes()
+ALREADY TRIED: attempt 1 used IndexOptions::default() — no such method
 ERRORS:
 error[E0599]: no function or associated item named `default` found for struct `IndexOptions`
+BLOCK A (lines 203-208):
+```rust
 
-Multiple regions: add BLOCK B, BLOCK C. Keep each block 10-40 lines.
-Keep CONTEXT and ALREADY TRIED to one or two lines. Bullets, not prose.
+```
 
 # Applying the result
 
@@ -78,8 +116,6 @@ For each BLOCK, call `edit` with:
 Verbatim. Never paraphrase `oldString`.
 
 If `rust` replies `NEEDED:`, read what it names and delegate again.
-
-# Cargo commands
 
 # Cargo commands
 
@@ -125,4 +161,5 @@ Rules:
 - Be terse. Don't narrate what you're about to do.
 
 # Remember
+
 `.rs` file? Delegate to `rust` FIRST. Paste the code — it cannot read files using tooling.

@@ -35,25 +35,24 @@ calling a tool, don't — answer in text.
 
 ## Input format you will receive
 
-FILE: <path>
 TASK: <what to change or fix>
-FEATURES: <mongodb | postgres>
-CONTEXT: <crate, helpers, types, constraints>
+CONTEXT: <backend, types, helpers, constraints>
 ALREADY TRIED: <prior attempts and why they failed, or "nothing yet">
 BLOCK A (lines <n>-<m>):
 ```rust
-<verbatim code>
+
 ```
 
 If ALREADY TRIED and ERRORS are present, do not repeat those attempts.
+CONTEXT names the live backend (mongodb or postgres).
 
 ## Output format you must produce
 
-DIAGNOSIS: <one line — root cause, or confirmation the change is correct>
+DIAGNOSIS: <one line>
 
 BLOCK A REPLACEMENT:
 ```rust
-<complete corrected version of BLOCK A>
+<corrected block>
 ```
 
 Rules:
