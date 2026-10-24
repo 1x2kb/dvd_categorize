@@ -166,7 +166,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                         on_location_updated: props.on_location_updated
                     }
                 }
-                
+
                 // Delete button
                 button {
                     class: "delete-button",

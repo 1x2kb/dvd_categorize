@@ -224,7 +224,9 @@ mod inner {
                         let score = movie.text_search_score(query);
 
                         if score > 0.0 {
-                            Some((movie, score))
+                            Some((
+                                movie, score,
+                            ))
                         } else {
                             None
                         }
@@ -711,13 +713,17 @@ mod inner {
 
             // Convert FullMovie to ScoredMovie with default score of 0.0
             // The actual cosine distance scoring is handled by pgvector ordering
-            Ok(movies
-                .into_iter()
-                .map(|movie| ScoredMovie {
-                    movie,
-                    vector_score: 0.0,
-                })
-                .collect())
+            Ok(
+                movies
+                    .into_iter()
+                    .map(
+                        |movie| ScoredMovie {
+                            movie,
+                            vector_score: 0.0,
+                        },
+                    )
+                    .collect(),
+            )
         }
     }
 
@@ -2158,8 +2164,19 @@ mod inner {
 
     #[async_trait]
     impl GetStatsOverview for PostgresMovieRepository {
-        async fn get_stats_overview(&self) -> Result<(i64, i64, i64), DatabaseError> {
-            let mut conn = self.get_conn().await?;
+        async fn get_stats_overview(
+            &self,
+        ) -> Result<
+            (
+                i64,
+                i64,
+                i64,
+            ),
+            DatabaseError,
+        > {
+            let mut conn = self
+                .get_conn()
+                .await?;
 
             // Count total movies
             let total_movies: i64 = schema::movie::table
@@ -2179,16 +2196,34 @@ mod inner {
                 .get_result(&mut conn)
                 .await?;
 
-            Ok((total_movies, total_directors, total_actors))
+            Ok((
+                total_movies,
+                total_directors,
+                total_actors,
+            ))
         }
     }
 
     #[async_trait]
     impl GetMoviesByYearStats for PostgresMovieRepository {
-        async fn get_movies_by_year(&self, limit: i64) -> Result<Vec<(i32, i64)>, DatabaseError> {
-            let mut conn = self.get_conn().await?;
+        async fn get_movies_by_year(
+            &self,
+            limit: i64,
+        ) -> Result<
+            Vec<(
+                i32,
+                i64,
+            )>,
+            DatabaseError,
+        > {
+            let mut conn = self
+                .get_conn()
+                .await?;
 
-            let results: Vec<(i32, i64)> = schema::movie::table
+            let results: Vec<(
+                i32,
+                i64,
+            )> = schema::movie::table
                 .group_by(schema::movie::release_year)
                 .select((
                     schema::movie::release_year,
@@ -2205,10 +2240,24 @@ mod inner {
 
     #[async_trait]
     impl GetGenreStats for PostgresMovieRepository {
-        async fn get_genre_counts(&self, limit: i64) -> Result<Vec<(String, i64)>, DatabaseError> {
-            let mut conn = self.get_conn().await?;
+        async fn get_genre_counts(
+            &self,
+            limit: i64,
+        ) -> Result<
+            Vec<(
+                String,
+                i64,
+            )>,
+            DatabaseError,
+        > {
+            let mut conn = self
+                .get_conn()
+                .await?;
 
-            let results: Vec<(String, i64)> = schema::movie_genre::table
+            let results: Vec<(
+                String,
+                i64,
+            )> = schema::movie_genre::table
                 .group_by(schema::movie_genre::genre)
                 .select((
                     schema::movie_genre::genre,
@@ -2225,10 +2274,24 @@ mod inner {
 
     #[async_trait]
     impl GetTopActorsStats for PostgresMovieRepository {
-        async fn get_top_actors(&self, limit: i64) -> Result<Vec<(String, i64)>, DatabaseError> {
-            let mut conn = self.get_conn().await?;
+        async fn get_top_actors(
+            &self,
+            limit: i64,
+        ) -> Result<
+            Vec<(
+                String,
+                i64,
+            )>,
+            DatabaseError,
+        > {
+            let mut conn = self
+                .get_conn()
+                .await?;
 
-            let results: Vec<(String, i64)> = schema::movie_actor::table
+            let results: Vec<(
+                String,
+                i64,
+            )> = schema::movie_actor::table
                 .inner_join(schema::actor::table)
                 .group_by(schema::actor::name)
                 .select((
@@ -2251,14 +2314,19 @@ mod inner {
             genre_limit: i64,
             actor_limit: i64,
         ) -> Result<models::RandomSelectionStats, DatabaseError> {
-            let mut conn = self.get_conn().await?;
+            let mut conn = self
+                .get_conn()
+                .await?;
 
             let total_movies: i64 = schema::movie::table
                 .count()
                 .get_result(&mut conn)
                 .await?;
 
-            let genre_results: Vec<(String, i64)> = schema::movie_genre::table
+            let genre_results: Vec<(
+                String,
+                i64,
+            )> = schema::movie_genre::table
                 .group_by(schema::movie_genre::genre)
                 .select((
                     schema::movie_genre::genre,
@@ -2269,7 +2337,10 @@ mod inner {
                 .load(&mut conn)
                 .await?;
 
-            let actor_results: Vec<(String, i64)> = schema::movie_actor::table
+            let actor_results: Vec<(
+                String,
+                i64,
+            )> = schema::movie_actor::table
                 .inner_join(schema::actor::table)
                 .group_by(schema::actor::name)
                 .select((
@@ -2281,25 +2352,31 @@ mod inner {
                 .load(&mut conn)
                 .await?;
 
-            Ok(models::RandomSelectionStats {
-                total_movies: total_movies as usize,
-                genre_count: genre_results.len(),
-                actor_count: actor_results.len(),
-                genres: genre_results
-                    .into_iter()
-                    .map(|(label, count)| models::RandomSelectionStat {
-                        label,
-                        count: count as usize,
-                    })
-                    .collect(),
-                actors: actor_results
-                    .into_iter()
-                    .map(|(label, count)| models::RandomSelectionStat {
-                        label,
-                        count: count as usize,
-                    })
-                    .collect(),
-            })
+            Ok(
+                models::RandomSelectionStats {
+                    total_movies: total_movies as usize,
+                    genre_count: genre_results.len(),
+                    actor_count: actor_results.len(),
+                    genres: genre_results
+                        .into_iter()
+                        .map(
+                            |(label, count)| models::RandomSelectionStat {
+                                label,
+                                count: count as usize,
+                            },
+                        )
+                        .collect(),
+                    actors: actor_results
+                        .into_iter()
+                        .map(
+                            |(label, count)| models::RandomSelectionStat {
+                                label,
+                                count: count as usize,
+                            },
+                        )
+                        .collect(),
+                },
+            )
         }
     }
 } // End of inner module

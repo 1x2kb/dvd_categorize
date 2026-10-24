@@ -1,7 +1,9 @@
 use std::env;
 
 use axum::{
-    Router, http::{self, Method}, routing::{delete, get, post},
+    http::{self, Method},
+    routing::{delete, get, post},
+    Router,
 };
 use database::MovieRepo;
 use dotenvy::dotenv;
@@ -80,7 +82,9 @@ fn get_host() -> String {
 }
 
 fn init_router(db_pool: MovieRepo) -> Router {
-    let state = DbState { movie_repo: db_pool };
+    let state = DbState {
+        movie_repo: db_pool,
+    };
 
     let router = Router::new()
         .route(
@@ -93,7 +97,7 @@ fn init_router(db_pool: MovieRepo) -> Router {
         )
         .route(
             "/dvd/{id}",
-            get(get_dvd)
+            get(get_dvd),
         )
         .route(
             "/dvd/{id}",
@@ -199,15 +203,14 @@ fn init_router(db_pool: MovieRepo) -> Router {
             "/stats/random-odds",
             get(stats_random_odds),
         );
-    
+
     // Conditionally add postgres-only routes
     #[cfg(feature = "postgres")]
-    let router = router
-        .route(
-            "/ai/structured-search",
-            post(structured_search),
-        );
-    
+    let router = router.route(
+        "/ai/structured-search",
+        post(structured_search),
+    );
+
     router
         .with_state(state)
         .layer(

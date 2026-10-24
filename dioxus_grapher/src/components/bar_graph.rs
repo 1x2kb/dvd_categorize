@@ -45,7 +45,10 @@ impl Default for XAxisMode {
 
 #[derive(Clone, PartialEq, Props)]
 pub struct BarGraphProps {
-    pub data: Vec<(String, f64)>,
+    pub data: Vec<(
+        String,
+        f64,
+    )>,
     #[props(default = 600.0)]
     pub width: f64,
     #[props(default = 400.0)]
@@ -71,23 +74,39 @@ pub struct BarGraphProps {
 }
 
 fn truncate_data_for_mobile(
-    data: &[(String, f64)],
+    data: &[(
+        String,
+        f64,
+    )],
     width: f64,
     mobile_max_items: Option<usize>,
-) -> Vec<(String, f64)> {
+) -> Vec<(
+    String,
+    f64,
+)> {
     if width < 500.0 {
         if let Some(max) = mobile_max_items {
-            return data.iter().take(max).cloned().collect();
+            return data
+                .iter()
+                .take(max)
+                .cloned()
+                .collect();
         }
     }
     data.to_vec()
 }
 
 fn paginate_data(
-    data: &[(String, f64)],
+    data: &[(
+        String,
+        f64,
+    )],
     page_size: Option<usize>,
     current_page: usize,
-) -> Vec<(String, f64)> {
+) -> Vec<(
+    String,
+    f64,
+)> {
     match page_size {
         Some(size) => {
             let start = current_page * size;
@@ -98,7 +117,13 @@ fn paginate_data(
     }
 }
 
-fn total_pages(data: &[(String, f64)], page_size: Option<usize>) -> usize {
+fn total_pages(
+    data: &[(
+        String,
+        f64,
+    )],
+    page_size: Option<usize>,
+) -> usize {
     match page_size {
         Some(size) if size > 0 => (data.len() + size - 1) / size,
         _ => 1,
@@ -114,77 +139,140 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
 
     let width = props.width;
     let height = props.height;
-    let bar_color = props.bar_color.clone();
-    let x_label = props.x_label.clone();
-    let y_label = props.y_label.clone();
-    let x_mode = props.x_mode.clone();
+    let bar_color = props
+        .bar_color
+        .clone();
+    let x_label = props
+        .x_label
+        .clone();
+    let y_label = props
+        .y_label
+        .clone();
+    let x_mode = props
+        .x_mode
+        .clone();
     let mobile_max_items = props.mobile_max_items;
     let page_size = props.page_size;
-    let data_for_effect = props.data.clone();
-    let data_for_handlers = props.data.clone();
+    let data_for_effect = props
+        .data
+        .clone();
+    let data_for_handlers = props
+        .data
+        .clone();
 
-    let global_min = props.data.iter().map(|(_, v)| *v).fold(f64::INFINITY, f64::min).min(0.0);
-    let global_max = props.data.iter().map(|(_, v)| *v).fold(f64::NEG_INFINITY, f64::max);
+    let global_min = props
+        .data
+        .iter()
+        .map(|(_, v)| *v)
+        .fold(
+            f64::INFINITY,
+            f64::min,
+        )
+        .min(0.0);
+    let global_max = props
+        .data
+        .iter()
+        .map(|(_, v)| *v)
+        .fold(
+            f64::NEG_INFINITY,
+            f64::max,
+        );
     let mut current_page = use_signal(|| 0usize);
     let mut current_page_size = use_signal(|| page_size.unwrap_or(8));
 
-    let total_pages_count = total_pages(&props.data, Some(current_page_size()));
+    let total_pages_count = total_pages(
+        &props.data,
+        Some(current_page_size()),
+    );
 
     let (canvas_width, canvas_height) = if props.responsive {
         let (w, h) = container_size();
         if w > 0.0 && h > 0.0 {
-            (w, h)
+            (
+                w, h,
+            )
         } else {
-            (width, height)
+            (
+                width, height,
+            )
         }
     } else {
-        (width, height)
+        (
+            width, height,
+        )
     };
 
-    use_effect(move || {
-        let _ = data_for_effect.clone();
-        let _ = hovered_index();
-        let _ = current_page();
-        let _ = current_page_size();
-        let (current_w, current_h) = container_size();
-        let _ = canvas_ref();
-        if let Some(canvas) = canvas_ref() {
-            let (w, h) = if props.responsive && current_w > 0.0 && current_h > 0.0 {
-                (current_w, current_h)
-            } else {
-                (width, height)
-            };
-            let page_size_value = current_page_size();
-            let total_pages = total_pages(&data_for_effect, Some(page_size_value));
-            let mut page = current_page();
-            if page >= total_pages {
-                page = 0;
+    use_effect(
+        move || {
+            let _ = data_for_effect.clone();
+            let _ = hovered_index();
+            let _ = current_page();
+            let _ = current_page_size();
+            let (current_w, current_h) = container_size();
+            let _ = canvas_ref();
+            if let Some(canvas) = canvas_ref() {
+                let (w, h) = if props.responsive && current_w > 0.0 && current_h > 0.0 {
+                    (
+                        current_w, current_h,
+                    )
+                } else {
+                    (
+                        width, height,
+                    )
+                };
+                let page_size_value = current_page_size();
+                let total_pages = total_pages(
+                    &data_for_effect,
+                    Some(page_size_value),
+                );
+                let mut page = current_page();
+                if page >= total_pages {
+                    page = 0;
+                }
+                let paged_data = paginate_data(
+                    &data_for_effect,
+                    Some(page_size_value),
+                    page,
+                );
+                let display_data = truncate_data_for_mobile(
+                    &paged_data,
+                    w,
+                    mobile_max_items,
+                );
+                let props = BarGraphProps {
+                    data: display_data,
+                    width: w,
+                    height: h,
+                    bar_color: bar_color.clone(),
+                    x_label: x_label.clone(),
+                    y_label: y_label.clone(),
+                    x_mode: x_mode.clone(),
+                    y_min: Some(global_min),
+                    y_max: Some(global_max),
+                    responsive: false,
+                    mobile_max_items: None,
+                    page_size: None,
+                };
+                draw_bar_graph(
+                    &canvas,
+                    &props,
+                    hovered_index(),
+                );
             }
-            let paged_data = paginate_data(&data_for_effect, Some(page_size_value), page);
-            let display_data = truncate_data_for_mobile(&paged_data, w, mobile_max_items);
-            let props = BarGraphProps {
-                data: display_data,
-                width: w,
-                height: h,
-                bar_color: bar_color.clone(),
-                x_label: x_label.clone(),
-                y_label: y_label.clone(),
-                x_mode: x_mode.clone(),
-                y_min: Some(global_min),
-                y_max: Some(global_max),
-                responsive: false,
-                mobile_max_items: None,
-                page_size: None,
-            };
-            draw_bar_graph(&canvas, &props, hovered_index());
-        }
-    });
+        },
+    );
 
-    if props.data.is_empty() {
+    if props
+        .data
+        .is_empty()
+    {
         let style = if props.responsive {
             "width: 100%; height: 100%; border: 1px solid #ccc;"
         } else {
-            &format!("width: {}px; height: {}px; border: 1px solid #ccc;", width, height)
+            &format!(
+                "width: {}px; height: {}px; border: 1px solid #ccc;",
+                width, height
+            )
         };
         return rsx! {
             div {
@@ -196,13 +284,24 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
     }
 
     let page_size_value = current_page_size();
-    let paged_data_move = paginate_data(&data_for_handlers, Some(page_size_value), current_page());
-    let data_move = truncate_data_for_mobile(&paged_data_move, canvas_width, mobile_max_items);
+    let paged_data_move = paginate_data(
+        &data_for_handlers,
+        Some(page_size_value),
+        current_page(),
+    );
+    let data_move = truncate_data_for_mobile(
+        &paged_data_move,
+        canvas_width,
+        mobile_max_items,
+    );
 
     let container_style = if props.responsive {
         "width: 100%; height: 100%;"
     } else {
-        &format!("width: {}px; height: {}px;", width, height)
+        &format!(
+            "width: {}px; height: {}px;",
+            width, height
+        )
     };
 
     rsx! {
@@ -289,7 +388,11 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
 }
 
 fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_index: Option<usize>) {
-    let Some(ctx) = setup_canvas(canvas, props.width, props.height) else {
+    let Some(ctx) = setup_canvas(
+        canvas,
+        props.width,
+        props.height,
+    ) else {
         return;
     };
 
@@ -298,12 +401,35 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
     let graph_width = props.width - 2.0 * padding;
     let graph_height = props.height - 2.0 * padding;
 
-    let max_value = props.y_max.unwrap_or_else(|| {
-        props.data.iter().map(|(_, v)| *v).fold(f64::NEG_INFINITY, f64::max)
-    });
-    let min_value = props.y_min.unwrap_or_else(|| {
-        props.data.iter().map(|(_, v)| *v).fold(f64::INFINITY, f64::min).min(0.0)
-    });
+    let max_value = props
+        .y_max
+        .unwrap_or_else(
+            || {
+                props
+                    .data
+                    .iter()
+                    .map(|(_, v)| *v)
+                    .fold(
+                        f64::NEG_INFINITY,
+                        f64::max,
+                    )
+            },
+        );
+    let min_value = props
+        .y_min
+        .unwrap_or_else(
+            || {
+                props
+                    .data
+                    .iter()
+                    .map(|(_, v)| *v)
+                    .fold(
+                        f64::INFINITY,
+                        f64::min,
+                    )
+                    .min(0.0)
+            },
+        );
 
     let value_range = max_value - min_value;
     let scale_y = if value_range > 0.0 {
@@ -312,7 +438,9 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
         1.0
     };
 
-    let bar_count = props.data.len() as f64;
+    let bar_count = props
+        .data
+        .len() as f64;
     let bar_spacing = graph_width / bar_count;
     let bar_width = bar_spacing * 0.8;
     let y_ticks = 5;
@@ -320,20 +448,40 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
 
     // Background
     ctx.set_fill_style_str("transparent");
-    ctx.fill_rect(0.0, 0.0, props.width, props.height);
+    ctx.fill_rect(
+        0.0,
+        0.0,
+        props.width,
+        props.height,
+    );
 
     // Axes
     ctx.set_stroke_style_str("#374151");
     ctx.set_line_width(2.0);
     ctx.begin_path();
-    ctx.move_to(padding, padding);
-    ctx.line_to(padding, props.height - padding);
-    ctx.move_to(padding, props.height - padding);
-    ctx.line_to(props.width - padding, props.height - padding);
+    ctx.move_to(
+        padding, padding,
+    );
+    ctx.line_to(
+        padding,
+        props.height - padding,
+    );
+    ctx.move_to(
+        padding,
+        props.height - padding,
+    );
+    ctx.line_to(
+        props.width - padding,
+        props.height - padding,
+    );
     ctx.stroke();
 
     // Y-axis ticks and labels
-    let tick_font = if is_narrow { "10px sans-serif" } else { "12px sans-serif" };
+    let tick_font = if is_narrow {
+        "10px sans-serif"
+    } else {
+        "12px sans-serif"
+    };
     ctx.set_font(tick_font);
     ctx.set_fill_style_str("#9ca3af");
     ctx.set_text_align("right");
@@ -342,17 +490,47 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
         let value = min_value + (i as f64 * tick_step);
         let y_pos = props.height - padding - ((value - min_value) * scale_y);
         ctx.begin_path();
-        ctx.move_to(padding - 5.0, y_pos);
-        ctx.line_to(padding, y_pos);
+        ctx.move_to(
+            padding - 5.0,
+            y_pos,
+        );
+        ctx.line_to(
+            padding, y_pos,
+        );
         ctx.stroke();
-        ctx.fill_text(&format!("{:.0}", value), padding - 10.0, y_pos + 4.0)
-            .ok();
+        ctx.fill_text(
+            &format!(
+                "{:.0}",
+                value
+            ),
+            padding - 10.0,
+            y_pos + 4.0,
+        )
+        .ok();
     }
 
     // Bar gradient
-    let bar_gradient = ctx.create_linear_gradient(0.0, padding, 0.0, props.height - padding);
-    bar_gradient.add_color_stop(0.0, &props.bar_color).ok();
-    bar_gradient.add_color_stop(1.0, &with_alpha(&props.bar_color, 0.8)).ok();
+    let bar_gradient = ctx.create_linear_gradient(
+        0.0,
+        padding,
+        0.0,
+        props.height - padding,
+    );
+    bar_gradient
+        .add_color_stop(
+            0.0,
+            &props.bar_color,
+        )
+        .ok();
+    bar_gradient
+        .add_color_stop(
+            1.0,
+            &with_alpha(
+                &props.bar_color,
+                0.8,
+            ),
+        )
+        .ok();
 
     // Bars and X-axis labels
     let base_skip = match &props.x_mode {
@@ -360,22 +538,42 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
         XAxisMode::Explicit(opts) => opts.skip_labels,
     };
 
-    let x_font = if is_narrow { "10px sans-serif" } else { "12px sans-serif" };
+    let x_font = if is_narrow {
+        "10px sans-serif"
+    } else {
+        "12px sans-serif"
+    };
     ctx.set_font(x_font);
     ctx.set_text_align("center");
     ctx.set_text_baseline("top");
 
-    let mut bar_regions: Vec<(usize, f64, f64, f64, f64)> = Vec::new();
+    let mut bar_regions: Vec<(
+        usize,
+        f64,
+        f64,
+        f64,
+        f64,
+    )> = Vec::new();
 
-    for (idx, (label, value)) in props.data.iter().enumerate() {
+    for (idx, (label, value)) in props
+        .data
+        .iter()
+        .enumerate()
+    {
         let x_pos = padding + (idx as f64 * bar_spacing) + (bar_spacing - bar_width) / 2.0;
         let bar_height = (value - min_value) * scale_y;
         let y_pos = props.height - padding - bar_height;
 
-        bar_regions.push((idx, x_pos, y_pos, bar_width, bar_height));
+        bar_regions.push((
+            idx, x_pos, y_pos, bar_width, bar_height,
+        ));
 
         let display_label = match &props.x_mode {
-            XAxisMode::Explicit(opts) => opts.labels.get(idx).cloned().unwrap_or_else(|| label.clone()),
+            XAxisMode::Explicit(opts) => opts
+                .labels
+                .get(idx)
+                .cloned()
+                .unwrap_or_else(|| label.clone()),
             XAxisMode::Auto(_) => label.clone(),
         };
 
@@ -386,12 +584,20 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
         if is_hovered {
             ctx.set_stroke_style_str("#06b6d4");
             ctx.set_line_width(2.0);
-            ctx.set_line_dash(&wasm_bindgen::JsValue::from_str("4,4")).ok();
+            ctx.set_line_dash(&wasm_bindgen::JsValue::from_str("4,4"))
+                .ok();
             ctx.begin_path();
-            ctx.move_to(x_pos + bar_width / 2.0, y_pos);
-            ctx.line_to(x_pos + bar_width / 2.0, props.height - padding);
+            ctx.move_to(
+                x_pos + bar_width / 2.0,
+                y_pos,
+            );
+            ctx.line_to(
+                x_pos + bar_width / 2.0,
+                props.height - padding,
+            );
             ctx.stroke();
-            ctx.set_line_dash(&wasm_bindgen::JsValue::from_str("")).ok();
+            ctx.set_line_dash(&wasm_bindgen::JsValue::from_str(""))
+                .ok();
         }
 
         // Bar fill
@@ -400,14 +606,34 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
         } else {
             ctx.set_fill_style_canvas_gradient(&bar_gradient);
         }
-        round_rect(&ctx, x_pos, y_pos, bar_width, bar_height.max(0.0), 6.0);
+        round_rect(
+            &ctx,
+            x_pos,
+            y_pos,
+            bar_width,
+            bar_height.max(0.0),
+            6.0,
+        );
         ctx.fill();
 
         // Bar border
-        ctx.set_stroke_style_str(if is_hovered { "#06b6d4" } else { &props.bar_color });
+        ctx.set_stroke_style_str(
+            if is_hovered {
+                "#06b6d4"
+            } else {
+                &props.bar_color
+            },
+        );
         ctx.set_line_width(if is_hovered { 3.0 } else { 2.0 });
         ctx.set_global_alpha(if is_hovered { 0.8 } else { 0.3 });
-        round_rect(&ctx, x_pos, y_pos, bar_width, bar_height.max(8.0), 6.0);
+        round_rect(
+            &ctx,
+            x_pos,
+            y_pos,
+            bar_width,
+            bar_height.max(8.0),
+            6.0,
+        );
         ctx.stroke();
         ctx.set_global_alpha(1.0);
 
@@ -415,7 +641,10 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
         ctx.set_font("bold 11px sans-serif");
         ctx.set_global_alpha(1.0);
         ctx.set_text_align("center");
-        let value_text = format!("{:.0}", value);
+        let value_text = format!(
+            "{:.0}",
+            value
+        );
         let label_y = if bar_height > 20.0 {
             // Draw inside the bar so it never clips the canvas edge.
             ctx.set_fill_style_str("#ffffff");
@@ -427,58 +656,145 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
             ctx.set_text_baseline("bottom");
             y_pos - 8.0
         };
-        ctx.fill_text(&value_text, x_pos + bar_width / 2.0, label_y)
-            .ok();
+        ctx.fill_text(
+            &value_text,
+            x_pos + bar_width / 2.0,
+            label_y,
+        )
+        .ok();
 
         // X-axis label: always show labels; the caller controls skip via x_mode.
         if idx % base_skip == 0 {
             ctx.set_fill_style_str("#9ca3af");
             ctx.set_font(x_font);
             ctx.set_text_baseline("top");
-            ctx.fill_text(&display_label, x_pos + bar_width / 2.0, props.height - padding + 20.0)
-                .ok();
+            ctx.fill_text(
+                &display_label,
+                x_pos + bar_width / 2.0,
+                props.height - padding + 20.0,
+            )
+            .ok();
         }
     }
 
     // Axis labels
-    let axis_font = if is_narrow { "bold 11px sans-serif" } else { "bold 14px sans-serif" };
+    let axis_font = if is_narrow {
+        "bold 11px sans-serif"
+    } else {
+        "bold 14px sans-serif"
+    };
     ctx.set_fill_style_str("#374151");
     ctx.set_font(axis_font);
     ctx.set_text_align("center");
     ctx.set_text_baseline("alphabetic");
-    ctx.fill_text(&props.x_label, props.width / 2.0, props.height - 6.0)
-        .ok();
+    ctx.fill_text(
+        &props.x_label,
+        props.width / 2.0,
+        props.height - 6.0,
+    )
+    .ok();
 
     ctx.save();
-    ctx.translate(padding - 20.0, props.height / 2.0).ok();
-    ctx.rotate(-std::f64::consts::PI / 2.0).ok();
-    ctx.fill_text(&props.y_label, 0.0, 0.0).ok();
+    ctx.translate(
+        padding - 20.0,
+        props.height / 2.0,
+    )
+    .ok();
+    ctx.rotate(-std::f64::consts::PI / 2.0)
+        .ok();
+    ctx.fill_text(
+        &props.y_label,
+        0.0,
+        0.0,
+    )
+    .ok();
     ctx.restore();
 
     // Tooltip
     if let Some(idx) = hovered_index {
-        if let Some((label, value)) = props.data.get(idx) {
+        if let Some((label, value)) = props
+            .data
+            .get(idx)
+        {
             let display_label = match &props.x_mode {
-                XAxisMode::Explicit(opts) => opts.labels.get(idx).cloned().unwrap_or_else(|| label.clone()),
+                XAxisMode::Explicit(opts) => opts
+                    .labels
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or_else(|| label.clone()),
                 XAxisMode::Auto(_) => label.clone(),
             };
-            draw_tooltip(&ctx, props.width / 2.0, 30.0, &display_label, &format!("Value: {:.0}", value), &props.bar_color);
+            draw_tooltip(
+                &ctx,
+                props.width / 2.0,
+                30.0,
+                &display_label,
+                &format!(
+                    "Value: {:.0}",
+                    value
+                ),
+                &props.bar_color,
+            );
         }
     }
 }
 
-fn round_rect(ctx: &web_sys::CanvasRenderingContext2d, x: f64, y: f64, width: f64, height: f64, radius: f64) {
-    let r = radius.min(width / 2.0).min(height / 2.0);
+fn round_rect(
+    ctx: &web_sys::CanvasRenderingContext2d,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    radius: f64,
+) {
+    let r = radius
+        .min(width / 2.0)
+        .min(height / 2.0);
     ctx.begin_path();
-    ctx.move_to(x + r, y);
-    ctx.line_to(x + width - r, y);
-    ctx.quadratic_curve_to(x + width, y, x + width, y + r);
-    ctx.line_to(x + width, y + height - r);
-    ctx.quadratic_curve_to(x + width, y + height, x + width - r, y + height);
-    ctx.line_to(x + r, y + height);
-    ctx.quadratic_curve_to(x, y + height, x, y + height - r);
-    ctx.line_to(x, y + r);
-    ctx.quadratic_curve_to(x, y, x + r, y);
+    ctx.move_to(
+        x + r,
+        y,
+    );
+    ctx.line_to(
+        x + width - r,
+        y,
+    );
+    ctx.quadratic_curve_to(
+        x + width,
+        y,
+        x + width,
+        y + r,
+    );
+    ctx.line_to(
+        x + width,
+        y + height - r,
+    );
+    ctx.quadratic_curve_to(
+        x + width,
+        y + height,
+        x + width - r,
+        y + height,
+    );
+    ctx.line_to(
+        x + r,
+        y + height,
+    );
+    ctx.quadratic_curve_to(
+        x,
+        y + height,
+        x,
+        y + height - r,
+    );
+    ctx.line_to(
+        x,
+        y + r,
+    );
+    ctx.quadratic_curve_to(
+        x,
+        y,
+        x + r,
+        y,
+    );
     ctx.close_path();
 }
 
@@ -491,41 +807,76 @@ fn draw_tooltip(
     stroke_color: &str,
 ) {
     ctx.set_font("bold 14px sans-serif");
-    let label_metrics = ctx.measure_text(label).ok();
+    let label_metrics = ctx
+        .measure_text(label)
+        .ok();
     ctx.set_font("12px sans-serif");
-    let value_metrics = ctx.measure_text(value).ok();
+    let value_metrics = ctx
+        .measure_text(value)
+        .ok();
 
-    let label_width = label_metrics.map(|m| m.width()).unwrap_or(0.0);
-    let value_width = value_metrics.map(|m| m.width()).unwrap_or(0.0);
+    let label_width = label_metrics
+        .map(|m| m.width())
+        .unwrap_or(0.0);
+    let value_width = value_metrics
+        .map(|m| m.width())
+        .unwrap_or(0.0);
     let content_width = label_width.max(value_width);
     let width = content_width + 40.0;
     let height = 40.0;
 
     let rx = 8.0;
     ctx.set_fill_style_str("#1f2937");
-    round_rect(ctx, x - width / 2.0, y - height / 2.0, width, height, rx);
+    round_rect(
+        ctx,
+        x - width / 2.0,
+        y - height / 2.0,
+        width,
+        height,
+        rx,
+    );
     ctx.fill();
 
     ctx.set_stroke_style_str(stroke_color);
     ctx.set_line_width(2.0);
-    round_rect(ctx, x - width / 2.0, y - height / 2.0, width, height, rx);
+    round_rect(
+        ctx,
+        x - width / 2.0,
+        y - height / 2.0,
+        width,
+        height,
+        rx,
+    );
     ctx.stroke();
 
     ctx.set_fill_style_str("#ffffff");
     ctx.set_font("bold 14px sans-serif");
     ctx.set_text_align("center");
     ctx.set_text_baseline("middle");
-    ctx.fill_text(label, x, y - 5.0).ok();
+    ctx.fill_text(
+        label,
+        x,
+        y - 5.0,
+    )
+    .ok();
 
     ctx.set_fill_style_str("#d1d5db");
     ctx.set_font("12px sans-serif");
-    ctx.fill_text(value, x, y + 10.0).ok();
+    ctx.fill_text(
+        value,
+        x,
+        y + 10.0,
+    )
+    .ok();
 }
 
 fn update_bar_hover(
     canvas: &HtmlCanvasElement,
     event: &web_sys::MouseEvent,
-    data: &[(String, f64)],
+    data: &[(
+        String,
+        f64,
+    )],
     mut hovered_index: Signal<Option<usize>>,
 ) {
     let width = canvas.width() as f64 / crate::canvas_utils::device_pixel_ratio();
@@ -541,7 +892,10 @@ fn update_bar_hover(
         / crate::canvas_utils::device_pixel_ratio();
 
     let mut found = None;
-    for (idx, _) in data.iter().enumerate() {
+    for (idx, _) in data
+        .iter()
+        .enumerate()
+    {
         let x_pos = padding + (idx as f64 * bar_spacing) + (bar_spacing - bar_width) / 2.0;
         if x >= x_pos && x <= x_pos + bar_width {
             found = Some(idx);

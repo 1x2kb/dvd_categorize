@@ -4,15 +4,15 @@ pub mod app_data;
 pub mod components;
 pub mod views;
 
+#[cfg(feature = "ai-backend")]
+pub use views::ai_chat::AiChat;
+pub use views::ai_live_results::LiveResults;
 pub use views::insert_media::InsertMedia;
 #[cfg(feature = "ai-backend")]
 pub use views::model_pull::ModelPull;
 #[cfg(feature = "ai-backend")]
 pub use views::movie_generator::MoviePrompt;
 pub use views::stats::Stats;
-pub use views::ai_live_results::LiveResults;
-#[cfg(feature = "ai-backend")]
-pub use views::ai_chat::AiChat;
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
@@ -79,9 +79,11 @@ fn App() -> Element {
 #[component]
 fn LiveRedirect() -> Element {
     let nav = navigator();
-    use_effect(move || {
-        nav.replace(Route::LiveResults {});
-    });
+    use_effect(
+        move || {
+            nav.replace(Route::LiveResults {});
+        },
+    );
     rsx! { div {} }
 }
 
@@ -153,14 +155,14 @@ fn render_ai_links() -> Element {
 fn Navbar() -> Element {
     #[cfg(feature = "ai-backend")]
     let ai_links = render_ai_links();
-    
+
     #[cfg(not(feature = "ai-backend"))]
     let ai_links = rsx! {};
-    
+
     rsx! {
         div {
             id: "navbar",
-            
+
             // Always-available links
             Link {
                 to: Route::LiveResults {}, "Live"
@@ -171,7 +173,7 @@ fn Navbar() -> Element {
             Link {
                 to: Route::Stats {}, "Stats"
             }
-            
+
             // empty when ai-backend feature is disabled can't include #cfg in rsx!
             { ai_links }
         }

@@ -242,12 +242,14 @@ pub fn LiveResults() -> Element {
             values: vec![],
         },
     );
-    let mut random_odds = use_signal(|| RandomSelectionOddsResponse {
-        total_movies: 0,
-        random_count: 0,
-        genres: vec![],
-        actors: vec![],
-    });
+    let mut random_odds = use_signal(
+        || RandomSelectionOddsResponse {
+            total_movies: 0,
+            random_count: 0,
+            genres: vec![],
+            actors: vec![],
+        },
+    );
     let mut available_models = use_signal(Vec::<models::AvailableModel>::new);
     let mut available_locations = use_signal(Vec::<String>::new);
 
@@ -642,23 +644,23 @@ pub fn LiveResults() -> Element {
                 },
                 on_delete: move |movie_id: models::MovieId| {
                     log::info!("Delete callback called for movie: {}", movie_id);
-                    
+
                     // Make the API call to delete from backend first
                     let window = web_sys::window().unwrap();
                     let location = window.location();
                     let hostname = location
                         .hostname()
                         .unwrap_or_else(|_| "127.0.0.1".to_string());
-                    
+
                     let server_port = std::env::var("server_port").unwrap_or("3000".to_string());
-                    
+
                     wasm_bindgen_futures::spawn_local(async move {
                         let client = reqwest::Client::new();
                         let response = client
                             .delete(format!("http://{hostname}:{server_port}/dvd/{movie_id}"))
                             .send()
                             .await;
-                        
+
                         match response {
                             Ok(resp) => {
                                 if resp.status().is_success() {

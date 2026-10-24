@@ -12,29 +12,28 @@ use axum::{
     Json,
 };
 use axum_macros::debug_handler;
-use database::{
-    traits::{
-        ChatSessions, GetAllMovies, GetGenreStats, GetMovieById, GetMoviesByReleaseYear,
-        GetMoviesByYearStats, GetRandomSelectionStats, GetRecentMovies, GetStatsOverview,
-        GetTopActorsStats, GetUniqueLocations, GetUnknownLocationMovies, InsertMovie,
-        MoviesByLocation, RandomMovies, Repository, UpdateMovieLocation, DeleteMovieById,
-    },
-    FullMovie, MovieId, MovieRepo, SearchRequest,
-};
 #[cfg(feature = "postgres")]
 use database::insert_full_movies;
 #[cfg(feature = "postgres")]
 use database::traits::SearchMoviesStructured;
+use database::{
+    traits::{
+        ChatSessions, DeleteMovieById, GetAllMovies, GetGenreStats, GetMovieById,
+        GetMoviesByReleaseYear, GetMoviesByYearStats, GetRandomSelectionStats, GetRecentMovies,
+        GetStatsOverview, GetTopActorsStats, GetUniqueLocations, GetUnknownLocationMovies,
+        InsertMovie, MoviesByLocation, RandomMovies, Repository, UpdateMovieLocation,
+    },
+    FullMovie, MovieId, MovieRepo, SearchRequest,
+};
+use futures_util::StreamExt;
 use log::{debug, error, info, warn};
 use models::{
-    ChatSessionWithPreview, CsvInput, GenerateMoviesRequest, GenerateStreamEvent,
-    NeedsInputReason, RandomMoviesQuery, RecentReleasesQuery, ScoredMovie, TitleValidation,
-    ValidateTitlesRequest,
+    ChatSessionWithPreview, CsvInput, GenerateMoviesRequest, GenerateStreamEvent, NeedsInputReason,
+    RandomMoviesQuery, RecentReleasesQuery, ScoredMovie, TitleValidation, ValidateTitlesRequest,
 };
 use ollama_rs::error::OllamaError;
 use prompts::{db_msg_to_ollama, model_msg_to_ollama, DEFAULT_RAG_PROMPT, DEFAULT_TOOL_PROMPT};
 use serde::Deserialize;
-use futures_util::StreamExt;
 
 use std::{sync::Arc, time::Instant};
 
@@ -50,7 +49,11 @@ async fn correct_titles_with_fallback(
     skip_correction: &[bool],
 ) -> Vec<String> {
     // If all titles should skip correction, return them as-is
-    if skip_correction.len() == titles.len() && skip_correction.iter().all(|&skip| skip) {
+    if skip_correction.len() == titles.len()
+        && skip_correction
+            .iter()
+            .all(|&skip| skip)
+    {
         debug!("All titles marked to skip correction, returning originals");
         return titles.to_vec();
     }
@@ -58,9 +61,15 @@ async fn correct_titles_with_fallback(
     // Separate titles that need correction from those that should be skipped
     let mut titles_to_correct = Vec::new();
     let mut indices_to_correct = Vec::new();
-    
-    for (i, title) in titles.iter().enumerate() {
-        let should_skip = skip_correction.get(i).copied().unwrap_or(false);
+
+    for (i, title) in titles
+        .iter()
+        .enumerate()
+    {
+        let should_skip = skip_correction
+            .get(i)
+            .copied()
+            .unwrap_or(false);
         if !should_skip {
             titles_to_correct.push(title.clone());
             indices_to_correct.push(i);
@@ -81,12 +90,26 @@ async fn correct_titles_with_fallback(
     );
 
     // Get corrections for titles that need it
-    let corrected_subset = match ai_chat::correct_movie_titles(&titles_to_correct, model).await {
+    let corrected_subset = match ai_chat::correct_movie_titles(
+        &titles_to_correct,
+        model,
+    )
+    .await
+    {
         Ok(c) if c.len() == titles_to_correct.len() => {
-            info!("Title correction succeeded for {} titles", c.len());
-            for (orig, corr) in titles_to_correct.iter().zip(c.iter()) {
+            info!(
+                "Title correction succeeded for {} titles",
+                c.len()
+            );
+            for (orig, corr) in titles_to_correct
+                .iter()
+                .zip(c.iter())
+            {
                 if orig != corr {
-                    debug!("  '{}' -> '{}'", orig, corr);
+                    debug!(
+                        "  '{}' -> '{}'",
+                        orig, corr
+                    );
                 }
             }
             c
@@ -100,14 +123,20 @@ async fn correct_titles_with_fallback(
             titles_to_correct.clone()
         }
         Err(e) => {
-            error!("Title correction failed: {}. Falling back to originals.", e);
+            error!(
+                "Title correction failed: {}. Falling back to originals.",
+                e
+            );
             titles_to_correct.clone()
         }
     };
 
     // Merge corrected titles back with skipped titles
     let mut result = titles.to_vec();
-    for (idx, corrected_idx) in indices_to_correct.iter().enumerate() {
+    for (idx, corrected_idx) in indices_to_correct
+        .iter()
+        .enumerate()
+    {
         result[*corrected_idx] = corrected_subset[idx].clone();
     }
 
@@ -126,9 +155,7 @@ pub async fn hello_world() -> &'static str {
 
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_dvds(
-    State(state): State<DbState>,
-) -> Json<Option<Vec<FullMovie>>>
+pub async fn get_dvds(State(state): State<DbState>) -> Json<Option<Vec<FullMovie>>>
 where
     MovieRepo: GetAllMovies,
 {
@@ -260,11 +287,18 @@ where
         vec![ollama_rs::generation::chat::ChatMessage::system(
             system_prompt.to_string(),
         )];
-    history.extend(history_messages.iter().map(db_msg_to_ollama));
+    history.extend(
+        history_messages
+            .iter()
+            .map(db_msg_to_ollama),
+    );
 
     // New messages for this turn — passed to coordinator, NOT pre-added to history.
-    let new_messages: Vec<ollama_rs::generation::chat::ChatMessage> =
-        request.messages.iter().map(model_msg_to_ollama).collect();
+    let new_messages: Vec<ollama_rs::generation::chat::ChatMessage> = request
+        .messages
+        .iter()
+        .map(model_msg_to_ollama)
+        .collect();
 
     // Capture user content for DB persistence after the call
     let user_content_for_db: Vec<String> = request
@@ -541,8 +575,17 @@ where
     // Convert chat history to Ollama format (system + history + new messages)
     let messages: Vec<ollama_rs::generation::chat::ChatMessage> =
         std::iter::once(ollama_rs::generation::chat::ChatMessage::system(system_prompt))
-            .chain(history_messages.iter().map(db_msg_to_ollama))
-            .chain(request.messages.iter().map(model_msg_to_ollama))
+            .chain(
+                history_messages
+                    .iter()
+                    .map(db_msg_to_ollama),
+            )
+            .chain(
+                request
+                    .messages
+                    .iter()
+                    .map(model_msg_to_ollama),
+            )
             .collect();
 
     // Get model name from request or use default
@@ -897,13 +940,24 @@ pub async fn parse_csv(
     // Insert movies using postgres-specific method
     if let Err(e) = insert_full_movies(
         movies,
-        state.movie_repo.pool(),
+        state
+            .movie_repo
+            .pool(),
     )
     .await
     {
-        let error = format!("Failed to insert movies: {}", e);
-        error!("{}", error);
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
+        let error = format!(
+            "Failed to insert movies: {}",
+            e
+        );
+        error!(
+            "{}",
+            error
+        );
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            error,
+        ));
     }
 
     info!("Movies saved successfully");
@@ -984,10 +1038,23 @@ pub async fn parse_csv(
 
     // Insert one at a time since insert() handles FullMovie properly
     for movie in movies {
-        if let Err(e) = state.movie_repo.insert(movie).await {
-            let error = format!("Failed to insert movie: {}", e);
-            error!("{}", error);
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
+        if let Err(e) = state
+            .movie_repo
+            .insert(movie)
+            .await
+        {
+            let error = format!(
+                "Failed to insert movie: {}",
+                e
+            );
+            error!(
+                "{}",
+                error
+            );
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error,
+            ));
         }
     }
 
@@ -1003,9 +1070,13 @@ pub async fn parse_csv(
 #[cfg(feature = "internet")]
 #[instrument(skip(clean_titles))]
 async fn generate_with_internet(
-    clean_titles: Vec<(String, usize)>,
+    clean_titles: Vec<(
+        String,
+        usize,
+    )>,
     model: Option<&str>,
-) -> impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> + use<'_> {
+) -> impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>
+       + use<'_> {
     async_stream::stream! {
         let mut titles_iter = clean_titles.into_iter().peekable();
         let mut next_context: Option<((String, usize), String)> = if let Some(first) = titles_iter.next() {
@@ -1014,7 +1085,7 @@ async fn generate_with_internet(
         } else {
             None
         };
-        
+
         while let Some(((title, pos), context)) = next_context.take() {
             let next_title = titles_iter.next();
             let (result, scraped_next) = tokio::join!(
@@ -1027,7 +1098,7 @@ async fn generate_with_internet(
                 }
             );
             next_context = next_title.zip(scraped_next);
-            
+
             match result {
                 Ok(mut movie) => {
                     movie.input_title = Some(title);
@@ -1049,9 +1120,13 @@ async fn generate_with_internet(
 #[cfg(not(feature = "internet"))]
 #[instrument(skip(clean_titles))]
 async fn generate_without_internet(
-    clean_titles: Vec<(String, usize)>,
+    clean_titles: Vec<(
+        String,
+        usize,
+    )>,
     model: Option<&str>,
-) -> impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> + use<'_> {
+) -> impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>
+       + use<'_> {
     async_stream::stream! {
         for (title, pos) in clean_titles {
             let result = ai_chat::generate_movie_single(&title, model).await;
@@ -1123,7 +1198,9 @@ pub async fn validate_titles(
     // since it's the same model the user will use for generation.
     let corrected = correct_titles_with_fallback(
         &request.titles,
-        request.model.as_deref(),
+        request
+            .model
+            .as_deref(),
         &request.skip_correction,
     )
     .await;
@@ -1268,7 +1345,12 @@ pub async fn generate_movies_stream(
     );
 
     // Validate + correct titles upfront — one fast Ollama call.
-    let corrected = correct_titles_with_fallback(&titles, model.as_deref(), &request.skip_correction).await;
+    let corrected = correct_titles_with_fallback(
+        &titles,
+        model.as_deref(),
+        &request.skip_correction,
+    )
+    .await;
 
     let strip_the = |s: &str| {
         s.strip_prefix("the ")
@@ -1428,7 +1510,7 @@ pub async fn generate_movies_stream(
                 yield event;
             }
         }
-        
+
         #[cfg(not(feature = "internet"))]
         {
             let generation_stream = generate_without_internet(clean_titles, model.as_deref()).await;
@@ -1541,7 +1623,10 @@ async fn combined_search(
         .map(
             |movie| {
                 (
-                    movie.id.clone(), movie,
+                    movie
+                        .id
+                        .clone(),
+                    movie,
                 )
             },
         )
@@ -1714,21 +1799,21 @@ pub async fn update_movie_location(
             request.location,
         )
         .await
-    .map_err(
-        |e| {
-            error!(
-                "Failed to update movie location: {}",
-                e
-            );
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
+        .map_err(
+            |e| {
+                error!(
                     "Failed to update movie location: {}",
                     e
-                ),
-            )
-        },
-    )?;
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!(
+                        "Failed to update movie location: {}",
+                        e
+                    ),
+                )
+            },
+        )?;
 
     info!("Successfully updated movie location");
     Ok(Json(()))
@@ -1815,9 +1900,7 @@ pub async fn list_available_models() -> Result<
 /// Get recent movies ordered by added_on descending
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_recent_movies(
-    State(state): State<DbState>,
-) -> Json<Vec<ScoredMovie>>
+pub async fn get_recent_movies(State(state): State<DbState>) -> Json<Vec<ScoredMovie>>
 where
     MovieRepo: GetRecentMovies,
 {
@@ -1955,9 +2038,7 @@ where
 /// Get movies with unknown location from the database
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn get_unknown_location_movies(
-    State(state): State<DbState>,
-) -> Json<Vec<ScoredMovie>>
+pub async fn get_unknown_location_movies(State(state): State<DbState>) -> Json<Vec<ScoredMovie>>
 where
     MovieRepo: GetUnknownLocationMovies,
 {
@@ -1996,9 +2077,7 @@ where
 
 #[instrument(skip(state))]
 #[debug_handler]
-pub async fn unique_locations(
-    State(state): State<DbState>,
-) -> Json<Vec<String>>
+pub async fn unique_locations(State(state): State<DbState>) -> Json<Vec<String>>
 where
     MovieRepo: GetUniqueLocations,
 {
@@ -2161,9 +2240,19 @@ where
         }
     };
 
-    let data: Vec<(String, f64)> = genre_data
+    let data: Vec<(
+        String,
+        f64,
+    )> = genre_data
         .into_iter()
-        .map(|(genre, count)| (genre, count as f64))
+        .map(
+            |(genre, count)| {
+                (
+                    genre,
+                    count as f64,
+                )
+            },
+        )
         .collect();
 
     Json(models::PieChartData { data })
@@ -2476,8 +2565,17 @@ where
 pub async fn delete_movie(
     State(state): State<DbState>,
     Path(id): Path<<MovieRepo as Repository>::Id>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    info!("Deleting movie with ID: {}", id);
+) -> Result<
+    StatusCode,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    info!(
+        "Deleting movie with ID: {}",
+        id
+    );
 
     // Delete the movie using the repository backend
     state
@@ -2517,28 +2615,48 @@ where
 {
     info!("Getting random selection odds");
 
-    let random_count = params.count.unwrap_or(3).max(1) as usize;
-    let genre_limit = params.genre_limit.unwrap_or(10);
-    let actor_limit = params.actor_limit.unwrap_or(10);
+    let random_count = params
+        .count
+        .unwrap_or(3)
+        .max(1) as usize;
+    let genre_limit = params
+        .genre_limit
+        .unwrap_or(10);
+    let actor_limit = params
+        .actor_limit
+        .unwrap_or(10);
 
     let stats = match state
         .movie_repo
-        .get_random_selection_stats(genre_limit, actor_limit)
+        .get_random_selection_stats(
+            genre_limit,
+            actor_limit,
+        )
         .await
     {
         Ok(data) => data,
         Err(e) => {
-            error!("Failed to get random selection stats: {}", e);
-            return Json(models::RandomSelectionOddsResponse {
-                total_movies: 0,
-                random_count,
-                genres: vec![],
-                actors: vec![],
-            });
+            error!(
+                "Failed to get random selection stats: {}",
+                e
+            );
+            return Json(
+                models::RandomSelectionOddsResponse {
+                    total_movies: 0,
+                    random_count,
+                    genres: vec![],
+                    actors: vec![],
+                },
+            );
         }
     };
 
-    Json(compute_random_odds(stats, random_count))
+    Json(
+        compute_random_odds(
+            stats,
+            random_count,
+        ),
+    )
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2575,7 +2693,15 @@ fn compute_random_odds(
     models::RandomSelectionOddsResponse {
         total_movies: stats.total_movies,
         random_count,
-        genres: stats.genres.into_iter().map(compute_item).collect(),
-        actors: stats.actors.into_iter().map(compute_item).collect(),
+        genres: stats
+            .genres
+            .into_iter()
+            .map(compute_item)
+            .collect(),
+        actors: stats
+            .actors
+            .into_iter()
+            .map(compute_item)
+            .collect(),
     }
 }

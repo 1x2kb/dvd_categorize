@@ -58,7 +58,10 @@ pub trait InsertMoviesWithEmbeddings: Repository {
     /// Skips duplicates based on movie name.
     async fn insert_batch_with_embeddings(
         &self,
-        movies: Vec<(NewMovie, Option<Vec<f32>>)>,
+        movies: Vec<(
+            NewMovie,
+            Option<Vec<f32>>,
+        )>,
     ) -> Result<
         Vec<(
             Self::Id,
@@ -70,7 +73,11 @@ pub trait InsertMoviesWithEmbeddings: Repository {
 
 #[async_trait]
 pub trait UpdateMovieLocation: Repository {
-    async fn update_location(&self, movie_id: Self::Id, location: String) -> Result<(), DatabaseError>;
+    async fn update_location(
+        &self,
+        movie_id: Self::Id,
+        location: String,
+    ) -> Result<(), DatabaseError>;
 }
 
 #[async_trait]
@@ -139,7 +146,10 @@ pub trait SearchMoviesStructured: Send + Sync {
 #[async_trait]
 pub trait ChatSessions: Repository {
     async fn create_chat_session(&self) -> Result<uuid::Uuid, DatabaseError>;
-    async fn get_chat_history(&self, session_id: uuid::Uuid) -> Result<Vec<models::ChatMessage>, DatabaseError>;
+    async fn get_chat_history(
+        &self,
+        session_id: uuid::Uuid,
+    ) -> Result<Vec<models::ChatMessage>, DatabaseError>;
     async fn save_chat_message(&self, msg: models::NewChatMessage) -> Result<(), DatabaseError>;
     async fn list_chat_sessions(&self) -> Result<Vec<models::ChatSession>, DatabaseError>;
 }
@@ -262,25 +272,61 @@ pub trait AiMovieRepository: MovieRepository + SearchMoviesByEmbedding {}
 /// Get stats overview: total movies, directors, actors
 #[async_trait]
 pub trait GetStatsOverview: Repository {
-    async fn get_stats_overview(&self) -> Result<(i64, i64, i64), DatabaseError>;
+    async fn get_stats_overview(
+        &self,
+    ) -> Result<
+        (
+            i64,
+            i64,
+            i64,
+        ),
+        DatabaseError,
+    >;
 }
 
 /// Get movie counts grouped by year
 #[async_trait]
 pub trait GetMoviesByYearStats: Repository {
-    async fn get_movies_by_year(&self, limit: i64) -> Result<Vec<(i32, i64)>, DatabaseError>;
+    async fn get_movies_by_year(
+        &self,
+        limit: i64,
+    ) -> Result<
+        Vec<(
+            i32,
+            i64,
+        )>,
+        DatabaseError,
+    >;
 }
 
 /// Get genre counts (top N)
 #[async_trait]
 pub trait GetGenreStats: Repository {
-    async fn get_genre_counts(&self, limit: i64) -> Result<Vec<(String, i64)>, DatabaseError>;
+    async fn get_genre_counts(
+        &self,
+        limit: i64,
+    ) -> Result<
+        Vec<(
+            String,
+            i64,
+        )>,
+        DatabaseError,
+    >;
 }
 
 /// Get top actors by movie count
 #[async_trait]
 pub trait GetTopActorsStats: Repository {
-    async fn get_top_actors(&self, limit: i64) -> Result<Vec<(String, i64)>, DatabaseError>;
+    async fn get_top_actors(
+        &self,
+        limit: i64,
+    ) -> Result<
+        Vec<(
+            String,
+            i64,
+        )>,
+        DatabaseError,
+    >;
 }
 
 /// Get all stats needed to show odds for a random movie selection
@@ -301,4 +347,5 @@ pub trait StatsProvider:
     + GetGenreStats
     + GetTopActorsStats
     + GetRandomSelectionStats
-{}
+{
+}

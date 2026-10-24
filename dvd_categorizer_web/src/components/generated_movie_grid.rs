@@ -133,7 +133,9 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
     let model_auto = props
         .model
         .clone();
-    let skip_correction_auto = props.skip_correction.clone();
+    let skip_correction_auto = props
+        .skip_correction
+        .clone();
     let on_error_auto = props.on_error;
     let on_loading_auto = props.on_loading;
     use_effect(
@@ -220,7 +222,14 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                             .collect();
                         let skip_correction: Vec<bool> = resolved
                             .iter()
-                            .map(|(i, _)| skip_corr.get(*i).copied().unwrap_or(false))
+                            .map(
+                                |(i, _)| {
+                                    skip_corr
+                                        .get(*i)
+                                        .copied()
+                                        .unwrap_or(false)
+                                },
+                            )
                             .collect();
                         stream_generated_movies(
                             titles,
@@ -264,7 +273,9 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
     let model = props
         .model
         .clone();
-    let skip_correction_regen = props.skip_correction.clone();
+    let skip_correction_regen = props
+        .skip_correction
+        .clone();
     let on_loading = props.on_loading;
     let on_error = props.on_error;
     let on_pending = props.on_pending;
@@ -391,7 +402,14 @@ pub fn GeneratedMovieGrid(props: GeneratedMovieGridProps) -> Element {
                         .collect();
                     let skip_correction: Vec<bool> = to_generate
                         .iter()
-                        .map(|(i, _)| skip_corr.get(*i).copied().unwrap_or(false))
+                        .map(
+                            |(i, _)| {
+                                skip_corr
+                                    .get(*i)
+                                    .copied()
+                                    .unwrap_or(false)
+                            },
+                        )
                         .collect();
                     stream_generated_movies(
                         titles,

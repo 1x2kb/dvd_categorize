@@ -353,10 +353,16 @@ pub async fn pull_model(model_name: &str) -> Result<String, String> {
     };
 
     let mut last_status = String::new();
-    while let Some(status) = stream.next().await {
+    while let Some(status) = stream
+        .next()
+        .await
+    {
         match status {
             Ok(s) => {
-                info!("Pull status for {}: {}", model_name, s.message);
+                info!(
+                    "Pull status for {}: {}",
+                    model_name, s.message
+                );
                 last_status = s.message;
             }
             Err(e) => {
@@ -370,10 +376,17 @@ pub async fn pull_model(model_name: &str) -> Result<String, String> {
         }
     }
 
-    info!("Successfully pulled model: {}", model_name);
-    Ok(format!("Successfully pulled model: {} ({})", model_name, last_status))
+    info!(
+        "Successfully pulled model: {}",
+        model_name
+    );
+    Ok(
+        format!(
+            "Successfully pulled model: {} ({})",
+            model_name, last_status
+        ),
+    )
 }
-
 
 /// Correct a batch of movie titles in a single Ollama call.
 /// Returns one corrected title per input, in the same order.
@@ -714,7 +727,6 @@ CRITICAL: Respond with a single valid JSON object matching the exact schema."#,
         ),
     }
 }
-
 
 #[cfg(test)]
 mod tests {}

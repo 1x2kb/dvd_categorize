@@ -5,15 +5,9 @@ use ai_chat::OllamaClient;
 use axum::extract::{Json, State};
 use axum_macros::debug_handler;
 use categorizer_utilities::strip_punctuation;
-use database::{
-    question::AiAction,
-    traits::GetAllMovies,
-    FullMovie, MovieId, MovieRepo,
-};
 #[cfg(feature = "ai")]
-use database::traits::{
-    SearchMoviesByEmbedding, SearchMoviesStructured
-};
+use database::traits::{SearchMoviesByEmbedding, SearchMoviesStructured};
+use database::{question::AiAction, traits::GetAllMovies, FullMovie, MovieId, MovieRepo};
 use log::{error, info};
 use tracing::instrument;
 
@@ -362,7 +356,10 @@ fn keyword_search(
                     movie, criteria,
                 );
                 (
-                    movie.id.clone(), score,
+                    movie
+                        .id
+                        .clone(),
+                    score,
                 )
             },
         )
@@ -393,7 +390,10 @@ fn reciprocal_rank_fusion(
         MovieId,
         f32,
     )>,
-    vector_results: Vec<(MovieId, f32)>,
+    vector_results: Vec<(
+        MovieId,
+        f32,
+    )>,
     k: f32,
 ) -> Vec<(
     MovieId,
@@ -425,9 +425,7 @@ fn reciprocal_rank_fusion(
     }
 
     // Add scores from vector search using actual similarity scores
-    for (movie_id, vector_score) in vector_results
-        .iter()
-    {
+    for (movie_id, vector_score) in vector_results.iter() {
         // Use the actual Qdrant similarity score (0-1) directly
         *scores
             .entry(movie_id.clone())
@@ -556,9 +554,20 @@ async fn vector_only_search(
                 .await
             {
                 Ok(scored_movies) => {
-                    let results: Vec<(MovieId, f32)> = scored_movies
+                    let results: Vec<(
+                        MovieId,
+                        f32,
+                    )> = scored_movies
                         .into_iter()
-                        .map(|sm| (sm.movie.id, sm.vector_score))
+                        .map(
+                            |sm| {
+                                (
+                                    sm.movie
+                                        .id,
+                                    sm.vector_score,
+                                )
+                            },
+                        )
                         .collect();
                     info!(
                         "Vector search found {} results in {:.2?}",
@@ -708,9 +717,20 @@ async fn hybrid_both_search(
                         .await
                     {
                         Ok(scored_movies) => {
-                            let results: Vec<(MovieId, f32)> = scored_movies
+                            let results: Vec<(
+                                MovieId,
+                                f32,
+                            )> = scored_movies
                                 .into_iter()
-                                .map(|sm| (sm.movie.id, sm.vector_score))
+                                .map(
+                                    |sm| {
+                                        (
+                                            sm.movie
+                                                .id,
+                                            sm.vector_score,
+                                        )
+                                    },
+                                )
                                 .collect();
                             info!(
                                 "Vector search found {} results in {:.2?}",
@@ -828,7 +848,10 @@ async fn structured_query_search(
                 structured_query
             );
 
-            match repo.search_structured(&structured_query).await {
+            match repo
+                .search_structured(&structured_query)
+                .await
+            {
                 Ok(movies) => {
                     info!(
                         "Structured search found {} movies in {:.2?}",
@@ -847,7 +870,10 @@ async fn structured_query_search(
                             |(rank, movie)| {
                                 let score = 1.0 / (1.0 + rank as f32);
                                 (
-                                    movie.id.clone(), score,
+                                    movie
+                                        .id
+                                        .clone(),
+                                    score,
                                 )
                             },
                         )
@@ -928,7 +954,10 @@ pub async fn hybrid_search(
             #[cfg(not(feature = "ai"))]
             {
                 error!("Vector search requires ai feature but it was not enabled");
-                (Vec::new(), query.to_string())
+                (
+                    Vec::new(),
+                    query.to_string(),
+                )
             }
         }
         models::SearchMode::Both => {
@@ -947,7 +976,10 @@ pub async fn hybrid_search(
             #[cfg(not(feature = "ai"))]
             {
                 error!("Hybrid search requires ai feature but it was not enabled");
-                text_only_search(query, repo, limit).await
+                text_only_search(
+                    query, repo, limit,
+                )
+                .await
             }
         }
         models::SearchMode::Structured => {
@@ -961,7 +993,10 @@ pub async fn hybrid_search(
             #[cfg(not(feature = "ai"))]
             {
                 error!("Structured search requires ai feature but it was not enabled");
-                (Vec::new(), query.to_string())
+                (
+                    Vec::new(),
+                    query.to_string(),
+                )
             }
         }
     }
@@ -1094,7 +1129,10 @@ pub async fn chat(
             .map(
                 |movie| {
                     (
-                        movie.id.clone(), movie,
+                        movie
+                            .id
+                            .clone(),
+                        movie,
                     )
                 },
             )

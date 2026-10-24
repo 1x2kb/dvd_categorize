@@ -17,8 +17,12 @@ pub fn SearchModeSelector(props: SearchModeSelectorProps) -> Element {
         let mode_description = match props.search_mode {
             SearchMode::Text => "Keyword-based search using database text matching",
             SearchMode::Vector => "Semantic search using AI embeddings to find similar content",
-            SearchMode::Both => "Combines Text and Vector searches using Reciprocal Rank Fusion (RRF)",
-            SearchMode::Structured => "AI-powered natural language query parsing into structured database filters",
+            SearchMode::Both => {
+                "Combines Text and Vector searches using Reciprocal Rank Fusion (RRF)"
+            }
+            SearchMode::Structured => {
+                "AI-powered natural language query parsing into structured database filters"
+            }
         };
 
         rsx! {
@@ -101,7 +105,7 @@ pub fn SearchModeSelector(props: SearchModeSelectorProps) -> Element {
             }
         }
     }
-    
+
     #[cfg(not(feature = "ai-backend"))]
     {
         rsx! {

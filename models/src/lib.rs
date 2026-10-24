@@ -74,11 +74,10 @@ pub trait Random {
 }
 
 #[cfg(feature = "postgres")]
-use diesel::prelude::*;
-#[cfg(feature = "postgres")]
 use chrono::NaiveDateTime;
+#[cfg(feature = "postgres")]
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
-
 
 #[cfg(feature = "vector-similarity")]
 pub mod vector_similarity;
@@ -470,24 +469,50 @@ impl FullMovie {
         let mut score: f32 = 0.0;
 
         // Title scoring (100 points for title match)
-        if self.name.to_lowercase().contains(&query_lower) {
+        if self
+            .name
+            .to_lowercase()
+            .contains(&query_lower)
+        {
             score += 100.0;
         }
 
         // Actor scoring (20 points for actor match)
-        if self.actors.iter().any(|a| a.name.to_lowercase().contains(&query_lower)) {
+        if self
+            .actors
+            .iter()
+            .any(
+                |a| {
+                    a.name
+                        .to_lowercase()
+                        .contains(&query_lower)
+                },
+            )
+        {
             score += 20.0;
         }
 
         // Director scoring (25 points for director match)
         if let Some(ref d) = self.director {
-            if d.name.to_lowercase().contains(&query_lower) {
+            if d.name
+                .to_lowercase()
+                .contains(&query_lower)
+            {
                 score += 25.0;
             }
         }
 
         // Genre scoring (15 points for genre match)
-        if self.genres.iter().any(|g| g.to_lowercase().contains(&query_lower)) {
+        if self
+            .genres
+            .iter()
+            .any(
+                |g| {
+                    g.to_lowercase()
+                        .contains(&query_lower)
+                },
+            )
+        {
             score += 15.0;
         }
 

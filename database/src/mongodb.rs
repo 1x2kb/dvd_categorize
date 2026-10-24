@@ -13,6 +13,7 @@ pub mod inner {
     use std::sync::Arc;
 
     use async_trait::async_trait;
+    use log::error;
     use mongodb::bson::{doc, oid::ObjectId, Bson};
     use mongodb::{Client, Collection, Database};
     use qdrant_client::qdrant::{PointStruct, UpsertPointsBuilder};
@@ -201,15 +202,8 @@ pub mod inner {
             repo.ensure_qdrant_collection()
                 .await?;
 
-            // Create compound unique index on name and release_year fields
-            let index_model = mongodb::IndexModel::builder()
-                .keys(doc! { "name": 1, "release_year": 1 })
-                .options(mongodb::index_options::IndexOptions::builder().unique(true).build())
-                .build();
-            if let Err(e) = movies_clone.create_index(index_model).await {
-                // Log the error but don't fail the initialization
-                eprintln!("Failed to create MongoDB index: {}", e);
-            }
+            // Create indexes
+            Self::create_indexes(&movies_clone).await?;
 
             Ok(repo)
         }
@@ -227,6 +221,46 @@ pub mod inner {
                             .to_string()
                     },
                 )
+        }
+
+        /// Create MongoDB indexes
+        async fn create_indexes(movies: &Collection<MovieDocument>) -> DbResult<()> {
+            // Create compound unique index on name and release_year fields
+            let index_model = mongodb::IndexModel::builder()
+                .keys(doc! { "name": 1, "release_year": 1 })
+                .options(
+                    mongodb::options::IndexOptions::builder()
+                        .unique(true)
+                        .build(),
+                )
+                .build();
+            if let Err(e) = movies
+                .create_index(index_model)
+                .await
+            {
+                // Log the error but don't fail the initialization
+                error!(
+                    "Failed to create MongoDB compound index on name and release_year: {}",
+                    e
+                );
+            }
+
+            // Create single index on location field for better query performance
+            let location_index_model = mongodb::IndexModel::builder()
+                .keys(doc! { "location": 1 })
+                .options(mongodb::options::IndexOptions::builder().build())
+                .build();
+            if let Err(e) = movies
+                .create_index(location_index_model)
+                .await
+            {
+                error!(
+                    "Failed to create MongoDB index on location: {}",
+                    e
+                );
+            }
+
+            Ok(())
         }
 
         /// Ensure Qdrant collection exists

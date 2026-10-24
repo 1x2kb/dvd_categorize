@@ -83,8 +83,12 @@ pub fn LocationEditor(props: LocationEditorProps) -> Element {
 
     // MovieId may be non-Copy (String under mongodb); give each move closure its
     // own owned clone so neither moves `props.movie_id`.
-    let movie_id_keydown = props.movie_id.clone();
-    let movie_id_click = props.movie_id.clone();
+    let movie_id_keydown = props
+        .movie_id
+        .clone();
+    let movie_id_click = props
+        .movie_id
+        .clone();
 
     // Update global editing state when local editing changes
     use_effect(

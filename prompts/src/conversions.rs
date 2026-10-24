@@ -3,7 +3,7 @@
 //! Provides helper functions to convert between application-specific message
 //! formats and Ollama's chat message format.
 
-use models::{ChatMessage, RoledMessage, Role};
+use models::{ChatMessage, Role, RoledMessage};
 
 /// Convert a database ChatMessage to Ollama's ChatMessage format.
 ///
@@ -11,9 +11,18 @@ use models::{ChatMessage, RoledMessage, Role};
 /// - "user" -> user message
 /// - anything else -> assistant message
 pub fn db_msg_to_ollama(msg: &ChatMessage) -> ollama_rs::generation::chat::ChatMessage {
-    match msg.role.as_str() {
-        "user" => ollama_rs::generation::chat::ChatMessage::user(msg.content.clone()),
-        _ => ollama_rs::generation::chat::ChatMessage::assistant(msg.content.clone()),
+    match msg
+        .role
+        .as_str()
+    {
+        "user" => ollama_rs::generation::chat::ChatMessage::user(
+            msg.content
+                .clone(),
+        ),
+        _ => ollama_rs::generation::chat::ChatMessage::assistant(
+            msg.content
+                .clone(),
+        ),
     }
 }
 
@@ -24,7 +33,13 @@ pub fn db_msg_to_ollama(msg: &ChatMessage) -> ollama_rs::generation::chat::ChatM
 /// - Role::Ai -> assistant message
 pub fn model_msg_to_ollama(msg: &RoledMessage) -> ollama_rs::generation::chat::ChatMessage {
     match msg.role {
-        Role::User => ollama_rs::generation::chat::ChatMessage::user(msg.message.clone()),
-        Role::Ai => ollama_rs::generation::chat::ChatMessage::assistant(msg.message.clone()),
+        Role::User => ollama_rs::generation::chat::ChatMessage::user(
+            msg.message
+                .clone(),
+        ),
+        Role::Ai => ollama_rs::generation::chat::ChatMessage::assistant(
+            msg.message
+                .clone(),
+        ),
     }
 }
