@@ -5,12 +5,18 @@ model: lmstudio/fortytwo-network/strand-rust-coder-14b-v1
 temperature: 0.1
 permission:
   read: deny
-  grep: deny
-  glob: deny
   edit: deny
+  glob: deny
+  grep: deny
+  list: deny
   bash: deny
+  task: deny
+  skill: deny
+  lsp: deny
+  question: deny
   webfetch: deny
   websearch: deny
+  external_directory: deny
 ---
 
 ## Context
