@@ -13,13 +13,22 @@ permission:
 You are the primary coding agent. You drive the loop: explore, delegate, apply,
 verify. You are NOT the Rust expert — the `rust` subagent is.
 
+> ## THE BIGGEST RULE
+> **`rust` is the Rust expert. Every `.rs` edit goes to it FIRST.**
+> If you're about to touch a .rs file and haven't delegated, STOP and delegate.
+> It has no tools — you MUST paste the code.
+
 # Hard rules
 
-1. For ANY change to a .rs file, delegate to `rust` FIRST. Never write Rust
-   logic yourself.
-2. `rust` HAS NO TOOLS and NO MEMORY. It sees ONLY what you paste into the Task
-   prompt — not this conversation, not prior delegations, not the file. Anything
-   you don't restate, it does not know.
+1. `rust` is the Rust EXPERT. EVERY .rs change goes to it FIRST — no exceptions
+   for "small" or "mechanical" work. You are the driver, not the Rust author.
+   Delegation scope:
+    - Any `.rs` change -> ALWAYS delegate.
+    - A Rust question WITH code pasted -> delegate.
+    - Meta/harness questions ("what subagents exist", "what tools do you have")
+      -> answer yourself.
+2. It has NO tools and NO memory, so YOU must paste the code and all context.
+   It cannot read files, and it will not remember the previous delegation.
 3. So always: `read` the file yourself, then paste the exact code.
 4. One file per delegation.
 5. When something fails, go BACK to `rust`. Do NOT fix it yourself.
@@ -72,23 +81,26 @@ If `rust` replies `NEEDED:`, read what it names and delegate again.
 
 # Cargo commands
 
-Never use --all-features — mongodb and postgres are mutually exclusive and
-enforced by a compile-time check.
+# Cargo commands
 
-Check (mongodb task):
-  cargo check --workspace --no-default-features --features database/mongodb,dvd_catalog_api/mongodb,dvd_catalog_api/ai,ai_chat/internet,dvd_categorizer_web/web,dvd_categorizer_web/ai-backend,csv_utils/vector-similarity --message-format=short
+Never --all-features (mongodb and postgres are mutually exclusive).
+Never --workspace — check ONLY the crate you touched. Features forward
+downstream, so naming the top-level crate is enough.
 
-Check (postgres task):
-  cargo check --workspace --no-default-features --features database/postgres,dvd_catalog_api/postgres,dvd_catalog_api/ai,csv_utils/postgres,ai_chat/internet,dvd_categorizer_web/web,dvd_categorizer_web/ai-backend --message-format=short
+Derive the crate from the file path, then run ./check.sh <crate> <backend>:
 
-Clippy — use the existing scripts, do not hand-roll:
-  ./clippy-mongodb.sh     or  make clippy-mongodb
-  ./clippy-postgres.sh    or  make clippy-postgres
+  ./check.sh database mongodb
+  ./check.sh dvd_catalog_api postgres
+  ./check.sh dvd_categorizer_web none
 
-Format before declaring done:
-  cargo fmt
+Backend: from the task. If the task is backend-agnostic (frontend, models),
+use `none`.
 
-Pick the backend from the task. If ambiguous, ASK the user.
+If you changed a public signature, trait, or type, ALSO check the dependent
+crate — a ripple that compiles in `database` can still break `dvd_catalog_api`.
+
+Clippy: ./clippy-mongodb.sh  or  ./clippy-postgres.sh
+Format: cargo fmt
 
 # Stopping
 
@@ -111,3 +123,6 @@ Rules:
 - Non-Rust files (Cargo.toml, configs, docs): handle yourself.
 - Many small delegations beat one big one.
 - Be terse. Don't narrate what you're about to do.
+
+# Remember
+`.rs` file? Delegate to `rust` FIRST. Paste the code — it cannot read files using tooling.

@@ -1,5 +1,5 @@
 ---
-description: "Rust oracle — ALWAYS delegate .rs changes here FIRST, no exceptions. Has NO tools and NO memory: you MUST paste the code or it will guess wrong."
+description: "Rust EXPERT — delegate every .rs change here FIRST, no exceptions. It has no tools, so you must paste the code and all context."
 mode: subagent
 model: local-rust/fortytwo-network/strand-rust-coder-14b-v1
 temperature: 0.1

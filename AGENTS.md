@@ -7,6 +7,27 @@ Qdrant for vector search (mongodb backend only).
 Crates: dvd_catalog_api, dvd_categorizer_web, ai_chat, database, models,
 csv_utils, categorizer_utilities, plus actor_reorder, dashboards, dioxus_grapher.
 
+# Cargo commands
+
+Never --all-features (mongodb and postgres are mutually exclusive).
+Never --workspace — check ONLY the crate you touched. Features forward
+downstream, so naming the top-level crate is enough.
+
+Derive the crate from the file path, then run ./check.sh <crate> <backend>:
+
+  ./check.sh database mongodb
+  ./check.sh dvd_catalog_api postgres
+  ./check.sh dvd_categorizer_web none
+
+Backend: from the task. If the task is backend-agnostic (frontend, models),
+use `none`.
+
+If you changed a public signature, trait, or type, ALSO check the dependent
+crate — a ripple that compiles in `database` can still break `dvd_catalog_api`.
+
+Clippy: ./clippy-mongodb.sh  or  ./clippy-postgres.sh
+Format: cargo fmt
+
 ## Backend features
 
 `postgres` and `mongodb` are MUTUALLY EXCLUSIVE — a compile-time check enforces it.
@@ -38,3 +59,4 @@ Paths are relative to the repo root. Never prefix with `/` or `~`.
 `prompts/` is the application's own crate (Ollama prompt templates, conversions
 module). It is NOT where agent prompts live. Agent definitions are in
 `.opencode/agents/`.
+
