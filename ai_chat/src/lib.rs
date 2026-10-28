@@ -398,32 +398,21 @@ pub async fn pull_model(model_name: &str) -> Result<String, String> {
 pub async fn unload_all_models() -> Result<String, String> {
     info!("Attempting to unload all Ollama models");
 
-    let ollama = make_ollama_client().map_err(
-        |e| {
-            let msg = format!(
-                "Ollama client error: {}",
-                e
-            );
-            log::error!("{}", msg);
-            msg
-        },
-    )?;
+    let ollama = make_ollama_client().map_err(|e| {
+        let msg = format!("Ollama client error: {}", e);
+        log::error!("{}", msg);
+        msg
+    })?;
 
     // First, get the list of models to see how many we're going to unload
-    let models_list = match ollama
+    let models_list = ollama
         .list_local_models()
         .await
-    {
-        Ok(models) => models,
-        Err(e) => {
-            let error_msg = format!(
-                "Failed to list local models: {:?}",
-                e
-            );
+        .map_err(|e| {
+            let error_msg = format!("Failed to list local models: {:?}", e);
             log::error!("{}", error_msg);
-            return Err(error_msg);
-        }
-    };
+            error_msg
+        })?;
 
     let model_count = models_list.len();
 
@@ -434,45 +423,20 @@ pub async fn unload_all_models() -> Result<String, String> {
 
     // Unload each model using the delete endpoint
     for model in &models_list {
-        info!(
-            "Unloading model: {}",
-            model.name
-        );
-        match ollama
-            .delete_model(
-                model
-                    .name
-                    .clone(),
-            )
-            .await
-        {
-            Ok(_) => {
-                info!(
-                    "Successfully unloaded model: {}",
-                    model.name
-                );
-            }
-            Err(e) => {
-                let error_msg = format!(
-                    "Failed to unload model {}: {:?}",
-                    model.name, e
-                );
-                log::error!("{}", error_msg);
-                // Continue with other models even if one fails
-            }
+        info!("Unloading model: {}", model.name);
+        
+        if let Err(e) = ollama.delete_model(model.name.to_string()).await {
+            let error_msg = format!("Failed to unload model {}: {:?}", model.name, e);
+            log::error!("{}", error_msg);
+            // Continue with other models even if one fails
+        } else {
+            info!("Successfully unloaded model: {}", model.name);
         }
     }
 
-    info!(
-        "Successfully unloaded {} models",
-        model_count
-    );
-    Ok(
-        format!(
-            "Successfully unloaded {} models",
-            model_count
-        ),
-    )
+    let message = format!("Successfully unloaded {} models", model_count);
+    info!("{}", message);
+    Ok(message)
 }
 
 /// Correct a batch of movie titles in a single Ollama call.
