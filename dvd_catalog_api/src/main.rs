@@ -168,6 +168,10 @@ fn init_router(db_pool: MovieRepo) -> Router {
             post(pull_ollama_model),
         )
         .route(
+            "/ai/unload-models",
+            post(unload_all_ollama_models),
+        )
+        .route(
             "/ai/models",
             get(list_available_models),
         )
@@ -204,10 +208,10 @@ fn init_router(db_pool: MovieRepo) -> Router {
             get(stats_random_odds),
         );
 
-    // Conditionally add postgres-only routes
-    #[cfg(feature = "postgres")]
+    // Conditionally add structured-search route for both postgres and mongodb backends
+    #[cfg(all(feature = "ai", any(feature = "postgres", feature = "mongodb")))]
     let router = router.route(
-        "/ai/structured-search",
+        "/dvd/structured-search",
         post(structured_search),
     );
 

@@ -824,6 +824,12 @@ pub struct PullModelResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UnloadModelsResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AvailableModel {
     pub name: String,
     pub size: u64,

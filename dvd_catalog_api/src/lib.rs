@@ -14,7 +14,7 @@ use axum::{
 use axum_macros::debug_handler;
 #[cfg(feature = "postgres")]
 use database::insert_full_movies;
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "ai", any(feature = "postgres", feature = "mongodb")))]
 use database::traits::SearchMoviesStructured;
 use database::{
     traits::{
@@ -1864,6 +1864,43 @@ pub async fn pull_ollama_model(
     }
 }
 
+/// Unload all Ollama models
+#[instrument]
+#[debug_handler]
+pub async fn unload_all_ollama_models() -> Result<
+    Json<models::UnloadModelsResponse>,
+    (
+        StatusCode,
+        String,
+    ),
+> {
+    info!("Received request to unload all Ollama models");
+
+    match ai_chat::unload_all_models().await {
+        Ok(message) => {
+            info!("Successfully unloaded all models");
+            Ok(
+                Json(
+                    models::UnloadModelsResponse {
+                        success: true,
+                        message,
+                    },
+                ),
+            )
+        }
+        Err(e) => {
+            error!(
+                "Failed to unload models: {}",
+                e
+            );
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                e,
+            ))
+        }
+    }
+}
+
 /// List available Ollama models
 #[instrument]
 #[debug_handler]
@@ -2407,7 +2444,7 @@ where
 
 /// Structured search endpoint — filter by actors, genres, directors, title/description keywords.
 /// Used by `ai_tools` over HTTP so tools avoid diesel-async (which isn't Sync for ollama-rs).
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "ai", any(feature = "postgres", feature = "mongodb")))]
 pub async fn structured_search(
     State(db_state): State<DbState>,
     Json(query): Json<models::StructuredQuery>,

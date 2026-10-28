@@ -5,6 +5,8 @@ pub mod components;
 pub mod views;
 
 #[cfg(feature = "ai-backend")]
+pub use views::admin::AdminPage;
+#[cfg(feature = "ai-backend")]
 pub use views::ai_chat::AiChat;
 pub use views::ai_live_results::LiveResults;
 pub use views::insert_media::InsertMedia;
@@ -31,6 +33,9 @@ enum Route {
         ModelPull {},
         #[route("/generator")]
         MoviePrompt {},
+        #[cfg(feature = "ai-backend")]
+        #[route("/admin")]
+        AdminPage {},
         #[route("/stats")]
         Stats {},
 }
@@ -146,6 +151,9 @@ fn render_ai_links() -> Element {
         }
         Link {
             to: Route::ModelPull {}, "Models"
+        }
+        Link {
+            to: Route::AdminPage {}, "Admin"
         }
     }
 }
