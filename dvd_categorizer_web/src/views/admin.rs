@@ -8,9 +8,9 @@ pub fn AdminPage() -> Element {
 
             div { class: "admin-section",
                 h2 { "Ollama Model Management" }
-                
+
                 p { "Model management features will appear here." }
-                
+
                 button {
                     class: "button button-primary",
                     "Unload All Models"

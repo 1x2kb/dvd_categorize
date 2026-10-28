@@ -125,7 +125,9 @@ fn total_pages(
     page_size: Option<usize>,
 ) -> usize {
     match page_size {
-        Some(size) if size > 0 => (data.len() + size - 1) / size,
+        Some(size) if size > 0 => data
+            .len()
+            .div_ceil(size),
         _ => 1,
     }
 }
@@ -602,7 +604,7 @@ fn draw_bar_graph(canvas: &HtmlCanvasElement, props: &BarGraphProps, hovered_ind
 
         // Bar fill
         if is_hovered {
-            ctx.set_fill_style_str(&fill_color);
+            ctx.set_fill_style_str(fill_color);
         } else {
             ctx.set_fill_style_canvas_gradient(&bar_gradient);
         }
