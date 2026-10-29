@@ -43,8 +43,8 @@
 //! }
 //! ```
 
-// Ensure at least one backend is enabled
-#[cfg(not(any(feature = "postgres", feature = "mongodb")))]
+#[cfg(not(test))] // Allow test to specify neither.
+#[cfg(not(any(feature = "postgres", feature = "mongodb")))] // Ensure at least one backend is enabled
 compile_error!("database crate requires either `postgres` or `mongodb` feature to be enabled");
 
 pub mod embedding;
