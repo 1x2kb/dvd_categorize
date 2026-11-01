@@ -57,14 +57,15 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* When editing is active, keep the editing card expanded (always, not just on hover) */
-.movie-grid.editing-active .movie-card:has(.location-edit-container) {
+/* When editing or focus is locked, keep the active card expanded */
+.movie-grid.editing-active .movie-card:has(.location-edit-container),
+.movie-grid.editing-active .movie-card.movie-card-focused {
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.08);
     border-color: rgba(8, 145, 178, 0.3);
 }
 
-/* When editing is active, blur all non-editing cards */
-.movie-grid.editing-active .movie-card:not(:has(.location-edit-container)) {
+/* When editing or focus is locked, blur every other card */
+.movie-grid.editing-active .movie-card:not(:has(.location-edit-container)):not(.movie-card-focused) {
     filter: blur(4px);
     opacity: 0.7;
     pointer-events: none;
@@ -73,7 +74,7 @@
 /* Blur effect for non-hovered cards (desktop only) */
 @media (hover: hover) and (pointer: fine) {
     .movie-grid .movie-card:hover ~ .movie-card,
-    .movie-grid:has(.movie-card:hover) .movie-card:not(:hover) {
+    .movie-grid:has(.movie-card:hover) .movie-card:not(:hover):not(.movie-card-focused) {
         filter: blur(4px);
         opacity: 0.7;
     }
@@ -84,8 +85,8 @@
     border-color: rgba(8, 145, 178, 0.3);
 }
 
-/* Disable hover effects on non-editing cards when editing is active */
-.movie-grid.editing-active .movie-card:not(:has(.location-edit-container)):hover {
+/* Disable hover effects on non-active cards while editing or locked */
+.movie-grid.editing-active .movie-card:not(:has(.location-edit-container)):not(.movie-card-focused):hover {
     box-shadow: none;
     border-color: rgba(255, 255, 255, 0.1);
     filter: blur(4px);
@@ -162,7 +163,8 @@
 }
 
 .movie-card:hover .movie-description,
-.movie-grid.editing-active .movie-card:has(.location-edit-container) .movie-description {
+.movie-grid.editing-active .movie-card:has(.location-edit-container) .movie-description,
+.movie-grid.editing-active .movie-card.movie-card-focused .movie-description {
     display: block;
     overflow: visible;
     -webkit-line-clamp: unset;
@@ -241,12 +243,14 @@
 }
 
 .movie-card:hover .movie-genre-extra,
-.movie-grid.editing-active .movie-card:has(.location-edit-container) .movie-genre-extra {
+.movie-grid.editing-active .movie-card:has(.location-edit-container) .movie-genre-extra,
+.movie-grid.editing-active .movie-card.movie-card-focused .movie-genre-extra {
     display: inline-block;
 }
 
 .movie-card:hover .movie-genre-more,
-.movie-grid.editing-active .movie-card:has(.location-edit-container) .movie-genre-more {
+.movie-grid.editing-active .movie-card:has(.location-edit-container) .movie-genre-more,
+.movie-grid.editing-active .movie-card.movie-card-focused .movie-genre-more {
     display: none;
 }
 
@@ -294,6 +298,58 @@
 .delete-button:hover {
     background: rgba(239, 68, 68, 0.2);
     transform: translateY(-1px);
+}
+
+.delete-confirm-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.delete-confirm-container .delete-button {
+    margin-top: 0;
+}
+
+.delete-confirm-button {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: #ef4444;
+    color: #fecaca;
+}
+
+.delete-confirm-button:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.35);
+}
+
+.delete-button:disabled,
+.delete-cancel-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.delete-cancel-button {
+    padding: 6px 12px;
+    background: #374151;
+    color: #e5e7eb;
+    border: 1px solid #4b5563;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.delete-cancel-button:hover:not(:disabled) {
+    background: #4b5563;
+}
+
+.delete-error {
+    color: #ef4444;
+    font-size: 11px;
+    margin-top: 6px;
+    flex-basis: 100%;
 }
 
 .location-edit-container {

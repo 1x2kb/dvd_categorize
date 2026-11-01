@@ -1,5 +1,6 @@
 pub mod actor_chart;
 pub mod browse_bar;
+pub mod delete_button;
 #[cfg(feature = "ai-backend")]
 pub mod generated_movie_card;
 #[cfg(feature = "ai-backend")]

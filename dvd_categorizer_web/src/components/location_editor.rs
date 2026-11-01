@@ -138,6 +138,8 @@ pub fn LocationEditor(props: LocationEditorProps) -> Element {
     rsx! {
         div {
             class: "movie-info-row movie-location-row",
+            // Keep clicks on the editor from toggling the card's focus lock
+            onclick: move |evt| evt.stop_propagation(),
 
             if editing() {
                 // Edit mode

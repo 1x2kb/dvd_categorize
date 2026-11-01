@@ -574,6 +574,10 @@ pub fn LiveResults() -> Element {
                             }
                         });
                     },
+                    persist_deletes: true,
+                    on_movie_deleted: move |(movie_id, _key_hash): (MovieId, u64)| {
+                        st.movies.with_mut(|movies| movies.retain(|m| m.movie.id != movie_id));
+                    },
                 }
 
                 if *st.showing_random.read() {

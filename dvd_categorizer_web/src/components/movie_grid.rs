@@ -3,7 +3,15 @@ use chrono::{DateTime, Local, NaiveDateTime};
 use dioxus::prelude::*;
 use models::{MovieId, ScoredMovie};
 
+use crate::components::delete_button::DeleteButton;
 use crate::components::location_editor::LocationEditor;
+
+/// The card currently holding focus. `Some(key_hash)` puts the grid in
+/// locked-focus mode: that card stays sharp, the rest blur and stop taking
+/// pointer events until it is clicked again.
+pub fn use_focused_context() -> Signal<Option<u64>> {
+    use_context()
+}
 
 #[derive(Props, Clone, PartialEq)]
 pub struct SingleMovieCardProps {
@@ -11,6 +19,9 @@ pub struct SingleMovieCardProps {
     pub index: usize,
     pub search_mode: models::SearchMode,
     pub on_location_updated: EventHandler<(MovieId, String)>,
+    /// `false` = local-only removal (CSV preview rows aren't persisted).
+    pub persist_deletes: bool,
+    pub on_movie_deleted: EventHandler<(MovieId, u64)>,
 }
 
 #[component]
@@ -21,11 +32,20 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
     };
 
     let movie_id = scored.movie.id.clone();
+    let key_hash = scored.movie.key_hash;
     let display_name = scored.movie.display_name();
+
+    let mut focused = use_focused_context();
+    let is_focused = focused.read().as_ref() == Some(&key_hash);
 
     rsx! {
         div {
-            class: "movie-card",
+            class: if is_focused { "movie-card movie-card-focused" } else { "movie-card" },
+            onclick: move |_| {
+                focused.with_mut(|current| {
+                    *current = if *current == Some(key_hash) { None } else { Some(key_hash) };
+                });
+            },
 
             div {
                 class: "movie-poster",
@@ -146,10 +166,18 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                 if let Some(location) = &scored.movie.location {
                     LocationEditor {
                         key: "{movie_id}-{location}",
-                        movie_id,
+                        movie_id: movie_id.clone(),
                         initial_location: location.clone(),
                         on_location_updated: props.on_location_updated
                     }
+                }
+
+                DeleteButton {
+                    key: "{movie_id}-delete",
+                    movie_id,
+                    key_hash,
+                    persist: props.persist_deletes,
+                    on_deleted: props.on_movie_deleted
                 }
             }
         }
@@ -161,25 +189,57 @@ pub struct MovieGridProps {
     pub movies: ReadSignal<Vec<ScoredMovie>>,
     pub search_mode: models::SearchMode,
     pub on_location_updated: EventHandler<(MovieId, String)>,
+    /// `false` = local-only removal (CSV preview rows aren't persisted).
+    pub persist_deletes: bool,
+    pub on_movie_deleted: EventHandler<(MovieId, u64)>,
 }
 
 #[component]
 pub fn MovieGrid(props: MovieGridProps) -> Element {
+    let movies_sig = props.movies;
+    let search_mode = props.search_mode;
+    let on_location_updated = props.on_location_updated;
+    let persist_deletes = props.persist_deletes;
+    let on_movie_deleted = props.on_movie_deleted;
+
     let is_editing = use_signal(|| false);
     use_context_provider(|| is_editing);
 
-    let movies = props.movies.read();
+    let mut focused = use_signal(|| None::<u64>);
+    use_context_provider(|| focused);
+
+    // Drop the lock when the visible set changes, or a stale key would leave
+    // every card blurred and unclickable after a new search.
+    let mut last_set = use_signal(|| (0usize, 0u64));
+    use_effect(move || {
+        let current = {
+            let movies = movies_sig.read();
+            (
+                movies.len(),
+                movies.first().map(|m| m.movie.key_hash).unwrap_or(0),
+            )
+        };
+        if last_set() != current {
+            last_set.set(current);
+            focused.set(None);
+        }
+    });
+
+    let movies = movies_sig.read();
+    let locked = focused.read().is_some() || is_editing();
 
     rsx! {
         div {
-            class: if is_editing() { "movie-grid movie-grid-cols-3 editing-active" } else { "movie-grid movie-grid-cols-3" },
+            class: if locked { "movie-grid movie-grid-cols-3 editing-active" } else { "movie-grid movie-grid-cols-3" },
             for (index, movie) in movies.iter().enumerate() {
                 MovieCard {
                     key: "{movie.movie.key_hash}",
-                    movies: props.movies,
+                    movies: movies_sig,
                     index,
-                    search_mode: props.search_mode,
-                    on_location_updated: props.on_location_updated
+                    search_mode,
+                    on_location_updated,
+                    persist_deletes,
+                    on_movie_deleted
                 }
             }
         }

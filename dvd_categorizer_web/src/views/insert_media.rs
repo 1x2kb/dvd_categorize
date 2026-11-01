@@ -13,19 +13,25 @@ pub fn InsertMedia() -> Element {
     let mut is_sending: Signal<bool> = use_signal(|| false);
 
     // Preview rows derive from dvd_data; the memo only recomputes when it changes.
-    let scored_movies = use_memo(move || {
-        dvd_data
-            .read()
-            .iter()
-            .map(|movie| ScoredMovie {
-                movie: movie.clone(),
-                vector_score: 0.0,
-            })
-            .collect::<Vec<_>>()
-    });
+    let scored_movies = use_memo(
+        move || {
+            dvd_data
+                .read()
+                .iter()
+                .map(
+                    |movie| ScoredMovie {
+                        movie: movie.clone(),
+                        vector_score: 0.0,
+                    },
+                )
+                .collect::<Vec<_>>()
+        },
+    );
 
     // Helper for pluralization
-    let dvd_count = dvd_data.read().len();
+    let dvd_count = dvd_data
+        .read()
+        .len();
     let movie_word = if dvd_count == 1 { "movie" } else { "movies" };
 
     rsx! {
@@ -234,6 +240,16 @@ pub fn InsertMedia() -> Element {
                                 dvd_data.with_mut(|movies| {
                                     if let Some(movie) = movies.iter_mut().find(|m| m.id == movie_id) {
                                         movie.location = Some(new_location);
+                                    }
+                                });
+                            },
+                            // Preview rows aren't persisted yet, so removal is local only.
+                            persist_deletes: false,
+                            on_movie_deleted: move |(_movie_id, key_hash): (models::MovieId, u64)| {
+                                dvd_data.with_mut(|movies| {
+                                    movies.retain(|m| m.key_hash != key_hash);
+                                    if movies.is_empty() {
+                                        is_previewing.set(false);
                                     }
                                 });
                             },
