@@ -1521,21 +1521,21 @@ pub mod inner {
     }
 
     #[async_trait]
-    #[async_trait]
     impl DeleteMovieById for MongoMovieRepository {
         async fn delete_by_id(&self, id: String) -> DbResult<()> {
             use mongodb::bson::oid::ObjectId;
 
-            let oid = ObjectId::parse_str(&id).map_err(
-                |e| {
-                    DatabaseError::InvalidId(
-                        format!(
-                            "Invalid movie id '{}': {}",
-                            id, e
-                        ),
-                    )
-                },
-            )?;
+            let oid = ObjectId::parse_str(&id)
+                .map_err(
+                    |e| {
+                        DatabaseError::InvalidId(
+                            format!(
+                                "Invalid movie id '{}': {}",
+                                id, e
+                            ),
+                        )
+                    },
+                )?;
             let filter = doc! { "_id": oid };
 
             let result = self
@@ -1553,24 +1553,32 @@ pub mod inner {
                     },
                 )?;
 
-            if result.deleted_count == 0 {
-                return Err(DatabaseError::NotFound);
-            }
+            let existed = result.deleted_count > 0;
 
-            // The document is gone, so its vector point is unreachable — drop it
-            // too or vector/hybrid search keeps returning a dead id. Non-fatal:
-            // a stale point is recoverable, an aborted delete is not.
+            // Runs on both paths. On the first call this removes the live point;
+            // on a retry after a 500 the document is already gone, so any point
+            // still here is an orphan and this converges the state.
             if let Err(e) = self
                 .delete_qdrant_points(&id)
                 .await
             {
                 error!(
-                    "Deleted movie {} but failed to remove its Qdrant point: {}",
+                    "Failed to remove Qdrant points for movie {}: {}",
                     id, e
+                );
+
+                return Err(
+                    DatabaseError::DeletedMongoButNotPoint {
+                        oid: id.clone(),
+                    },
                 );
             }
 
-            Ok(())
+            if existed {
+                Ok(())
+            } else {
+                Err(DatabaseError::NotFound)
+            }
         }
     }
 

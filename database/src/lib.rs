@@ -139,6 +139,12 @@ pub enum DatabaseError {
     NotFound,
     /// An identifier could not be parsed for the active backend.
     InvalidId(String),
+    /// The MongoDB document was deleted, but removing its Qdrant point failed.
+    /// The movie is gone; the orphaned vector needs manual cleanup.
+    #[cfg(feature = "mongodb")]
+    DeletedMongoButNotPoint {
+        oid: String,
+    },
 }
 
 impl From<ConnectionError> for DatabaseError {
@@ -188,6 +194,12 @@ impl Display for DatabaseError {
                 f,
                 "Invalid id: {}",
                 id
+            ),
+            #[cfg(feature = "mongodb")]
+            DatabaseError::DeletedMongoButNotPoint { oid } => write!(
+                f,
+                "Deleted MongoDB document but failed to delete its Qdrant point. Original oid={}",
+                oid
             ),
         }
     }
