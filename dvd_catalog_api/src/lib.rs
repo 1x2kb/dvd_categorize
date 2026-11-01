@@ -2609,13 +2609,7 @@ where
 pub async fn delete_movie(
     State(state): State<DbState>,
     Path(id): Path<<MovieRepo as Repository>::Id>,
-) -> Result<
-    StatusCode,
-    (
-        StatusCode,
-        String,
-    ),
-> {
+) -> Result<StatusCode, (StatusCode, String)> {
     info!(
         "Deleting movie with ID: {}",
         id
@@ -2633,7 +2627,7 @@ pub async fn delete_movie(
                     e
                 );
                 (
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                    delete_error_status(&e),
                     format!(
                         "Failed to delete movie: {}",
                         e
@@ -2644,6 +2638,18 @@ pub async fn delete_movie(
 
     info!("Successfully deleted movie");
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Map a delete failure onto a status the caller can act on.
+///
+/// The backends signal these as distinct variants, so the handler does not have
+/// to flatten a missing row and a broken connection into the same 500.
+fn delete_error_status(error: &database::DatabaseError) -> StatusCode {
+    match error {
+        database::DatabaseError::NotFound => StatusCode::NOT_FOUND,
+        database::DatabaseError::InvalidId(_) => StatusCode::BAD_REQUEST,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    }
 }
 
 /// Compute odds for a random selection of movies.

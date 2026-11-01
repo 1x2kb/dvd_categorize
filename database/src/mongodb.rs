@@ -1521,13 +1521,14 @@ pub mod inner {
     }
 
     #[async_trait]
+    #[async_trait]
     impl DeleteMovieById for MongoMovieRepository {
         async fn delete_by_id(&self, id: String) -> DbResult<()> {
             use mongodb::bson::oid::ObjectId;
 
             let oid = ObjectId::parse_str(&id).map_err(
                 |e| {
-                    DatabaseError::QueryError(
+                    DatabaseError::InvalidId(
                         format!(
                             "Invalid movie id '{}': {}",
                             id, e
@@ -1537,7 +1538,8 @@ pub mod inner {
             )?;
             let filter = doc! { "_id": oid };
 
-            self.movies
+            let result = self
+                .movies
                 .delete_one(filter)
                 .await
                 .map_err(
@@ -1550,6 +1552,23 @@ pub mod inner {
                         )
                     },
                 )?;
+
+            if result.deleted_count == 0 {
+                return Err(DatabaseError::NotFound);
+            }
+
+            // The document is gone, so its vector point is unreachable — drop it
+            // too or vector/hybrid search keeps returning a dead id. Non-fatal:
+            // a stale point is recoverable, an aborted delete is not.
+            if let Err(e) = self
+                .delete_qdrant_points(&id)
+                .await
+            {
+                error!(
+                    "Deleted movie {} but failed to remove its Qdrant point: {}",
+                    id, e
+                );
+            }
 
             Ok(())
         }
@@ -2120,6 +2139,41 @@ pub mod inner {
 
             Ok(scored_results)
         }
+
+        /// Delete every Qdrant point whose payload references this MongoDB id.
+    ///
+    /// Points are matched on the `movie_id` payload rather than the point id
+    /// because bulk inserts do not persist a point id back onto the document.
+    async fn delete_qdrant_points(&self, mongo_id: &str) -> DbResult<()> {
+        use qdrant_client::qdrant::{Condition, DeletePointsBuilder, Filter};
+
+        let filter = Filter::must(
+            [Condition::matches(
+                "movie_id",
+                mongo_id.to_string(),
+            )],
+        );
+
+        self.qdrant
+            .delete_points(
+                DeletePointsBuilder::new(&self.qdrant_collection)
+                    .points(filter)
+                    .wait(true),
+            )
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::QueryError(
+                        format!(
+                            "Qdrant delete error: {}",
+                            e
+                        ),
+                    )
+                },
+            )?;
+
+        Ok(())
+    }
     }
 
     // ==================== Stats Trait Implementations ====================

@@ -15,7 +15,7 @@ mod inner {
     use async_trait::async_trait;
     use diesel::prelude::*;
     use diesel_async::pooled_connection::deadpool::{Object, Pool};
-    use diesel_async::{AsyncPgConnection, RunQueryDsl};
+    use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
     use log::debug;
     use models::{
         schema, MovieActor, MovieGenre, NewActor, NewDirector, NewMovie, NewMovieActor,
@@ -902,16 +902,49 @@ mod inner {
     #[async_trait]
     impl DeleteMovieById for PostgresMovieRepository {
         async fn delete_by_id(&self, id: i32) -> Result<(), DatabaseError> {
+            use schema::{movie_actor, movie_genre};
+
             let mut conn = self
                 .get_conn()
                 .await?;
 
-            diesel::delete(schema::movie::table.find(id))
-                .execute(&mut conn)
-                .await
-                .map_err(DatabaseError::from)?;
+            // `movie_actor` and `movie_genre` reference `movie` without
+            // ON DELETE CASCADE, so the child rows have to go first. Both the
+            // cleanup and the parent delete share one transaction so a failure
+            // cannot leave a half-deleted movie behind.
+            (&mut *conn)
+                .transaction::<_, DatabaseError, _>(
+                    |conn| {
+                        Box::pin(
+                            async move {
+                                diesel::delete(
+                                    movie_actor::table
+                                        .filter(movie_actor::movie_id.eq(id)),
+                                )
+                                .execute(conn)
+                                .await?;
 
-            Ok(())
+                                diesel::delete(
+                                    movie_genre::table
+                                        .filter(movie_genre::movie_id.eq(id)),
+                                )
+                                .execute(conn)
+                                .await?;
+
+                                let deleted = diesel::delete(schema::movie::table.find(id))
+                                    .execute(conn)
+                                    .await?;
+
+                                if deleted == 0 {
+                                    return Err(DatabaseError::NotFound);
+                                }
+
+                                Ok(())
+                            },
+                        )
+                    },
+                )
+                .await
         }
     }
 
