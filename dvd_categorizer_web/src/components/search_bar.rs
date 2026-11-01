@@ -1,21 +1,23 @@
+// search_bar.rs
 use dioxus::prelude::*;
 use models::SearchMode;
 
 #[derive(Props, Clone, PartialEq)]
 pub struct SearchBarProps {
-    pub input_value: String,
-    pub on_input_change: EventHandler<String>,
+    pub input_value: Signal<String>,
     pub on_search: EventHandler<()>,
-    pub is_loading: bool,
-    pub search_mode: SearchMode,
-    pub disable_enhancement: bool,
+    pub is_loading: Signal<bool>,
+    pub search_mode: Signal<SearchMode>,
+    pub disable_enhancement: Signal<bool>,
     pub on_enhancement_toggle: EventHandler<bool>,
-    pub enhanced_query: String,
-    pub original_query: String,
+    pub enhanced_query: Signal<String>,
+    pub original_query: Signal<String>,
 }
 
 #[component]
-pub fn SearchBar(props: SearchBarProps) -> Element {
+pub fn SearchBar(mut props: SearchBarProps) -> Element {
+    let loading = *props.is_loading.read();
+
     rsx! {
         div {
             class: "search-input-area",
@@ -27,9 +29,9 @@ pub fn SearchBar(props: SearchBarProps) -> Element {
                     r#type: "text",
                     placeholder: "Enter your search query...",
                     value: "{props.input_value}",
-                    oninput: move |evt| props.on_input_change.call(evt.value()),
+                    oninput: move |evt| props.input_value.set(evt.value()),
                     onkeypress: move |evt| {
-                        if evt.key() == Key::Enter && !props.is_loading {
+                        if evt.key() == Key::Enter && !loading {
                             props.on_search.call(());
                         }
                     }
@@ -38,13 +40,13 @@ pub fn SearchBar(props: SearchBarProps) -> Element {
                 button {
                     class: "search-button",
                     onclick: move |_| {
-                        if !props.is_loading {
+                        if !loading {
                             props.on_search.call(());
                         }
                     },
-                    disabled: props.is_loading,
+                    disabled: loading,
 
-                    if props.is_loading {
+                    if loading {
                         "Searching..."
                     } else {
                         "Search"
@@ -53,13 +55,13 @@ pub fn SearchBar(props: SearchBarProps) -> Element {
             }
 
             // Checkbox for disabling AI enhancement (only show for Vector/Both modes)
-            if !matches!(props.search_mode, SearchMode::Text) {
+            if !matches!(*props.search_mode.read(), SearchMode::Text) {
                 div {
                     class: "enhancement-checkbox-container",
                     input {
                         r#type: "checkbox",
                         id: "disable-enhancement",
-                        checked: props.disable_enhancement,
+                        checked: *props.disable_enhancement.read(),
                         onchange: move |evt| {
                             props.on_enhancement_toggle.call(evt.checked());
                         }
@@ -72,7 +74,9 @@ pub fn SearchBar(props: SearchBarProps) -> Element {
             }
 
             // Display enhanced query if different from original
-            if !props.enhanced_query.is_empty() && props.enhanced_query != props.original_query {
+            if !props.enhanced_query.read().is_empty()
+                && *props.enhanced_query.read() != *props.original_query.read()
+            {
                 div {
                     class: "enhanced-query-display",
                     div {
