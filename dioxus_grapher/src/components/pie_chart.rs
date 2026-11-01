@@ -50,6 +50,8 @@ pub fn PieChart(props: PieChartProps) -> Element {
     let mut canvas_ref = use_signal(|| None::<HtmlCanvasElement>);
     let mut container_ref = use_signal(|| None::<HtmlElement>);
     let mut hovered_index = use_signal(|| None::<usize>);
+    // Bumped on mount so the first paint doesn't depend on effect/mount ordering.
+    let mut redraw = use_signal(|| 0u32);
     let container_size = use_container_size(container_ref);
 
     let size = props.size;
@@ -60,17 +62,6 @@ pub fn PieChart(props: PieChartProps) -> Element {
     let data_for_effect = props
         .data
         .clone();
-
-    let canvas_size = if props.responsive {
-        let (w, h) = container_size();
-        if w > 0.0 && h > 0.0 {
-            w.min(h)
-        } else {
-            size
-        }
-    } else {
-        size
-    };
 
     let filtered_data = use_memo(
         move || {
@@ -140,6 +131,7 @@ pub fn PieChart(props: PieChartProps) -> Element {
     use_effect(
         move || {
             let _ = hovered_index();
+            let _ = redraw();
             let (current_w, current_h) = container_size();
             let _ = canvas_ref();
             if let Some(canvas) = canvas_ref() {
@@ -220,15 +212,15 @@ pub fn PieChart(props: PieChartProps) -> Element {
             onmounted: move |e: Event<MountedData>| {
                 let element = e.as_web_event().dyn_into::<HtmlElement>().ok();
                 container_ref.set(element);
+                redraw.with_mut(|n| *n = n.wrapping_add(1));
             },
 
             canvas {
-                width: "{canvas_size}",
-                height: "{canvas_size}",
                 style: "overflow: visible;",
                 onmounted: move |e: Event<MountedData>| {
                     let element = e.as_web_event().dyn_into::<HtmlCanvasElement>().ok();
                     canvas_ref.set(element);
+                    redraw.with_mut(|n| *n = n.wrapping_add(1));
                 },
                 onmouseenter: move |e: Event<MouseData>| {
                     if let Some(canvas) = canvas_ref() {
