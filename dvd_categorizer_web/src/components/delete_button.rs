@@ -2,68 +2,8 @@
 use dioxus::prelude::*;
 use models::MovieId;
 
+use crate::api::delete_movie;
 use crate::components::movie_grid::use_focused_context;
-
-fn api_base() -> String {
-    let hostname = web_sys::window()
-        .and_then(
-            |w| {
-                w.location()
-                    .hostname()
-                    .ok()
-            },
-        )
-        .unwrap_or_else(|| "127.0.0.1".to_string());
-    let port = std::env::var("server_port").unwrap_or_else(|_| "3000".to_string());
-    format!("http://{hostname}:{port}")
-}
-
-/// Percent-encode a path segment — ids are opaque across backends.
-fn encode_segment(raw: &str) -> String {
-    raw.bytes()
-        .map(
-            |b| match b {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                    (b as char).to_string()
-                }
-                _ => format!("%{b:02X}"),
-            },
-        )
-        .collect()
-}
-
-async fn delete_movie_on_server(movie_id: MovieId) -> Result<(), String> {
-    let url = format!(
-        "{}/dvd/{}",
-        api_base(),
-        encode_segment(&movie_id.to_string())
-    );
-
-    let response = gloo_net::http::Request::delete(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {e}"))?;
-
-    if !response.ok() {
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .unwrap_or_default();
-        return Err(
-            if body.is_empty() {
-                format!(
-                    "{status} {}",
-                    response.status_text()
-                )
-            } else {
-                format!("{status}: {body}")
-            },
-        );
-    }
-
-    Ok(())
-}
 
 #[derive(Props, Clone, PartialEq)]
 pub struct DeleteButtonProps {
@@ -120,7 +60,7 @@ pub fn DeleteButton(props: DeleteButtonProps) -> Element {
                                 return;
                             }
 
-                            match delete_movie_on_server(movie_id.clone()).await {
+                            match delete_movie(movie_id.clone()).await {
                                 Ok(()) => {
                                     // Card is about to unmount — release the lock.
                                     focused.set(None);

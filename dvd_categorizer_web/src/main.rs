@@ -1,5 +1,6 @@
 use app_data::AppData;
 use dioxus::prelude::*;
+pub mod api;
 pub mod app_data;
 pub mod components;
 pub mod views;

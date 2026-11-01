@@ -4,6 +4,7 @@ pub mod admin;
 pub mod ai_chat;
 pub mod ai_live_results;
 pub mod insert_media;
+pub mod live;
 #[cfg(feature = "ai-backend")]
 pub mod model_pull;
 #[cfg(feature = "ai-backend")]
