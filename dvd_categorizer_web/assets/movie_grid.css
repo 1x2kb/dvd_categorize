@@ -57,6 +57,7 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+
 /* When editing or focus is locked, keep the active card expanded */
 .movie-grid.editing-active .movie-card:has(.location-edit-container),
 .movie-grid.editing-active .movie-card.movie-card-focused {
@@ -68,6 +69,23 @@
 .movie-grid.editing-active .movie-card:not(:has(.location-edit-container)):not(.movie-card-focused) {
     filter: blur(4px);
     opacity: 0.7;
+}
+
+.movie-focus-hint {
+    margin: 12px 0 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: rgba(8, 145, 178, 0.12);
+    border: 1px dashed rgba(8, 145, 178, 0.45);
+    color: #a5f3fc;
+    font-size: 11px;
+    line-height: 1.4;
+    text-align: center;
+}
+
+/* While a location edit is open, other cards must not steal the click.
+   Focus-locked cards stay clickable so any card can release the lock. */
+.movie-grid.editing-active:has(.location-edit-container) .movie-card:not(:has(.location-edit-container)) {
     pointer-events: none;
 }
 

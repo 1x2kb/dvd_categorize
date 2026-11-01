@@ -11,31 +11,31 @@ pub fn InsertMedia() -> Element {
     let mut is_previewing: Signal<bool> = use_signal(|| false);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
     let mut is_sending: Signal<bool> = use_signal(|| false);
+    let mut focused: Signal<Option<u64>> = use_signal(|| None::<u64>);
 
     // Preview rows derive from dvd_data; the memo only recomputes when it changes.
-    let scored_movies = use_memo(
-        move || {
-            dvd_data
-                .read()
-                .iter()
-                .map(
-                    |movie| ScoredMovie {
-                        movie: movie.clone(),
-                        vector_score: 0.0,
-                    },
-                )
-                .collect::<Vec<_>>()
-        },
-    );
+    let scored_movies = use_memo(move || {
+        dvd_data
+            .read()
+            .iter()
+            .map(|movie| ScoredMovie {
+                movie: movie.clone(),
+                vector_score: 0.0,
+            })
+            .collect::<Vec<_>>()
+    });
 
     // Helper for pluralization
-    let dvd_count = dvd_data
-        .read()
-        .len();
+    let dvd_count = dvd_data.read().len();
     let movie_word = if dvd_count == 1 { "movie" } else { "movies" };
 
     rsx! {
-        div { class: "insert-media-container",
+        div {
+            class: "insert-media-container",
+            // Any click that reaches the page clears the card lock. Cards stop
+            // propagation, so their own toggle is unaffected.
+            onclick: move |_| focused.set(None),
+
             // CSV Input Section
             div { class: "csv-section",
                 // CSV Instructions
@@ -253,6 +253,7 @@ pub fn InsertMedia() -> Element {
                                     }
                                 });
                             },
+                            focused,
                         }
 
                         if is_sending() {

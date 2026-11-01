@@ -7,8 +7,8 @@ use crate::components::delete_button::DeleteButton;
 use crate::components::location_editor::LocationEditor;
 
 /// The card currently holding focus. `Some(key_hash)` puts the grid in
-/// locked-focus mode: that card stays sharp, the rest blur and stop taking
-/// pointer events until it is clicked again.
+/// locked-focus mode: that card stays sharp, the rest blur until focus is
+/// released by clicking any card.
 pub fn use_focused_context() -> Signal<Option<u64>> {
     use_context()
 }
@@ -18,32 +18,53 @@ pub struct SingleMovieCardProps {
     pub movies: ReadSignal<Vec<ScoredMovie>>,
     pub index: usize,
     pub search_mode: models::SearchMode,
-    pub on_location_updated: EventHandler<(MovieId, String)>,
+    pub on_location_updated: EventHandler<(
+        MovieId,
+        String,
+    )>,
     /// `false` = local-only removal (CSV preview rows aren't persisted).
     pub persist_deletes: bool,
-    pub on_movie_deleted: EventHandler<(MovieId, u64)>,
+    pub on_movie_deleted: EventHandler<(
+        MovieId,
+        u64,
+    )>,
 }
 
 #[component]
 fn MovieCard(props: SingleMovieCardProps) -> Element {
-    let movies = props.movies.read();
+    let movies = props
+        .movies
+        .read();
     let Some(scored) = movies.get(props.index) else {
         return rsx! {};
     };
 
-    let movie_id = scored.movie.id.clone();
-    let key_hash = scored.movie.key_hash;
-    let display_name = scored.movie.display_name();
+    let movie_id = scored
+        .movie
+        .id
+        .clone();
+    let key_hash = scored
+        .movie
+        .key_hash;
+    let display_name = scored
+        .movie
+        .display_name();
 
     let mut focused = use_focused_context();
-    let is_focused = focused.read().as_ref() == Some(&key_hash);
+    let is_focused = focused
+        .read()
+        .as_ref()
+        == Some(&key_hash);
 
     rsx! {
         div {
             class: if is_focused { "movie-card movie-card-focused" } else { "movie-card" },
-            onclick: move |_| {
+            onclick: move |evt| {
+                // Stop the page-level handler from clearing the lock we just set.
+                evt.stop_propagation();
+                // Locked: any card click releases the lock. Unlocked: lock this one.
                 focused.with_mut(|current| {
-                    *current = if *current == Some(key_hash) { None } else { Some(key_hash) };
+                    *current = if current.is_some() { None } else { Some(key_hash) };
                 });
             },
 
@@ -179,6 +200,13 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                     persist: props.persist_deletes,
                     on_deleted: props.on_movie_deleted
                 }
+
+                if is_focused {
+                    p {
+                        class: "movie-focus-hint",
+                        "Focus locked on this card. Click any card to unlock focus"
+                    }
+                }
             }
         }
     }
@@ -188,10 +216,18 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
 pub struct MovieGridProps {
     pub movies: ReadSignal<Vec<ScoredMovie>>,
     pub search_mode: models::SearchMode,
-    pub on_location_updated: EventHandler<(MovieId, String)>,
+    pub on_location_updated: EventHandler<(
+        MovieId,
+        String,
+    )>,
     /// `false` = local-only removal (CSV preview rows aren't persisted).
     pub persist_deletes: bool,
-    pub on_movie_deleted: EventHandler<(MovieId, u64)>,
+    pub on_movie_deleted: EventHandler<(
+        MovieId,
+        u64,
+    )>,
+    /// Focus lock, owned by the page so clicks outside the grid can clear it.
+    pub focused: Signal<Option<u64>>,
 }
 
 #[component]
@@ -205,28 +241,47 @@ pub fn MovieGrid(props: MovieGridProps) -> Element {
     let is_editing = use_signal(|| false);
     use_context_provider(|| is_editing);
 
-    let mut focused = use_signal(|| None::<u64>);
+    let mut focused = props.focused;
     use_context_provider(|| focused);
 
     // Drop the lock when the visible set changes, or a stale key would leave
     // every card blurred and unclickable after a new search.
-    let mut last_set = use_signal(|| (0usize, 0u64));
-    use_effect(move || {
-        let current = {
-            let movies = movies_sig.read();
+    let mut last_set = use_signal(
+        || {
             (
-                movies.len(),
-                movies.first().map(|m| m.movie.key_hash).unwrap_or(0),
+                0usize, 0u64,
             )
-        };
-        if last_set() != current {
-            last_set.set(current);
-            focused.set(None);
-        }
-    });
+        },
+    );
+    use_effect(
+        move || {
+            let current = {
+                let movies = movies_sig.read();
+                (
+                    movies.len(),
+                    movies
+                        .first()
+                        .map(
+                            |m| {
+                                m.movie
+                                    .key_hash
+                            },
+                        )
+                        .unwrap_or(0),
+                )
+            };
+            if last_set() != current {
+                last_set.set(current);
+                focused.set(None);
+            }
+        },
+    );
 
     let movies = movies_sig.read();
-    let locked = focused.read().is_some() || is_editing();
+    let locked = focused
+        .read()
+        .is_some()
+        || is_editing();
 
     rsx! {
         div {

@@ -111,6 +111,7 @@ struct LiveState {
     random_odds: Signal<RandomSelectionOddsResponse>,
     available_models: Signal<Vec<AvailableModel>>,
     available_locations: Signal<Vec<String>>,
+    focused: Signal<Option<u64>>,
 }
 
 impl LiveState {
@@ -147,6 +148,8 @@ impl LiveState {
             .set(String::new());
         self.original_query
             .set(String::new());
+        self.focused
+            .set(None);
 
         if clear_year {
             self.year_data
@@ -460,6 +463,7 @@ pub fn LiveResults() -> Element {
         random_odds: use_signal(empty_odds),
         available_models: use_signal(Vec::<AvailableModel>::new),
         available_locations: use_signal(Vec::<String>::new),
+        focused: use_signal(|| None::<u64>),
     };
 
     // Fetch available models on mount
@@ -499,6 +503,9 @@ pub fn LiveResults() -> Element {
     rsx! {
             div {
                 class: "ai-live-results-container",
+                // Any click that reaches the page clears the card lock. Cards
+                // stop propagation, so their own toggle is unaffected.
+                onclick: move |_| st.focused.set(None),
 
                 BrowseBar {
                     is_loading: st.is_loading,
@@ -578,6 +585,7 @@ pub fn LiveResults() -> Element {
                     on_movie_deleted: move |(movie_id, _key_hash): (MovieId, u64)| {
                         st.movies.with_mut(|movies| movies.retain(|m| m.movie.id != movie_id));
                     },
+                    focused: st.focused,
                 }
 
                 if *st.showing_random.read() {
