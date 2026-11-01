@@ -11,6 +11,8 @@ use crate::views::live::BrowseViewProps;
 #[component]
 pub fn RecentReleases(props: BrowseViewProps) -> Element {
     let mut movies = use_signal(Vec::<ScoredMovie>::new);
+    // Chart only mounts once the response is in hand.
+    let mut loaded = use_signal(|| false);
     let mut is_loading = props.is_loading;
     let focused = props.focused;
 
@@ -26,6 +28,7 @@ pub fn RecentReleases(props: BrowseViewProps) -> Element {
                             movies.set(Vec::new());
                         }
                     }
+                    loaded.set(true);
                     is_loading.set(false);
                 },
             );
@@ -35,7 +38,9 @@ pub fn RecentReleases(props: BrowseViewProps) -> Element {
     rsx! {
         div {
             class: "recent-movies-chart-wrapper",
-            ReleaseTimelineChart { movies }
+            if loaded() {
+                ReleaseTimelineChart { movies }
+            }
         }
 
         MovieResults {

@@ -10,18 +10,22 @@ fn current_year() -> i32 {
 #[derive(Props, Clone, PartialEq)]
 pub struct ReleaseTimelineChartProps {
     pub movies: ReadSignal<Vec<ScoredMovie>>,
-    #[props(default = 10)]
+    #[props(default = 15)]
     pub years_back: usize,
 }
 
 /// Release counts per year, most recent first. Counts come from the movies the
 /// caller already loaded, so the chart always matches the grid beside it.
+///
+/// Bars are ordered by relevance: the leftmost is the current year and later
+/// pages are progressively less relevant, so paging degrades sensibly.
 #[component]
 pub fn ReleaseTimelineChart(props: ReleaseTimelineChartProps) -> Element {
     let current = current_year();
     let years_back = props
         .years_back
-        .max(1) as i32;
+        .max(1);
+    let span = years_back as i32;
 
     // Contiguous descending years ending at the current one, so a gap shows as
     // an empty bar instead of the axis jumping between years that happen to exist.
@@ -30,7 +34,7 @@ pub fn ReleaseTimelineChart(props: ReleaseTimelineChartProps) -> Element {
             let movies = props
                 .movies
                 .read();
-            (0..years_back)
+            (0..span)
                 .map(
                     |offset| {
                         let year = current - offset;
@@ -68,7 +72,7 @@ pub fn ReleaseTimelineChart(props: ReleaseTimelineChartProps) -> Element {
             h2 { "Releases by Year" }
             p {
                 style: "font-size: 0.875rem; color: #9ca3af; margin-bottom: 0.5rem;",
-                "Most recent first, back to {current - years_back + 1}. {total} in this view."
+                "Most recent first, back to {current - span + 1}. {total} in this view."
             }
             div {
                 style: "width: 100%; height: 400px;",
