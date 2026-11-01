@@ -204,7 +204,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                 if is_focused {
                     p {
                         class: "movie-focus-hint",
-                        "Focus locked on this card. Click any card to unlock focus"
+                        "Focus locked on this card. Click any other card to unlock focus"
                     }
                 }
             }
@@ -278,14 +278,23 @@ pub fn MovieGrid(props: MovieGridProps) -> Element {
     );
 
     let movies = movies_sig.read();
-    let locked = focused
+    let is_locked = focused
         .read()
-        .is_some()
-        || is_editing();
+        .is_some();
+
+    // `editing-active` drives the sharp/blurred state for both location editing
+    // and focus lock. `focus-locked` additionally suppresses hover animation.
+    let mut grid_class = String::from("movie-grid movie-grid-cols-3");
+    if is_locked || is_editing() {
+        grid_class.push_str(" editing-active");
+    }
+    if is_locked {
+        grid_class.push_str(" focus-locked");
+    }
 
     rsx! {
         div {
-            class: if locked { "movie-grid movie-grid-cols-3 editing-active" } else { "movie-grid movie-grid-cols-3" },
+            class: "{grid_class}",
             for (index, movie) in movies.iter().enumerate() {
                 MovieCard {
                     key: "{movie.movie.key_hash}",

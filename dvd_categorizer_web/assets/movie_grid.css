@@ -57,7 +57,6 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-
 /* When editing or focus is locked, keep the active card expanded */
 .movie-grid.editing-active .movie-card:has(.location-edit-container),
 .movie-grid.editing-active .movie-card.movie-card-focused {
@@ -71,44 +70,24 @@
     opacity: 0.7;
 }
 
-.movie-focus-hint {
-    margin: 12px 0 0;
-    padding: 8px 10px;
-    border-radius: 6px;
-    background: rgba(8, 145, 178, 0.12);
-    border: 1px dashed rgba(8, 145, 178, 0.45);
-    color: #a5f3fc;
-    font-size: 11px;
-    line-height: 1.4;
-    text-align: center;
-}
-
 /* While a location edit is open, other cards must not steal the click.
    Focus-locked cards stay clickable so any card can release the lock. */
 .movie-grid.editing-active:has(.location-edit-container) .movie-card:not(:has(.location-edit-container)) {
     pointer-events: none;
 }
 
-/* Blur effect for non-hovered cards (desktop only) */
+/* Blur effect for non-hovered cards (desktop only, skipped while locked) */
 @media (hover: hover) and (pointer: fine) {
     .movie-grid .movie-card:hover ~ .movie-card,
-    .movie-grid:has(.movie-card:hover) .movie-card:not(:hover):not(.movie-card-focused) {
+    .movie-grid:not(.focus-locked):has(.movie-card:hover) .movie-card:not(:hover):not(.movie-card-focused) {
         filter: blur(4px);
         opacity: 0.7;
     }
 }
 
-.movie-card:hover {
+.movie-grid:not(.focus-locked) .movie-card:hover {
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.08);
     border-color: rgba(8, 145, 178, 0.3);
-}
-
-/* Disable hover effects on non-active cards while editing or locked */
-.movie-grid.editing-active .movie-card:not(:has(.location-edit-container)):not(.movie-card-focused):hover {
-    box-shadow: none;
-    border-color: rgba(255, 255, 255, 0.1);
-    filter: blur(4px);
-    opacity: 0.7;
 }
 
 /* Movie poster */
@@ -139,7 +118,7 @@
     transition: background 0.3s ease;
 }
 
-.movie-card:hover .movie-poster {
+.movie-grid:not(.focus-locked) .movie-card:hover .movie-poster {
     background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
 }
 
@@ -180,7 +159,7 @@
     z-index: 10;
 }
 
-.movie-card:hover .movie-description,
+.movie-grid:not(.focus-locked) .movie-card:hover .movie-description,
 .movie-grid.editing-active .movie-card:has(.location-edit-container) .movie-description,
 .movie-grid.editing-active .movie-card.movie-card-focused .movie-description {
     display: block;
@@ -245,7 +224,7 @@
     transition: all 0.2s ease;
 }
 
-.movie-genre-tag:hover {
+.movie-grid:not(.focus-locked) .movie-genre-tag:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(8, 145, 178, 0.3);
 }
@@ -260,13 +239,13 @@
     display: none;
 }
 
-.movie-card:hover .movie-genre-extra,
+.movie-grid:not(.focus-locked) .movie-card:hover .movie-genre-extra,
 .movie-grid.editing-active .movie-card:has(.location-edit-container) .movie-genre-extra,
 .movie-grid.editing-active .movie-card.movie-card-focused .movie-genre-extra {
     display: inline-block;
 }
 
-.movie-card:hover .movie-genre-more,
+.movie-grid:not(.focus-locked) .movie-card:hover .movie-genre-more,
 .movie-grid.editing-active .movie-card:has(.location-edit-container) .movie-genre-more,
 .movie-grid.editing-active .movie-card.movie-card-focused .movie-genre-more {
     display: none;
@@ -368,6 +347,19 @@
     font-size: 11px;
     margin-top: 6px;
     flex-basis: 100%;
+}
+
+/* Focus lock hint */
+.movie-focus-hint {
+    margin: 12px 0 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: rgba(8, 145, 178, 0.12);
+    border: 1px dashed rgba(8, 145, 178, 0.45);
+    color: #a5f3fc;
+    font-size: 11px;
+    line-height: 1.4;
+    text-align: center;
 }
 
 .location-edit-container {
