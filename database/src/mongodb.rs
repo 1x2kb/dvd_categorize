@@ -1525,19 +1525,21 @@ pub mod inner {
         async fn delete_by_id(&self, id: String) -> DbResult<()> {
             use mongodb::bson::oid::ObjectId;
 
-            let oid = ObjectId::parse_str(&id).map_err(
-                |e| {
-                    DatabaseError::QueryError(
-                        format!(
-                            "Invalid movie id '{}': {}",
-                            id, e
-                        ),
-                    )
-                },
-            )?;
+            let oid = ObjectId::parse_str(&id)
+                .map_err(
+                    |e| {
+                        DatabaseError::InvalidId(
+                            format!(
+                                "Invalid movie id '{}': {}",
+                                id, e
+                            ),
+                        )
+                    },
+                )?;
             let filter = doc! { "_id": oid };
 
-            self.movies
+            let result = self
+                .movies
                 .delete_one(filter)
                 .await
                 .map_err(
@@ -1551,7 +1553,32 @@ pub mod inner {
                     },
                 )?;
 
-            Ok(())
+            let existed = result.deleted_count > 0;
+
+            // Runs on both paths. On the first call this removes the live point;
+            // on a retry after a 500 the document is already gone, so any point
+            // still here is an orphan and this converges the state.
+            if let Err(e) = self
+                .delete_qdrant_points(&id)
+                .await
+            {
+                error!(
+                    "Failed to remove Qdrant points for movie {}: {}",
+                    id, e
+                );
+
+                return Err(
+                    DatabaseError::DeletedMongoButNotPoint {
+                        oid: id.clone(),
+                    },
+                );
+            }
+
+            if existed {
+                Ok(())
+            } else {
+                Err(DatabaseError::NotFound)
+            }
         }
     }
 
@@ -2120,6 +2147,41 @@ pub mod inner {
 
             Ok(scored_results)
         }
+
+        /// Delete every Qdrant point whose payload references this MongoDB id.
+    ///
+    /// Points are matched on the `movie_id` payload rather than the point id
+    /// because bulk inserts do not persist a point id back onto the document.
+    async fn delete_qdrant_points(&self, mongo_id: &str) -> DbResult<()> {
+        use qdrant_client::qdrant::{Condition, DeletePointsBuilder, Filter};
+
+        let filter = Filter::must(
+            [Condition::matches(
+                "movie_id",
+                mongo_id.to_string(),
+            )],
+        );
+
+        self.qdrant
+            .delete_points(
+                DeletePointsBuilder::new(&self.qdrant_collection)
+                    .points(filter)
+                    .wait(true),
+            )
+            .await
+            .map_err(
+                |e| {
+                    DatabaseError::QueryError(
+                        format!(
+                            "Qdrant delete error: {}",
+                            e
+                        ),
+                    )
+                },
+            )?;
+
+        Ok(())
+    }
     }
 
     // ==================== Stats Trait Implementations ====================
