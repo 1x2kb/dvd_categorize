@@ -204,7 +204,7 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                 if is_focused {
                     p {
                         class: "movie-focus-hint",
-                        "Focus locked on this card. Click any other card to unlock focus"
+                        "Focus locked on this card. Click any card to unlock focus"
                     }
                 }
             }

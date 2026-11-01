@@ -137,6 +137,8 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
     let mut canvas_ref = use_signal(|| None::<HtmlCanvasElement>);
     let mut container_ref = use_signal(|| None::<HtmlElement>);
     let mut hovered_index = use_signal(|| None::<usize>);
+    // Bumped on mount so the first paint doesn't depend on effect/mount ordering.
+    let mut redraw = use_signal(|| 0u32);
     let container_size = use_container_size(container_ref);
 
     let width = props.width;
@@ -187,7 +189,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
         Some(current_page_size()),
     );
 
-    let (canvas_width, canvas_height) = if props.responsive {
+    let (canvas_width, _) = if props.responsive {
         let (w, h) = container_size();
         if w > 0.0 && h > 0.0 {
             (
@@ -208,6 +210,7 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
         move || {
             let _ = data_for_effect.clone();
             let _ = hovered_index();
+            let _ = redraw();
             let _ = current_page();
             let _ = current_page_size();
             let (current_w, current_h) = container_size();
@@ -315,15 +318,15 @@ pub fn BarGraph(props: BarGraphProps) -> Element {
                 onmounted: move |e: Event<MountedData>| {
                     let element = e.as_web_event().dyn_into::<HtmlElement>().ok();
                     container_ref.set(element);
+                    redraw.with_mut(|n| *n = n.wrapping_add(1));
                 },
                 div {
                     class: "bar-graph-canvas-wrapper",
                     canvas {
-                        width: "{canvas_width}",
-                        height: "{canvas_height}",
                         onmounted: move |e: Event<MountedData>| {
                             let element = e.as_web_event().dyn_into::<HtmlCanvasElement>().ok();
                             canvas_ref.set(element);
+                            redraw.with_mut(|n| *n = n.wrapping_add(1));
                         },
                         onmousemove: move |e: Event<MouseData>| {
                             if let Some(canvas) = canvas_ref() {
