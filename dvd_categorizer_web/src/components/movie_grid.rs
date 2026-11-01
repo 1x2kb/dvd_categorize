@@ -1,74 +1,109 @@
+// movie_grid.rs
 use chrono::{DateTime, Local, NaiveDateTime};
 use dioxus::prelude::*;
 use models::{MovieId, ScoredMovie};
-use std::sync::Arc;
 
+use crate::components::delete_button::DeleteButton;
 use crate::components::location_editor::LocationEditor;
+
+/// The card currently holding focus. `Some(key_hash)` puts the grid in
+/// locked-focus mode: that card stays sharp, the rest blur until focus is
+/// released by clicking any card.
+pub fn use_focused_context() -> Signal<Option<u64>> {
+    use_context()
+}
 
 #[derive(Props, Clone, PartialEq)]
 pub struct SingleMovieCardProps {
-    pub scored_movie: ScoredMovie,
+    pub movies: ReadSignal<Vec<ScoredMovie>>,
+    pub index: usize,
     pub search_mode: models::SearchMode,
     pub on_location_updated: EventHandler<(
         MovieId,
         String,
     )>,
+    /// `false` = local-only removal (CSV preview rows aren't persisted).
+    pub persist_deletes: bool,
+    pub on_movie_deleted: EventHandler<(
+        MovieId,
+        u64,
+    )>,
 }
 
 #[component]
 fn MovieCard(props: SingleMovieCardProps) -> Element {
-    let movie_id = props
-        .scored_movie
+    let movies = props
+        .movies
+        .read();
+    let Some(scored) = movies.get(props.index) else {
+        return rsx! {};
+    };
+
+    let movie_id = scored
         .movie
         .id
         .clone();
+    let key_hash = scored
+        .movie
+        .key_hash;
+    let display_name = scored
+        .movie
+        .display_name();
+
+    let mut focused = use_focused_context();
+    let is_focused = focused
+        .read()
+        .as_ref()
+        == Some(&key_hash);
 
     rsx! {
         div {
-            class: "movie-card",
+            class: if is_focused { "movie-card movie-card-focused" } else { "movie-card" },
+            onclick: move |evt| {
+                // Stop the page-level handler from clearing the lock we just set.
+                evt.stop_propagation();
+                // Locked: any card click releases the lock. Unlocked: lock this one.
+                focused.with_mut(|current| {
+                    *current = if current.is_some() { None } else { Some(key_hash) };
+                });
+            },
 
-            // Movie poster placeholder
             div {
                 class: "movie-poster",
-                "{props.scored_movie.movie.display_name()}"
+                "{display_name}"
             }
 
-            // Movie details
             div {
                 class: "movie-details",
 
-                // Title
                 h3 {
                     class: "movie-title",
-                    "{props.scored_movie.movie.display_name()}"
+                    "{display_name}"
                 }
 
-                // Scores
                 div {
                     class: "movie-info-row movie-score-container",
                     span {
                         class: "movie-info-label movie-score-badge",
                         {
                             match props.search_mode {
-                                models::SearchMode::Text => format!("Text Score: {:.2}", props.scored_movie.vector_score),
-                                models::SearchMode::Vector => format!("Vector Score: {:.4}", props.scored_movie.vector_score),
-                                models::SearchMode::Both => format!("RRF Score: {:.4}", props.scored_movie.vector_score),
-                                models::SearchMode::Structured => format!("Relevance: {:.4}", props.scored_movie.vector_score),
+                                models::SearchMode::Text => format!("Text Score: {:.2}", scored.vector_score),
+                                models::SearchMode::Vector => format!("Vector Score: {:.4}", scored.vector_score),
+                                models::SearchMode::Both => format!("RRF Score: {:.4}", scored.vector_score),
+                                models::SearchMode::Structured => format!("Relevance: {:.4}", scored.vector_score),
                             }
                         }
                     }
                 }
 
-                // Description
-                if let Some(description) = &props.scored_movie.movie.description {
+                if let Some(description) = &scored.movie.description {
                     p {
                         class: "movie-description",
                         "{description}"
                     }
                 }
 
-                // Actors
-                if !props.scored_movie.movie.actors.is_empty() {
+                if !scored.movie.actors.is_empty() {
                     div {
                         class: "movie-info-row",
                         span {
@@ -78,14 +113,13 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                         span {
                             class: "movie-info-value",
                             {
-                                props.scored_movie.movie.actors.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
+                                scored.movie.actors.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
                             }
                         }
                     }
                 }
 
-                // Director
-                if let Some(director) = &props.scored_movie.movie.director {
+                if let Some(director) = &scored.movie.director {
                     div {
                         class: "movie-info-row",
                         span {
@@ -99,23 +133,20 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                     }
                 }
 
-                // Genres
-                if !props.scored_movie.movie.genres.is_empty() {
+                if !scored.movie.genres.is_empty() {
                     div {
                         class: "movie-genres-container",
                         div {
                             class: "movie-genres",
-                            // Show first 4 genres normally
-                            for genre in props.scored_movie.movie.genres.iter().take(4) {
+                            for genre in scored.movie.genres.iter().take(4) {
                                 span {
                                     key: "{genre}",
                                     class: "movie-genre-tag",
                                     "{genre}"
                                 }
                             }
-                            // Show additional genres (hidden by default, shown on hover)
-                            if props.scored_movie.movie.genres.len() > 4 {
-                                for genre in props.scored_movie.movie.genres.iter().skip(4) {
+                            if scored.movie.genres.len() > 4 {
+                                for genre in scored.movie.genres.iter().skip(4) {
                                     span {
                                         key: "{genre}",
                                         class: "movie-genre-tag movie-genre-extra",
@@ -124,15 +155,14 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                                 }
                                 span {
                                     class: "movie-genre-tag movie-genre-more",
-                                    "+{props.scored_movie.movie.genres.len() - 4}"
+                                    "+{scored.movie.genres.len() - 4}"
                                 }
                             }
                         }
                     }
                 }
 
-                // Added On timestamp
-                if let Some(added_on) = &props.scored_movie.movie.added_on {
+                if let Some(added_on) = &scored.movie.added_on {
                     div {
                         class: "movie-info-row movie-added-on",
                         span {
@@ -142,13 +172,11 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                         span {
                             class: "movie-info-value",
                             {
-                                // Parse the timestamp and format it to local time
                                 if let Ok(naive_dt) = NaiveDateTime::parse_from_str(added_on, "%Y-%m-%d %H:%M:%S%.f") {
                                     let utc_dt = DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive_dt, chrono::Utc);
                                     let local_dt: DateTime<Local> = DateTime::from(utc_dt);
                                     local_dt.format("%B %d, %Y at %I:%M %p").to_string()
                                 } else {
-                                    // Fallback to raw string if parsing fails
                                     added_on.to_string()
                                 }
                             }
@@ -156,13 +184,27 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
                     }
                 }
 
-                // Location - Editable
-                if let Some(ref location) = props.scored_movie.movie.location {
+                if let Some(location) = &scored.movie.location {
                     LocationEditor {
                         key: "{movie_id}-{location}",
-                        movie_id: movie_id,
+                        movie_id: movie_id.clone(),
                         initial_location: location.clone(),
                         on_location_updated: props.on_location_updated
+                    }
+                }
+
+                DeleteButton {
+                    key: "{movie_id}-delete",
+                    movie_id,
+                    key_hash,
+                    persist: props.persist_deletes,
+                    on_deleted: props.on_movie_deleted
+                }
+
+                if is_focused {
+                    p {
+                        class: "movie-focus-hint",
+                        "Focus locked on this card. Click any other card to unlock focus"
                     }
                 }
             }
@@ -172,29 +214,96 @@ fn MovieCard(props: SingleMovieCardProps) -> Element {
 
 #[derive(Props, Clone, PartialEq)]
 pub struct MovieGridProps {
-    pub movies: Arc<Vec<ScoredMovie>>,
+    pub movies: ReadSignal<Vec<ScoredMovie>>,
     pub search_mode: models::SearchMode,
     pub on_location_updated: EventHandler<(
         MovieId,
         String,
     )>,
+    /// `false` = local-only removal (CSV preview rows aren't persisted).
+    pub persist_deletes: bool,
+    pub on_movie_deleted: EventHandler<(
+        MovieId,
+        u64,
+    )>,
+    /// Focus lock, owned by the page so clicks outside the grid can clear it.
+    pub focused: Signal<Option<u64>>,
 }
 
 #[component]
 pub fn MovieGrid(props: MovieGridProps) -> Element {
-    // Create and provide editing context for all LocationEditors
+    let movies_sig = props.movies;
+    let search_mode = props.search_mode;
+    let on_location_updated = props.on_location_updated;
+    let persist_deletes = props.persist_deletes;
+    let on_movie_deleted = props.on_movie_deleted;
+
     let is_editing = use_signal(|| false);
     use_context_provider(|| is_editing);
 
+    let mut focused = props.focused;
+    use_context_provider(|| focused);
+
+    // Drop the lock when the visible set changes, or a stale key would leave
+    // every card blurred and unclickable after a new search.
+    let mut last_set = use_signal(
+        || {
+            (
+                0usize, 0u64,
+            )
+        },
+    );
+    use_effect(
+        move || {
+            let current = {
+                let movies = movies_sig.read();
+                (
+                    movies.len(),
+                    movies
+                        .first()
+                        .map(
+                            |m| {
+                                m.movie
+                                    .key_hash
+                            },
+                        )
+                        .unwrap_or(0),
+                )
+            };
+            if last_set() != current {
+                last_set.set(current);
+                focused.set(None);
+            }
+        },
+    );
+
+    let movies = movies_sig.read();
+    let is_locked = focused
+        .read()
+        .is_some();
+
+    // `editing-active` drives the sharp/blurred state for both location editing
+    // and focus lock. `focus-locked` additionally suppresses hover animation.
+    let mut grid_class = String::from("movie-grid movie-grid-cols-3");
+    if is_locked || is_editing() {
+        grid_class.push_str(" editing-active");
+    }
+    if is_locked {
+        grid_class.push_str(" focus-locked");
+    }
+
     rsx! {
         div {
-            class: if is_editing() { "movie-grid movie-grid-cols-3 editing-active" } else { "movie-grid movie-grid-cols-3" },
-            for scored_movie in props.movies.iter() {
+            class: "{grid_class}",
+            for (index, movie) in movies.iter().enumerate() {
                 MovieCard {
-                    key: "{scored_movie.movie.key_hash}",
-                    scored_movie: scored_movie.clone(),
-                    search_mode: props.search_mode,
-                    on_location_updated: props.on_location_updated
+                    key: "{movie.movie.key_hash}",
+                    movies: movies_sig,
+                    index,
+                    search_mode,
+                    on_location_updated,
+                    persist_deletes,
+                    on_movie_deleted
                 }
             }
         }

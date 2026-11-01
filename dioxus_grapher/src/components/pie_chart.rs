@@ -18,7 +18,10 @@ struct SliceData {
 
 #[derive(Clone, PartialEq, Props)]
 pub struct PieChartProps {
-    pub data: Vec<(String, f64)>,
+    pub data: Vec<(
+        String,
+        f64,
+    )>,
     #[props(default = 400.0)]
     pub size: f64,
     #[props(default = vec![
@@ -50,9 +53,13 @@ pub fn PieChart(props: PieChartProps) -> Element {
     let container_size = use_container_size(container_ref);
 
     let size = props.size;
-    let colors = props.colors.clone();
+    let colors = props
+        .colors
+        .clone();
     let show_legend = props.show_legend;
-    let data_for_effect = props.data.clone();
+    let data_for_effect = props
+        .data
+        .clone();
 
     let canvas_size = if props.responsive {
         let (w, h) = container_size();
@@ -65,70 +72,103 @@ pub fn PieChart(props: PieChartProps) -> Element {
         size
     };
 
-    let filtered_data = use_memo(move || {
-        let mut data = data_for_effect.clone();
-        data.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-        if let Some(n) = props.top_n {
-            data.truncate(n);
-        }
-        let total: f64 = data.iter().map(|(_, v)| v).sum();
-        if let Some(min_pct) = props.min_percentage {
-            data.retain(|(_, v)| (*v / total * 100.0) >= min_pct);
-        }
-        data
-    });
+    let filtered_data = use_memo(
+        move || {
+            let mut data = data_for_effect.clone();
+            data.sort_by(
+                |(_, a), (_, b)| {
+                    b.partial_cmp(a)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                },
+            );
+            if let Some(n) = props.top_n {
+                data.truncate(n);
+            }
+            let total: f64 = data
+                .iter()
+                .map(|(_, v)| v)
+                .sum();
+            if let Some(min_pct) = props.min_percentage {
+                data.retain(|(_, v)| (*v / total * 100.0) >= min_pct);
+            }
+            data
+        },
+    );
 
-    let slices = use_memo(move || {
-        let data = filtered_data.read();
-        let total: f64 = data.iter().map(|(_, v)| v).sum();
-        if total <= 0.0 {
-            return vec![];
-        }
+    let slices = use_memo(
+        move || {
+            let data = filtered_data.read();
+            let total: f64 = data
+                .iter()
+                .map(|(_, v)| v)
+                .sum();
+            if total <= 0.0 {
+                return vec![];
+            }
 
-        let mut current_angle = -90.0_f64;
-        let mut result = Vec::new();
-        for (idx, (label, value)) in data.iter().enumerate() {
-            let percentage = (value / total) * 100.0;
-            let angle = (value / total) * 360.0;
-            let end_angle = current_angle + angle;
-            let color = colors
-                .get(idx % colors.len())
-                .cloned()
-                .unwrap_or_else(|| "#999999".to_string());
+            let mut current_angle = -90.0_f64;
+            let mut result = Vec::new();
+            for (idx, (label, value)) in data
+                .iter()
+                .enumerate()
+            {
+                let percentage = (value / total) * 100.0;
+                let angle = (value / total) * 360.0;
+                let end_angle = current_angle + angle;
+                let color = colors
+                    .get(idx % colors.len())
+                    .cloned()
+                    .unwrap_or_else(|| "#999999".to_string());
 
-            result.push(SliceData {
-                label: label.clone(),
-                value: *value,
-                percentage,
-                start_angle: current_angle,
-                end_angle,
-                color,
-                index: idx,
-            });
-            current_angle = end_angle;
-        }
-        result
-    });
+                result.push(
+                    SliceData {
+                        label: label.clone(),
+                        value: *value,
+                        percentage,
+                        start_angle: current_angle,
+                        end_angle,
+                        color,
+                        index: idx,
+                    },
+                );
+                current_angle = end_angle;
+            }
+            result
+        },
+    );
 
-    use_effect(move || {
-        let _ = hovered_index();
-        let (current_w, current_h) = container_size();
-        let _ = canvas_ref();
-        if let Some(canvas) = canvas_ref() {
-            let s = if props.responsive && current_w > 0.0 && current_h > 0.0 {
-                current_w.min(current_h)
-            } else {
-                size
-            };
-            draw_pie_chart(&canvas, s, &slices.read(), hovered_index());
-        }
-    });
+    use_effect(
+        move || {
+            let _ = hovered_index();
+            let (current_w, current_h) = container_size();
+            let _ = canvas_ref();
+            if let Some(canvas) = canvas_ref() {
+                let s = if props.responsive && current_w > 0.0 && current_h > 0.0 {
+                    current_w.min(current_h)
+                } else {
+                    size
+                };
+                draw_pie_chart(
+                    &canvas,
+                    s,
+                    &slices.read(),
+                    hovered_index(),
+                );
+            }
+        },
+    );
 
-    if props.data.is_empty() {
+    if props
+        .data
+        .is_empty()
+    {
         let style = if props.responsive {
             "width: 100%; height: 100%; border: 1px solid #ccc;"
         } else {
-            &format!("width: {}px; height: {}px; border: 1px solid #ccc;", size, size)
+            &format!(
+                "width: {}px; height: {}px; border: 1px solid #ccc;",
+                size, size
+            )
         };
         return rsx! {
             div {
@@ -139,12 +179,19 @@ pub fn PieChart(props: PieChartProps) -> Element {
         };
     }
 
-    let total: f64 = filtered_data.read().iter().map(|(_, v)| v).sum();
+    let total: f64 = filtered_data
+        .read()
+        .iter()
+        .map(|(_, v)| v)
+        .sum();
     if total <= 0.0 {
         let style = if props.responsive {
             "width: 100%; height: 100%; border: 1px solid #ccc;"
         } else {
-            &format!("width: {}px; height: {}px; border: 1px solid #ccc;", size, size)
+            &format!(
+                "width: {}px; height: {}px; border: 1px solid #ccc;",
+                size, size
+            )
         };
         return rsx! {
             div {
@@ -155,7 +202,9 @@ pub fn PieChart(props: PieChartProps) -> Element {
         };
     }
 
-    let slices_legend = slices.read().clone();
+    let slices_legend = slices
+        .read()
+        .clone();
     let slices_enter = slices_legend.clone();
     let slices_move = slices_legend.clone();
 
@@ -243,8 +292,15 @@ pub fn PieChart(props: PieChartProps) -> Element {
     }
 }
 
-fn draw_pie_chart(canvas: &HtmlCanvasElement, size: f64, slices: &[SliceData], hovered_index: Option<usize>) {
-    let Some(ctx) = setup_canvas(canvas, size, size) else {
+fn draw_pie_chart(
+    canvas: &HtmlCanvasElement,
+    size: f64,
+    slices: &[SliceData],
+    hovered_index: Option<usize>,
+) {
+    let Some(ctx) = setup_canvas(
+        canvas, size, size,
+    ) else {
         return;
     };
 
@@ -252,31 +308,97 @@ fn draw_pie_chart(canvas: &HtmlCanvasElement, size: f64, slices: &[SliceData], h
     let center_y = size / 2.0;
     let radius = (size / 2.0) * 0.7;
 
-    ctx.clear_rect(0.0, 0.0, size, size);
+    ctx.clear_rect(
+        0.0, 0.0, size, size,
+    );
 
     for slice in slices.iter() {
         let is_hovered = hovered_index == Some(slice.index);
         let offset = if is_hovered { 10.0 } else { 0.0 };
         let mid_angle = (slice.start_angle + slice.end_angle) / 2.0_f64;
-        let offset_x = offset * mid_angle.to_radians().cos();
-        let offset_y = offset * mid_angle.to_radians().sin();
+        let offset_x = offset
+            * mid_angle
+                .to_radians()
+                .cos();
+        let offset_y = offset
+            * mid_angle
+                .to_radians()
+                .sin();
         let cx = center_x + offset_x;
         let cy = center_y + offset_y;
 
-        let (start_x, start_y) = angle_to_point(cx, cy, radius, slice.start_angle);
+        let (start_x, start_y) = angle_to_point(
+            cx,
+            cy,
+            radius,
+            slice.start_angle,
+        );
 
         // Gradient fill
-        let gradient = ctx.create_radial_gradient(cx - radius * 0.3, cy - radius * 0.3, radius * 0.1, cx, cy, radius)
-            .unwrap_or_else(|_| ctx.create_radial_gradient(cx, cy, 0.0, cx, cy, radius).unwrap_or_else(|_| panic!("radial gradient")));
-        gradient.add_color_stop(0.0, &with_alpha(&slice.color, 0.95)).ok();
-        gradient.add_color_stop(0.5, &slice.color).ok();
-        gradient.add_color_stop(1.0, &with_alpha(&slice.color, 0.85)).ok();
+        let gradient = ctx
+            .create_radial_gradient(
+                cx - radius * 0.3,
+                cy - radius * 0.3,
+                radius * 0.1,
+                cx,
+                cy,
+                radius,
+            )
+            .unwrap_or_else(
+                |_| {
+                    ctx.create_radial_gradient(
+                        cx, cy, 0.0, cx, cy, radius,
+                    )
+                    .unwrap_or_else(|_| panic!("radial gradient"))
+                },
+            );
+        gradient
+            .add_color_stop(
+                0.0,
+                &with_alpha(
+                    &slice.color,
+                    0.95,
+                ),
+            )
+            .ok();
+        gradient
+            .add_color_stop(
+                0.5,
+                &slice.color,
+            )
+            .ok();
+        gradient
+            .add_color_stop(
+                1.0,
+                &with_alpha(
+                    &slice.color,
+                    0.85,
+                ),
+            )
+            .ok();
 
         ctx.begin_path();
-        ctx.move_to(cx, cy);
-        ctx.line_to(start_x, start_y);
-        ctx.arc(cx, cy, radius, slice.start_angle.to_radians(), slice.end_angle.to_radians()).ok();
-        ctx.line_to(cx, cy);
+        ctx.move_to(
+            cx, cy,
+        );
+        ctx.line_to(
+            start_x, start_y,
+        );
+        ctx.arc(
+            cx,
+            cy,
+            radius,
+            slice
+                .start_angle
+                .to_radians(),
+            slice
+                .end_angle
+                .to_radians(),
+        )
+        .ok();
+        ctx.line_to(
+            cx, cy,
+        );
         ctx.close_path();
         ctx.set_fill_style_canvas_gradient(&gradient);
         ctx.set_stroke_style_str("white");
@@ -286,16 +408,58 @@ fn draw_pie_chart(canvas: &HtmlCanvasElement, size: f64, slices: &[SliceData], h
         ctx.stroke();
 
         // Shine overlay
-        let shine = ctx.create_radial_gradient(cx - radius * 0.3, cy - radius * 0.3, 0.0, cx, cy, radius)
-            .unwrap_or_else(|_| ctx.create_radial_gradient(cx, cy, 0.0, cx, cy, radius).unwrap_or_else(|_| panic!("radial gradient")));
-        shine.add_color_stop(0.0, "rgba(255, 255, 255, 0.4)").ok();
-        shine.add_color_stop(1.0, "rgba(255, 255, 255, 0)").ok();
+        let shine = ctx
+            .create_radial_gradient(
+                cx - radius * 0.3,
+                cy - radius * 0.3,
+                0.0,
+                cx,
+                cy,
+                radius,
+            )
+            .unwrap_or_else(
+                |_| {
+                    ctx.create_radial_gradient(
+                        cx, cy, 0.0, cx, cy, radius,
+                    )
+                    .unwrap_or_else(|_| panic!("radial gradient"))
+                },
+            );
+        shine
+            .add_color_stop(
+                0.0,
+                "rgba(255, 255, 255, 0.4)",
+            )
+            .ok();
+        shine
+            .add_color_stop(
+                1.0,
+                "rgba(255, 255, 255, 0)",
+            )
+            .ok();
 
         ctx.begin_path();
-        ctx.move_to(cx, cy);
-        ctx.line_to(start_x, start_y);
-        ctx.arc(cx, cy, radius, slice.start_angle.to_radians(), slice.end_angle.to_radians()).ok();
-        ctx.line_to(cx, cy);
+        ctx.move_to(
+            cx, cy,
+        );
+        ctx.line_to(
+            start_x, start_y,
+        );
+        ctx.arc(
+            cx,
+            cy,
+            radius,
+            slice
+                .start_angle
+                .to_radians(),
+            slice
+                .end_angle
+                .to_radians(),
+        )
+        .ok();
+        ctx.line_to(
+            cx, cy,
+        );
         ctx.close_path();
         ctx.set_fill_style_canvas_gradient(&shine);
         ctx.set_global_alpha(1.0);
@@ -303,13 +467,29 @@ fn draw_pie_chart(canvas: &HtmlCanvasElement, size: f64, slices: &[SliceData], h
 
         // Percentage label
         let label_radius = radius * 0.65;
-        let label_x = cx + label_radius * mid_angle.to_radians().cos();
-        let label_y = cy + label_radius * mid_angle.to_radians().sin();
+        let label_x = cx
+            + label_radius
+                * mid_angle
+                    .to_radians()
+                    .cos();
+        let label_y = cy
+            + label_radius
+                * mid_angle
+                    .to_radians()
+                    .sin();
         ctx.set_fill_style_str("white");
         ctx.set_font("bold 14px sans-serif");
         ctx.set_text_align("center");
         ctx.set_text_baseline("middle");
-        ctx.fill_text(&format!("{:.1}%", slice.percentage), label_x, label_y).ok();
+        ctx.fill_text(
+            &format!(
+                "{:.1}%",
+                slice.percentage
+            ),
+            label_x,
+            label_y,
+        )
+        .ok();
     }
 
     // Tooltip
@@ -320,16 +500,30 @@ fn draw_pie_chart(canvas: &HtmlCanvasElement, size: f64, slices: &[SliceData], h
                 center_x,
                 30.0,
                 &slice.label,
-                &format!("Value: {:.2} ({:.1}%)", slice.value, slice.percentage),
+                &format!(
+                    "Value: {:.2} ({:.1}%)",
+                    slice.value, slice.percentage
+                ),
                 &slice.color,
             );
         }
     }
 }
 
-fn angle_to_point(cx: f64, cy: f64, radius: f64, angle_deg: f64) -> (f64, f64) {
+fn angle_to_point(
+    cx: f64,
+    cy: f64,
+    radius: f64,
+    angle_deg: f64,
+) -> (
+    f64,
+    f64,
+) {
     let rad = angle_deg.to_radians();
-    (cx + radius * rad.cos(), cy + radius * rad.sin())
+    (
+        cx + radius * rad.cos(),
+        cy + radius * rad.sin(),
+    )
 }
 
 fn draw_tooltip(
@@ -341,45 +535,121 @@ fn draw_tooltip(
     _stroke_color: &str,
 ) {
     ctx.set_font("bold 13px sans-serif");
-    let label_width = ctx.measure_text(label).ok().map(|m| m.width()).unwrap_or(0.0);
+    let label_width = ctx
+        .measure_text(label)
+        .ok()
+        .map(|m| m.width())
+        .unwrap_or(0.0);
     ctx.set_font("11px sans-serif");
-    let value_width = ctx.measure_text(value).ok().map(|m| m.width()).unwrap_or(0.0);
+    let value_width = ctx
+        .measure_text(value)
+        .ok()
+        .map(|m| m.width())
+        .unwrap_or(0.0);
     let content_width = label_width.max(value_width);
     let width = content_width + 40.0;
     let height = 40.0;
     let rx = 5.0;
 
     ctx.set_fill_style_str("rgba(0, 0, 0, 0.9)");
-    round_rect(ctx, x - width / 2.0, y - height / 2.0, width, height, rx);
+    round_rect(
+        ctx,
+        x - width / 2.0,
+        y - height / 2.0,
+        width,
+        height,
+        rx,
+    );
     ctx.fill();
 
     ctx.set_stroke_style_str("white");
     ctx.set_line_width(1.0);
-    round_rect(ctx, x - width / 2.0, y - height / 2.0, width, height, rx);
+    round_rect(
+        ctx,
+        x - width / 2.0,
+        y - height / 2.0,
+        width,
+        height,
+        rx,
+    );
     ctx.stroke();
 
     ctx.set_fill_style_str("white");
     ctx.set_font("bold 13px sans-serif");
     ctx.set_text_align("center");
     ctx.set_text_baseline("middle");
-    ctx.fill_text(label, x, y - 8.0).ok();
+    ctx.fill_text(
+        label,
+        x,
+        y - 8.0,
+    )
+    .ok();
 
     ctx.set_font("11px sans-serif");
-    ctx.fill_text(value, x, y + 8.0).ok();
+    ctx.fill_text(
+        value,
+        x,
+        y + 8.0,
+    )
+    .ok();
 }
 
-fn round_rect(ctx: &web_sys::CanvasRenderingContext2d, x: f64, y: f64, width: f64, height: f64, radius: f64) {
-    let r = radius.min(width / 2.0).min(height / 2.0);
+fn round_rect(
+    ctx: &web_sys::CanvasRenderingContext2d,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    radius: f64,
+) {
+    let r = radius
+        .min(width / 2.0)
+        .min(height / 2.0);
     ctx.begin_path();
-    ctx.move_to(x + r, y);
-    ctx.line_to(x + width - r, y);
-    ctx.quadratic_curve_to(x + width, y, x + width, y + r);
-    ctx.line_to(x + width, y + height - r);
-    ctx.quadratic_curve_to(x + width, y + height, x + width - r, y + height);
-    ctx.line_to(x + r, y + height);
-    ctx.quadratic_curve_to(x, y + height, x, y + height - r);
-    ctx.line_to(x, y + r);
-    ctx.quadratic_curve_to(x, y, x + r, y);
+    ctx.move_to(
+        x + r,
+        y,
+    );
+    ctx.line_to(
+        x + width - r,
+        y,
+    );
+    ctx.quadratic_curve_to(
+        x + width,
+        y,
+        x + width,
+        y + r,
+    );
+    ctx.line_to(
+        x + width,
+        y + height - r,
+    );
+    ctx.quadratic_curve_to(
+        x + width,
+        y + height,
+        x + width - r,
+        y + height,
+    );
+    ctx.line_to(
+        x + r,
+        y + height,
+    );
+    ctx.quadratic_curve_to(
+        x,
+        y + height,
+        x,
+        y + height - r,
+    );
+    ctx.line_to(
+        x,
+        y + r,
+    );
+    ctx.quadratic_curve_to(
+        x,
+        y,
+        x + r,
+        y,
+    );
     ctx.close_path();
 }
 
@@ -403,7 +673,9 @@ fn update_pie_hover(
     let dx = x - center_x;
     let dy = y - center_y;
     let distance = (dx * dx + dy * dy).sqrt();
-    let angle = dy.atan2(dx).to_degrees();
+    let angle = dy
+        .atan2(dx)
+        .to_degrees();
     let normalized_angle = ((angle + 90.0) % 360.0 + 360.0) % 360.0;
 
     let mut found = None;

@@ -1,3 +1,4 @@
+// search_mode_selector.rs
 use dioxus::prelude::*;
 use models::SearchMode;
 
@@ -5,7 +6,7 @@ use models::SearchMode;
 pub struct SearchModeSelectorProps {
     pub search_mode: SearchMode,
     pub on_mode_change: EventHandler<SearchMode>,
-    pub selected_model: Option<String>,
+    pub selected_model: Signal<Option<String>>,
     pub on_model_change: EventHandler<Option<String>>,
     pub available_models: Signal<Vec<models::AvailableModel>>,
 }
@@ -44,64 +45,61 @@ pub fn SearchModeSelector(props: SearchModeSelectorProps) -> Element {
                         "Text"
                     }
 
-                button {
-                    class: if matches!(props.search_mode, SearchMode::Vector) { "mode-button active" } else { "mode-button" },
-                    onclick: move |_| props.on_mode_change.call(SearchMode::Vector),
-                    "Vector"
-                }
+                    button {
+                        class: if matches!(props.search_mode, SearchMode::Vector) { "mode-button active" } else { "mode-button" },
+                        onclick: move |_| props.on_mode_change.call(SearchMode::Vector),
+                        "Vector"
+                    }
 
-                button {
-                    class: if matches!(props.search_mode, SearchMode::Both) { "mode-button active" } else { "mode-button" },
-                    onclick: move |_| props.on_mode_change.call(SearchMode::Both),
-                    "Hybrid"
-                }
+                    button {
+                        class: if matches!(props.search_mode, SearchMode::Both) { "mode-button active" } else { "mode-button" },
+                        onclick: move |_| props.on_mode_change.call(SearchMode::Both),
+                        "Hybrid"
+                    }
 
-                button {
-                    class: if matches!(props.search_mode, SearchMode::Structured) { "mode-button active" } else { "mode-button" },
-                    onclick: move |_| props.on_mode_change.call(SearchMode::Structured),
-                    "Structured"
-                }
+                    button {
+                        class: if matches!(props.search_mode, SearchMode::Structured) { "mode-button active" } else { "mode-button" },
+                        onclick: move |_| props.on_mode_change.call(SearchMode::Structured),
+                        "Structured"
+                    }
 
-                // Model selector (hidden for Text mode)
-                if !matches!(props.search_mode, SearchMode::Text) {
-                    div {
-                        class: "model-selector-container",
+                    // Model selector (hidden for Text mode)
+                    if !matches!(props.search_mode, SearchMode::Text) {
+                        div {
+                            class: "model-selector-container",
 
-                        span {
-                            class: "model-label",
-                            "Model:"
-                        }
+                            span {
+                                class: "model-label",
+                                "Model:"
+                            }
 
-                        select {
-                            class: "model-select",
-                            value: match props.selected_model {
-                                Some(ref model) => model.clone(),
-                                None => "default".to_string(),
-                            },
-                            onchange: move |evt| {
-                                let value = evt.value();
-                                if value == "default" {
-                                    props.on_model_change.call(None);
-                                } else {
-                                    props.on_model_change.call(Some(value));
-                                }
-                            },
+                            select {
+                                class: "model-select",
+                                value: props.selected_model.read().clone().unwrap_or_else(|| "default".to_string()),
+                                onchange: move |evt| {
+                                    let value = evt.value();
+                                    if value == "default" {
+                                        props.on_model_change.call(None);
+                                    } else {
+                                        props.on_model_change.call(Some(value));
+                                    }
+                                },
 
-                            option { value: "default", "Default" }
-                            for model in (props.available_models)().iter() {
-                                option {
-                                    value: "{model.name}",
-                                    "{model.name}"
+                                option { value: "default", "Default" }
+                                for model in props.available_models.read().iter() {
+                                    option {
+                                        value: "{model.name}",
+                                        "{model.name}"
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                }
             }
         }
     }
-    
+
     #[cfg(not(feature = "ai-backend"))]
     {
         rsx! {

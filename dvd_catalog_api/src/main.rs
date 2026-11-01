@@ -2,7 +2,7 @@ use std::env;
 
 use axum::{
     http::{self, Method},
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use database::MovieRepo;
@@ -82,7 +82,9 @@ fn get_host() -> String {
 }
 
 fn init_router(db_pool: MovieRepo) -> Router {
-    let state = DbState { movie_repo: db_pool };
+    let state = DbState {
+        movie_repo: db_pool,
+    };
 
     let router = Router::new()
         .route(
@@ -96,6 +98,10 @@ fn init_router(db_pool: MovieRepo) -> Router {
         .route(
             "/dvd/{id}",
             get(get_dvd),
+        )
+        .route(
+            "/dvd/{id}",
+            delete(delete_movie),
         )
         .route(
             "/saveMovie",
@@ -162,6 +168,10 @@ fn init_router(db_pool: MovieRepo) -> Router {
             post(pull_ollama_model),
         )
         .route(
+            "/ai/unload-models",
+            post(unload_all_ollama_models),
+        )
+        .route(
             "/ai/models",
             get(list_available_models),
         )
@@ -197,21 +207,20 @@ fn init_router(db_pool: MovieRepo) -> Router {
             "/stats/random-odds",
             get(stats_random_odds),
         );
-    
-    // Conditionally add postgres-only routes
-    #[cfg(feature = "postgres")]
-    let router = router
-        .route(
-            "/ai/structured-search",
-            post(structured_search),
-        );
-    
+
+    // Conditionally add structured-search route for both postgres and mongodb backends
+    #[cfg(all(feature = "ai", any(feature = "postgres", feature = "mongodb")))]
+    let router = router.route(
+        "/dvd/structured-search",
+        post(structured_search),
+    );
+
     router
         .with_state(state)
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
                 .allow_headers([http::header::CONTENT_TYPE])
-                .allow_methods([Method::GET, Method::POST]),
+                .allow_methods([Method::GET, Method::POST, Method::DELETE]),
         )
 }

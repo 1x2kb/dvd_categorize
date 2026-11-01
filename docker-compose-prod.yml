@@ -67,24 +67,35 @@ services:
     restart: unless-stopped
 
   ollama-prod:
-    image: ollama/ollama:rocm
+    # Vulkan ships in the default image. The :rocm tag has NO Vulkan backend.
+    # Pin to a specific version once verified, e.g. ollama/ollama:0.12.6
+    image: ollama/ollama:latest
     networks:
-      - dvd-net-prod
+      dvd-net-prod:
+      # Shared with any other stack that needs this one Ollama instance.
+      ollama-net:
+        aliases:
+          - ollama
     ports:
       - "0.0.0.0:11435:11434"
     volumes:
       - ollama_data:/root/.ollama
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_MAX_LOADED_MODELS=1
+      # RADV memory-spill heuristic — off is faster/more stable on Navi 21.
+      - RADV_PERFTEST=nogttspill
+      # Uncomment if you have an iGPU and need to pin the discrete card.
+      # Run `vulkaninfo --summary` to find the index first.
+      # - GGML_VK_VISIBLE_DEVICES=1
+      # Uncomment to force CPU (disables Vulkan entirely).
+      # - OLLAMA_VULKAN=0
     devices:
-      - /dev/kfd
-      - /dev/dri/renderD128
-    group_add:
-      - video
-    security_opt:
-      - seccomp:unconfined
+      - /dev/dri:/dev/dri        # render nodes + card0 — required for Vulkan
+      - /dev/kfd:/dev/kfd        # AMD compute node; harmless if unused
     cap_add:
-      - SYS_PTRACE
+      - PERFMON                  # lets Vulkan report real free VRAM
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || curl -f http://localhost:11434/api/version || exit 1"]
       interval: 30s
@@ -205,3 +216,6 @@ volumes:
 networks:
   dvd-net-prod:
     driver: bridge
+    name: dvd-net-prod          # pin so the real name is predictable
+  ollama-net:
+    external: true

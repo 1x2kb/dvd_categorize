@@ -9,7 +9,10 @@ pub fn RandomOdds(data: ReadSignal<RandomSelectionOddsResponse>) -> Element {
         if odds.total_movies == 0 {
             "0%".to_string()
         } else {
-            format!("{:.1}%", probability * 100.0)
+            format!(
+                "{:.1}%",
+                probability * 100.0
+            )
         }
     };
 
@@ -19,9 +22,15 @@ pub fn RandomOdds(data: ReadSignal<RandomSelectionOddsResponse>) -> Element {
         } else {
             let per_movie_odds = item.per_movie_odds;
             if per_movie_odds < 1.0 {
-                format!("1 in {:.2}", per_movie_odds)
+                format!(
+                    "1 in {:.2}",
+                    per_movie_odds
+                )
             } else {
-                format!("1 in {:.0}", per_movie_odds)
+                format!(
+                    "1 in {:.0}",
+                    per_movie_odds
+                )
             }
         }
     };

@@ -43,8 +43,8 @@
 //! }
 //! ```
 
-// Ensure at least one backend is enabled
-#[cfg(not(any(feature = "postgres", feature = "mongodb")))]
+#[cfg(not(test))] // Allow test to specify neither.
+#[cfg(not(any(feature = "postgres", feature = "mongodb")))] // Ensure at least one backend is enabled
 compile_error!("database crate requires either `postgres` or `mongodb` feature to be enabled");
 
 pub mod embedding;
@@ -99,11 +99,11 @@ pub use embedding::*;
 pub use mocks::*;
 // Postgres-specific re-exports (only available when postgres feature is enabled)
 #[cfg(feature = "postgres")]
-pub use postgres::*;
-#[cfg(feature = "postgres")]
 pub use postgres::full_movies::insert_full_movies;
 #[cfg(feature = "postgres")]
 pub use postgres::movies::update_movie_location;
+#[cfg(feature = "postgres")]
+pub use postgres::*;
 pub use traits::*;
 
 // `postgres` and `mongodb` select different backends (and different
@@ -112,7 +112,7 @@ pub use traits::*;
 compile_error!("features `postgres` and `mongodb` are mutually exclusive");
 
 /// Type alias for the active movie repository backend.
-/// 
+///
 /// This resolves to a concrete type at compile time based on which database feature is enabled.
 /// - `postgres` feature: Uses `PostgresMovieRepository`
 /// - `mongodb` feature: Uses `MongoMovieRepository`
@@ -146,6 +146,13 @@ impl From<ConnectionError> for DatabaseError {
 impl From<diesel::result::Error> for DatabaseError {
     fn from(value: diesel::result::Error) -> Self {
         DatabaseError::DieselError(value)
+    }
+}
+
+#[cfg(feature = "mongodb")]
+impl From<mongodb::mongodb_driver::error::Error> for DatabaseError {
+    fn from(value: mongodb::mongodb_driver::error::Error) -> Self {
+        DatabaseError::QueryError(value.to_string())
     }
 }
 

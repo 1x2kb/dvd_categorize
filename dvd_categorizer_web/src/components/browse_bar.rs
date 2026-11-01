@@ -1,3 +1,4 @@
+// browse_bar.rs
 use dioxus::prelude::*;
 
 #[derive(Props, Clone, PartialEq)]
@@ -7,13 +8,14 @@ pub struct BrowseBarProps {
     pub on_random: EventHandler<()>,
     pub on_unknown_location: EventHandler<()>,
     pub on_by_location: EventHandler<String>,
-    pub locations: Vec<String>,
-    pub is_loading: bool,
+    pub locations: Signal<Vec<String>>,
+    pub is_loading: Signal<bool>,
 }
 
 #[component]
 pub fn BrowseBar(props: BrowseBarProps) -> Element {
     let mut selected_location = use_signal(String::new);
+    let loading = *props.is_loading.read();
 
     rsx! {
         div {
@@ -25,9 +27,9 @@ pub fn BrowseBar(props: BrowseBarProps) -> Element {
             button {
                 class: "browse-button",
                 onclick: move |_| props.on_browse.call(()),
-                disabled: props.is_loading,
+                disabled: loading,
 
-                if props.is_loading {
+                if loading {
                     "Loading..."
                 } else {
                     "Recently Added"
@@ -36,9 +38,9 @@ pub fn BrowseBar(props: BrowseBarProps) -> Element {
             button {
                 class: "browse-button",
                 onclick: move |_| props.on_recent_releases.call(()),
-                disabled: props.is_loading,
+                disabled: loading,
 
-                if props.is_loading {
+                if loading {
                     "Loading..."
                 } else {
                     "Recent Releases"
@@ -47,9 +49,9 @@ pub fn BrowseBar(props: BrowseBarProps) -> Element {
             button {
                 class: "browse-button",
                 onclick: move |_| props.on_random.call(()),
-                disabled: props.is_loading,
+                disabled: loading,
 
-                if props.is_loading {
+                if loading {
                     "Loading..."
                 } else {
                     "Random Movies"
@@ -58,9 +60,9 @@ pub fn BrowseBar(props: BrowseBarProps) -> Element {
             button {
                 class: "browse-button",
                 onclick: move |_| props.on_unknown_location.call(()),
-                disabled: props.is_loading,
+                disabled: loading,
 
-                if props.is_loading {
+                if loading {
                     "Loading..."
                 } else {
                     "Unknown Location"
@@ -70,14 +72,14 @@ pub fn BrowseBar(props: BrowseBarProps) -> Element {
                 class: "location-browse-group",
                 select {
                     class: "location-select",
-                    disabled: props.is_loading || props.locations.is_empty(),
+                    disabled: loading || props.locations.read().is_empty(),
                     value: "{selected_location}",
                     onchange: move |evt| selected_location.set(evt.value()),
                     option {
                         value: "",
                         "Select location..."
                     }
-                    for loc in props.locations.iter() {
+                    for loc in props.locations.read().iter() {
                         option {
                             key: "{loc}",
                             value: "{loc}",
@@ -88,14 +90,14 @@ pub fn BrowseBar(props: BrowseBarProps) -> Element {
                 button {
                     class: "browse-button",
                     onclick: move |_| {
-                        let value = selected_location();
+                        let value = selected_location.read().clone();
                         if !value.is_empty() {
                             props.on_by_location.call(value);
                         }
                     },
-                    disabled: props.is_loading || selected_location().is_empty(),
+                    disabled: loading || selected_location.read().is_empty(),
 
-                    if props.is_loading {
+                    if loading {
                         "Loading..."
                     } else {
                         "Movies by Location"

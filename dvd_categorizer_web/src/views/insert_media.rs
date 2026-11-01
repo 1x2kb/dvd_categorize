@@ -1,24 +1,41 @@
 use dioxus::prelude::*;
 use log::error;
 use models::{CsvInput, FullMovie, ScoredMovie};
-use std::sync::Arc;
 
 use crate::components::movie_grid::MovieGrid;
 
 #[component]
 pub fn InsertMedia() -> Element {
     let mut csv_data = use_signal(|| "".to_string());
-    let mut dvd_data: Signal<Arc<Vec<FullMovie>>> = use_signal(|| Arc::new(Vec::new()));
+    let mut dvd_data: Signal<Vec<FullMovie>> = use_signal(Vec::new);
     let mut is_previewing: Signal<bool> = use_signal(|| false);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
     let mut is_sending: Signal<bool> = use_signal(|| false);
+    let mut focused: Signal<Option<u64>> = use_signal(|| None::<u64>);
+
+    // Preview rows derive from dvd_data; the memo only recomputes when it changes.
+    let scored_movies = use_memo(move || {
+        dvd_data
+            .read()
+            .iter()
+            .map(|movie| ScoredMovie {
+                movie: movie.clone(),
+                vector_score: 0.0,
+            })
+            .collect::<Vec<_>>()
+    });
 
     // Helper for pluralization
-    let dvd_count = dvd_data().len();
+    let dvd_count = dvd_data.read().len();
     let movie_word = if dvd_count == 1 { "movie" } else { "movies" };
 
     rsx! {
-        div { class: "insert-media-container",
+        div {
+            class: "insert-media-container",
+            // Any click that reaches the page clears the card lock. Cards stop
+            // propagation, so their own toggle is unaffected.
+            onclick: move |_| focused.set(None),
+
             // CSV Input Section
             div { class: "csv-section",
                 // CSV Instructions
@@ -95,17 +112,17 @@ pub fn InsertMedia() -> Element {
                                                         Ok(dvds) => {
                                                             let count = dvds.len();
                                                             let movie_word = if count == 1 { "movie" } else { "movies" };
-                                                            dvd_data.set(Arc::new(dvds));
+                                                            dvd_data.set(dvds);
                                                             is_previewing.set(true);
                                                             error_message.set(Some(format!("✓ Successfully loaded {} {} for preview", count, movie_word)));
-                                                        },
+                                                        }
                                                         Err(e) => {
                                                             let err_msg = format!("Serde error: {}\n\nResponse body:\n{}", e, text);
                                                             error!("{}", err_msg);
                                                             error_message.set(Some(err_msg));
                                                         }
                                                     }
-                                                },
+                                                }
                                                 Err(e) => {
                                                     let err_msg = format!("Failed to get response text: {}", e);
                                                     error!("{}", err_msg);
@@ -117,7 +134,7 @@ pub fn InsertMedia() -> Element {
                                                 Ok(error_text) => {
                                                     error!("CSV parsing failed: {}", error_text);
                                                     error_message.set(Some(error_text));
-                                                },
+                                                }
                                                 Err(e) => {
                                                     let err_msg = format!("Request failed with status {}: {}", status, e);
                                                     error!("{}", err_msg);
@@ -125,7 +142,7 @@ pub fn InsertMedia() -> Element {
                                                 }
                                             }
                                         }
-                                    },
+                                    }
                                     Err(e) => {
                                         let err_msg = format!("Request failed: {}", e);
                                         error!("{}", err_msg);
@@ -141,7 +158,7 @@ pub fn InsertMedia() -> Element {
                         button {
                             class: "button button-danger",
                             onclick: move |_| {
-                                dvd_data.set(Arc::new(vec![]));
+                                dvd_data.set(Vec::new());
                                 is_previewing.set(false);
                                 csv_data.set(String::new());
                             },
@@ -171,9 +188,9 @@ pub fn InsertMedia() -> Element {
                                     Ok(response) => {
                                         let status = response.status();
                                         if status.is_success() {
-                                            let count = dvd_data().len();
+                                            let count = dvd_data.read().len();
                                             let movie_word = if count == 1 { "movie" } else { "movies" };
-                                            dvd_data.set(Arc::new(vec![]));
+                                            dvd_data.set(Vec::new());
                                             is_previewing.set(false);
                                             csv_data.set(String::new());
                                             error_message.set(Some(format!("✓ Successfully saved {} {} to database!", count, movie_word)));
@@ -182,7 +199,7 @@ pub fn InsertMedia() -> Element {
                                                 Ok(error_text) => {
                                                     error!("CSV parsing/insertion failed: {}", error_text);
                                                     error_message.set(Some(error_text));
-                                                },
+                                                }
                                                 Err(e) => {
                                                     let err_msg = format!("Request failed with status {}: {}", status, e);
                                                     error!("{}", err_msg);
@@ -190,7 +207,7 @@ pub fn InsertMedia() -> Element {
                                                 }
                                             }
                                         }
-                                    },
+                                    }
                                     Err(e) => {
                                         let err_msg = format!("Request failed: {}", e);
                                         error!("{}", err_msg);
@@ -211,41 +228,32 @@ pub fn InsertMedia() -> Element {
             }
 
             // Movie Grid Preview
-            if !dvd_data().is_empty() {
+            if !dvd_data.read().is_empty() {
                 div { class: "preview-section",
                     h3 { class: "preview-title", "Preview ({dvd_count} {movie_word} found)" }
                     div { class: "preview-wrapper",
-                        {
-                            // Convert FullMovie to ScoredMovie for display (with 0 score for preview)
-                            let scored_movies: Arc<Vec<ScoredMovie>> = Arc::new(
-                                dvd_data().iter().map(|movie| ScoredMovie {
-                                    movie: movie.clone(),
-                                    vector_score: 0.0,
-                                }).collect()
-                            );
-                            rsx! {
-                                MovieGrid {
-                                    movies: scored_movies,
-                                    search_mode: models::SearchMode::Text,
-                                    on_location_updated: move |(movie_id, new_location): (models::MovieId, String)| {
-                                        // Update the movie in the dvd_data list
-                                        let current_dvds = dvd_data();
-                                        let updated_dvds: Vec<FullMovie> = current_dvds
-                                            .iter()
-                                            .map(|movie| {
-                                                if movie.id == movie_id {
-                                                    let mut updated_movie = movie.clone();
-                                                    updated_movie.location = Some(new_location.clone());
-                                                    updated_movie
-                                                } else {
-                                                    movie.clone()
-                                                }
-                                            })
-                                            .collect();
-                                        dvd_data.set(Arc::new(updated_dvds));
+                        MovieGrid {
+                            movies: scored_movies,
+                            search_mode: models::SearchMode::Text,
+                            on_location_updated: move |(movie_id, new_location): (models::MovieId, String)| {
+                                // In-place edit; the memo recomputes from this.
+                                dvd_data.with_mut(|movies| {
+                                    if let Some(movie) = movies.iter_mut().find(|m| m.id == movie_id) {
+                                        movie.location = Some(new_location);
                                     }
-                                }
-                            }
+                                });
+                            },
+                            // Preview rows aren't persisted yet, so removal is local only.
+                            persist_deletes: false,
+                            on_movie_deleted: move |(_movie_id, key_hash): (models::MovieId, u64)| {
+                                dvd_data.with_mut(|movies| {
+                                    movies.retain(|m| m.key_hash != key_hash);
+                                    if movies.is_empty() {
+                                        is_previewing.set(false);
+                                    }
+                                });
+                            },
+                            focused,
                         }
 
                         if is_sending() {

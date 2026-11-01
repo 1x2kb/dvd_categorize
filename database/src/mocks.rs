@@ -188,10 +188,12 @@ impl SearchMoviesByEmbedding for MockMovieRepository {
                 .values()
                 .take(limit as usize)
                 .cloned()
-                .map(|movie| ScoredMovie {
-                    movie,
-                    vector_score: 0.0,
-                })
+                .map(
+                    |movie| ScoredMovie {
+                        movie,
+                        vector_score: 0.0,
+                    },
+                )
                 .collect(),
         )
     }

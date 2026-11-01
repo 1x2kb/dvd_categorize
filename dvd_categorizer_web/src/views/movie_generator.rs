@@ -106,10 +106,21 @@ pub fn MoviePrompt() -> Element {
                 |t| {
                     !chips()
                         .iter()
-                        .any(|c| c.title.to_lowercase() == t.to_lowercase())
+                        .any(
+                            |c| {
+                                c.title
+                                    .to_lowercase()
+                                    == t.to_lowercase()
+                            },
+                        )
                 },
             )
-            .map(|title| TitleChip { title, skip_correction: false })
+            .map(
+                |title| TitleChip {
+                    title,
+                    skip_correction: false,
+                },
+            )
             .collect();
         if added.is_empty() {
             title_input.set("".to_string());
@@ -226,7 +237,7 @@ pub fn MoviePrompt() -> Element {
                 if !chips().is_empty() {
                     div { class: "title-chip-list",
                         for (idx, chip) in chips().iter().enumerate() {
-                            div { 
+                            div {
                                 class: if chip.skip_correction { "title-chip title-chip-locked" } else { "title-chip" },
                                 key: "{idx}-{chip.title}",
                                 button {

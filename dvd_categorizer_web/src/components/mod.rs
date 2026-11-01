@@ -1,5 +1,6 @@
 pub mod actor_chart;
 pub mod browse_bar;
+pub mod delete_button;
 #[cfg(feature = "ai-backend")]
 pub mod generated_movie_card;
 #[cfg(feature = "ai-backend")]
@@ -18,7 +19,7 @@ pub mod year_chart;
 
 pub use actor_chart::ActorChart;
 pub use genre_chart::GenreChart;
-pub use random_odds::RandomOdds;
 pub use markdown::Markdown;
+pub use random_odds::RandomOdds;
 pub use stats_overview::StatsOverviewCard;
 pub use year_chart::YearChart;

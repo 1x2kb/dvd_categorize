@@ -503,7 +503,7 @@
             "type": "loki",
             "uid": "${loki_datasource}"
           },
-          "expr": "{service=\"dvd_categorize_api\"}",
+          "expr": "{service=~\"dvd_categorize_api.*\"}",
           "refId": "A"
         }
       ],

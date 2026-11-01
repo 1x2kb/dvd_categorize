@@ -83,8 +83,12 @@ pub fn LocationEditor(props: LocationEditorProps) -> Element {
 
     // MovieId may be non-Copy (String under mongodb); give each move closure its
     // own owned clone so neither moves `props.movie_id`.
-    let movie_id_keydown = props.movie_id.clone();
-    let movie_id_click = props.movie_id.clone();
+    let movie_id_keydown = props
+        .movie_id
+        .clone();
+    let movie_id_click = props
+        .movie_id
+        .clone();
 
     // Update global editing state when local editing changes
     use_effect(
@@ -134,6 +138,8 @@ pub fn LocationEditor(props: LocationEditorProps) -> Element {
     rsx! {
         div {
             class: "movie-info-row movie-location-row",
+            // Keep clicks on the editor from toggling the card's focus lock
+            onclick: move |evt| evt.stop_propagation(),
 
             if editing() {
                 // Edit mode
